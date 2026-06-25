@@ -1,0 +1,68 @@
+version: '3.9'
+
+# iRexPro — Development Docker Compose
+# Start: docker compose up -d
+# Stop: docker compose down
+# Logs: docker compose logs -f api
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: irexpro_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: irexpro_dev
+      POSTGRES_USER: irexpro
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-irexpro_dev_password}
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U irexpro -d irexpro_dev']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: irexpro_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-}
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+      target: development
+    container_name: irexpro_api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - ./apps/api/.env
+    environment:
+      DB_HOST: postgres
+      REDIS_HOST: redis
+    ports:
+      - '3000:3000'
+    volumes:
+      - ./apps/api/src:/app/src:ro
+    command: pnpm start:dev
+
+volumes:
+  postgres_data:
+  redis_data:

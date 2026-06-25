@@ -295,6 +295,90 @@ Webhooks must always use the raw body (not parsed JSON) for signature validation
 
 ---
 
+---
+
+## Rule — TypeORM Entity Columns Must Always Declare Explicit PostgreSQL Types
+
+**All `@Column` decorators must include an explicit `type` option. Do not rely on TypeORM's automatic type inference.**
+
+### Why this rule exists
+
+TypeScript's `reflect-metadata` emits the design-time type of a property as its JavaScript constructor (e.g., `String`, `Number`, `Boolean`). For **union types** such as `string | null`, `number | null`, `Date | null`, or `boolean | null`, TypeScript emits `Object` — not `String`, `Number`, etc. TypeORM cannot map `Object` to a PostgreSQL column type and throws `DataTypeNotSupportedError` at startup.
+
+This was encountered during Sprint 5C stabilisation when `UserProfile.firstName: string | null` caused:
+```
+DataTypeNotSupportedError: Data type "Object" in "UserProfile.firstName" is not supported by "postgres" database.
+```
+
+### Rules
+
+1. **Every `@Column` on a nullable/union-typed field must have an explicit `type`.**
+2. **Every `@Column` on a non-nullable field should also have an explicit `type` for clarity.**
+3. Never declare a column with only `nullable: true` and no `type` — TypeORM will infer `Object`.
+
+### Required type mappings
+
+| TypeScript type | `@Column` `type` |
+|---|---|
+| `string` (short text) | `'varchar'` with `length` |
+| `string` (long text) | `'text'` |
+| `string \| null` (short) | `'varchar'` + `nullable: true` |
+| `string \| null` (long) | `'text'` + `nullable: true` |
+| `number` (integer) | `'integer'` |
+| `number \| null` | `'integer'` + `nullable: true` |
+| `boolean` | `'boolean'` |
+| `boolean \| null` | `'boolean'` + `nullable: true` |
+| `Date \| null` | `'timestamptz'` + `nullable: true` |
+| `string` (UUID FK) | `'uuid'` |
+| `string \| null` (UUID FK) | `'uuid'` + `nullable: true` |
+| `string` (money/decimal) | `'numeric'` with `precision` + `scale` |
+| `string` (large integer) | `'bigint'` |
+| `Record<string, any>` | `'jsonb'` |
+| `Record<string, any> \| null` | `'jsonb'` + `nullable: true` |
+| `string[]` | `'jsonb'` |
+| `SomeEnum` | `'enum'` + `enum: SomeEnum` |
+| `SomeEnum \| null` | `'enum'` + `enum: SomeEnum` + `nullable: true` |
+
+### Correct examples
+
+```typescript
+// Nullable string — REQUIRED to have type: 'varchar'
+@Column({ name: 'first_name', type: 'varchar', length: 100, nullable: true })
+firstName: string | null;
+
+// UUID foreign key
+@Column({ name: 'user_id', type: 'uuid' })
+userId: string;
+
+// Nullable UUID FK
+@Column({ name: 'signal_id', type: 'uuid', nullable: true })
+signalId: string | null;
+
+// Money field — always numeric string, never JS float
+@Column({ name: 'amount', type: 'numeric', precision: 20, scale: 8 })
+amount: string;
+
+// Nullable integer
+@Column({ name: 'leverage', type: 'integer', nullable: true })
+leverage: number | null;
+
+// Boolean
+@Column({ name: 'is_active', type: 'boolean', default: true })
+isActive: boolean;
+
+// JSONB
+@Column({ name: 'metadata', type: 'jsonb', nullable: true })
+metadata: Record<string, unknown> | null;
+```
+
+### Code Review Checklist additions
+
+- [ ] Every new `@Column` has an explicit `type`
+- [ ] No `@Column({ nullable: true })` without `type`
+- [ ] Nullable fields use the correct nullable form of the type (e.g., `'uuid'` not `'varchar'` for UUID FKs)
+
+---
+
 ## Code Review Checklist
 
 Before approving any PR touching trading, risk, financial, payment, or regional logic:

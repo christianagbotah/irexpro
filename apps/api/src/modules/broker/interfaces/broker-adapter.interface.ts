@@ -1,0 +1,247 @@
+/**
+ * IBrokerAdapter — Core broker integration interface for iRexPro.
+ *
+ * Every broker integration (MetaTrader 5, OANDA, cTrader, etc.) must implement
+ * this interface in full. The Risk Engine and Execution Engine interact exclusively
+ * through this interface — never through broker-specific code.
+ *
+ * CRITICAL RULES:
+ * - Decrypted credentials are passed in-memory only; never logged, never persisted
+ * - All monetary values use decimal strings — never JavaScript floats
+ * - Every adapter must support DEMO mode
+ * - DEMO mode must be validated before LIVE mode is enabled
+ *
+ * See: docs/architecture/09-broker-integration-architecture.md
+ */
+export interface IBrokerAdapter {
+  readonly brokerId: string;
+  readonly brokerName: string;
+  readonly supportsDemo: boolean;
+
+  /** Set operating mode. Must be called after instantiation. */
+  setMode(mode: BrokerMode): void;
+
+  // ─── Connection lifecycle ──────────────────────────────────────────────────
+
+  /**
+   * Establish a connection using decrypted credentials.
+   * Credentials are in-memory only and must never be logged.
+   */
+  connect(credentials: DecryptedBrokerCredentials): Promise<BrokerConnectionResult>;
+
+  /** Gracefully disconnect. */
+  disconnect(): Promise<void>;
+
+  /**
+   * Test credentials without persisting a connection.
+   * Used during the connect-wizard validation step.
+   */
+  testConnection(credentials: DecryptedBrokerCredentials): Promise<BrokerConnectionTestResult>;
+
+  /** Returns true if currently connected and healthy. */
+  isConnected(): boolean;
+
+  // ─── Account state ────────────────────────────────────────────────────────
+
+  getAccountInfo(): Promise<BrokerAccountInfo>;
+  getAccountBalance(): Promise<BrokerBalance>;
+  getOpenPositions(): Promise<BrokerPosition[]>;
+  getPositionById(externalOrderId: string): Promise<BrokerPosition | null>;
+
+  // ─── Market data ──────────────────────────────────────────────────────────
+
+  getInstrumentList(): Promise<BrokerInstrument[]>;
+  getCurrentPrice(instrument: string): Promise<BrokerPrice>;
+  getOHLCV(instrument: string, timeframe: string, count: number): Promise<OHLCV[]>;
+
+  // ─── Order management ─────────────────────────────────────────────────────
+
+  /**
+   * Place a new order. idempotencyKey MUST be included in the broker comment
+   * field to allow deduplication on the broker side.
+   */
+  placeOrder(order: BrokerOrderRequest): Promise<BrokerOrderResult>;
+
+  /** Modify SL/TP/trailing stop of an existing open order. */
+  modifyOrder(
+    externalOrderId: string,
+    modifications: BrokerOrderModification,
+  ): Promise<BrokerOrderResult>;
+
+  /** Close an open position (fully or partially by lot size). */
+  closeOrder(externalOrderId: string, lotSize?: string): Promise<BrokerOrderResult>;
+
+  /** Emergency close of ALL open positions. Used by kill switch. */
+  closeAllOrders(): Promise<BrokerCloseAllResult>;
+
+  // ─── Trade history ────────────────────────────────────────────────────────
+
+  getClosedTrades(from: Date, to: Date): Promise<BrokerClosedTrade[]>;
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+export enum BrokerMode {
+  DEMO = 'DEMO',
+  LIVE = 'LIVE',
+}
+
+export enum BrokerConnectionStatus {
+  CONNECTING = 'CONNECTING',
+  CONNECTED = 'CONNECTED',
+  DISCONNECTED = 'DISCONNECTED',
+  ERROR = 'ERROR',
+  SUSPENDED = 'SUSPENDED',
+}
+
+// ─── Credential types (in-memory only) ───────────────────────────────────────
+
+/**
+ * Decrypted broker credentials.
+ * NEVER persisted, NEVER logged, NEVER returned in any API response.
+ * Held in memory only for the duration of the adapter call.
+ */
+export interface DecryptedBrokerCredentials {
+  apiKey?: string;
+  apiSecret?: string;
+  accountId: string;
+  serverUrl?: string;
+  additionalParams?: Record<string, string>;
+}
+
+// ─── Connection types ────────────────────────────────────────────────────────
+
+export interface BrokerConnectionResult {
+  success: boolean;
+  accountId: string;
+  accountType: BrokerMode;
+  currency: string;
+  serverTime: Date;
+  error?: string;
+}
+
+export interface BrokerConnectionTestResult {
+  success: boolean;
+  accountId?: string;
+  accountType?: BrokerMode;
+  currency?: string;
+  errorCode?: string;
+  errorMessage?: string;
+}
+
+// ─── Account types ────────────────────────────────────────────────────────────
+
+export interface BrokerAccountInfo {
+  accountId: string;
+  currency: string;
+  leverage: number;
+  balance: string;
+  equity: string;
+  margin: string;
+  freeMargin: string;
+  marginLevel: string;
+}
+
+export interface BrokerBalance {
+  balance: string;
+  equity: string;
+  currency: string;
+  timestamp: Date;
+}
+
+// ─── Order types ──────────────────────────────────────────────────────────────
+
+export interface BrokerOrderRequest {
+  idempotencyKey: string;
+  instrument: string;
+  direction: 'BUY' | 'SELL';
+  lotSize: string;
+  stopLoss: string;
+  takeProfit: string;
+  comment?: string;
+}
+
+export interface BrokerOrderModification {
+  newStopLoss?: string;
+  newTakeProfit?: string;
+  newTrailingStop?: string;
+}
+
+export interface BrokerOrderResult {
+  success: boolean;
+  externalOrderId?: string;
+  filledPrice?: string;
+  filledAt?: Date;
+  status: 'FILLED' | 'PENDING' | 'REJECTED' | 'FAILED';
+  brokerMessage?: string;
+  rawResponse?: unknown;
+}
+
+export interface BrokerCloseAllResult {
+  closedCount: number;
+  failedCount: number;
+  errors: string[];
+}
+
+// ─── Position / trade types ───────────────────────────────────────────────────
+
+export interface BrokerPosition {
+  externalOrderId: string;
+  instrument: string;
+  direction: 'BUY' | 'SELL';
+  lotSize: string;
+  openPrice: string;
+  currentPrice: string;
+  stopLoss: string;
+  takeProfit: string;
+  unrealisedPnl: string;
+  openedAt: Date;
+  commission: string;
+  swap: string;
+}
+
+export interface BrokerClosedTrade {
+  externalOrderId: string;
+  instrument: string;
+  direction: 'BUY' | 'SELL';
+  lotSize: string;
+  openPrice: string;
+  closePrice: string;
+  stopLoss: string;
+  takeProfit: string;
+  realisedPnl: string;
+  openedAt: Date;
+  closedAt: Date;
+  commission: string;
+  swap: string;
+  closeReason: 'TP' | 'SL' | 'MANUAL' | 'SYSTEM' | 'UNKNOWN';
+}
+
+// ─── Market data types ────────────────────────────────────────────────────────
+
+export interface BrokerInstrument {
+  symbol: string;
+  description: string;
+  digits: number;
+  minLot: string;
+  maxLot: string;
+  lotStep: string;
+  contractSize: string;
+}
+
+export interface BrokerPrice {
+  instrument: string;
+  bid: string;
+  ask: string;
+  spread: string;
+  timestamp: Date;
+}
+
+export interface OHLCV {
+  timestamp: Date;
+  open: string;
+  high: string;
+  low: string;
+  close: string;
+  volume: string;
+}

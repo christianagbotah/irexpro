@@ -1,0 +1,22 @@
+{
+  "name": "irexpro",
+  "version": "0.1.0",
+  "description": "iRexPro — Global Fully Autonomous AI Forex Trading Platform",
+  "private": true,
+  "scripts": {
+    "api:dev": "pnpm --filter @irexpro/api start:dev",
+    "api:build": "pnpm --filter @irexpro/api build",
+    "api:test": "pnpm --filter @irexpro/api test",
+    "api:test:cov": "pnpm --filter @irexpro/api test:cov",
+    "api:test:detect-open-handles": "pnpm --filter @irexpro/api exec jest --detectOpenHandles --runInBand",
+    "api:lint": "pnpm --filter @irexpro/api lint:check",
+    "db:migrate": "pnpm --filter @irexpro/api migration:run",
+    "db:migrate:revert": "pnpm --filter @irexpro/api migration:revert",
+    "db:seed": "pnpm --filter @irexpro/api seed",
+    "install:all": "pnpm install"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  }
+}

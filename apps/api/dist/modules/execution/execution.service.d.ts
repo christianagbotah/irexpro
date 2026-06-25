@@ -1,0 +1,30 @@
+import { DataSource, Repository } from 'typeorm';
+import { Trade, TradeCloseReason } from './entities/trade.entity';
+import { TradingSession, TradingSessionStatus } from './entities/trading-session.entity';
+import { RiskDecision } from '../risk/interfaces/risk.interface';
+import { BrokerService } from '../broker/broker.service';
+import { BrokerAdapterRegistry } from '../broker/adapters/broker-adapter.registry';
+import { CredentialEncryptionService } from '../broker/services/credential-encryption.service';
+import { AuditService } from '../audit/audit.service';
+export declare class ExecutionService {
+    private tradeRepo;
+    private sessionRepo;
+    private brokerService;
+    private adapterRegistry;
+    private encryptionService;
+    private auditService;
+    private dataSource;
+    private readonly logger;
+    constructor(tradeRepo: Repository<Trade>, sessionRepo: Repository<TradingSession>, brokerService: BrokerService, adapterRegistry: BrokerAdapterRegistry, encryptionService: CredentialEncryptionService, auditService: AuditService, dataSource: DataSource);
+    executeTrade(userId: string, riskDecision: RiskDecision): Promise<Trade>;
+    closeTrade(tradeId: string, userId: string, reason: TradeCloseReason): Promise<Trade>;
+    countOpenTrades(userId: string): Promise<number>;
+    getTodayRealisedLoss(userId: string): Promise<number>;
+    getOpenTrades(userId: string): Promise<Trade[]>;
+    findTradeById(tradeId: string): Promise<Trade | null>;
+    startSession(userId: string, brokerConnectionId: string, openingBalance: string): Promise<TradingSession>;
+    endSession(userId: string, status?: TradingSessionStatus): Promise<void>;
+    getActiveSession(userId: string): Promise<TradingSession | null>;
+    private generateIdempotencyKey;
+    private submitWithRetry;
+}
