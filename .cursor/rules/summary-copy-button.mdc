@@ -1,0 +1,22 @@
+---
+description: Wrap summaries in a fenced code block so the user can click the built-in copy button
+alwaysApply: true
+---
+
+# Summary Copy Button
+
+Whenever you write a **summary** (end-of-task summary, change summary, list of files modified, output-required section, or any content explicitly labelled as a summary), wrap the entire summary content inside a fenced markdown code block using triple backticks. This ensures the Cursor UI renders the built-in copy button on the block.
+
+```
+Example structure:
+
+```markdown
+## Summary
+
+- Changed X
+- Updated Y
+- Added Z
+```
+```
+
+Apply this to all summaries, change logs, and "Output Required" responses.
