@@ -1,6 +1,6 @@
 # iRexPro — Implementation Roadmap
 
-## Current Phase: Phase 0 Complete — Architecture Foundation
+## Current Phase: Phase 1 Sprint 6 Complete — Realtime Event Layer + Strategy Orchestrator
 
 ---
 
@@ -96,6 +96,26 @@ Tasks (in order):
    - Lint check
    - Unit tests
    - Build check
+
+---
+
+### ✅ Sprint 1 — NestJS Backend Foundation (COMPLETE)
+### ✅ Sprint 2 — Broker Adapter Layer (COMPLETE)
+### ✅ Sprint 3 — MetaTrader Live Adapter (COMPLETE)
+### ✅ Sprint 4 — Risk Engine Foundation (COMPLETE)
+### ✅ Sprint 5 — Trade Execution Engine (COMPLETE)
+### ✅ Sprint 5C — Stabilization (all tests passing, no open handles) (COMPLETE)
+### ✅ Sprint 6 — Realtime Event Layer + Strategy Orchestrator + AI Signal Flow (COMPLETE)
+
+**Sprint 6 delivered:**
+- `EventsModule` — global in-memory `DomainEventBus` for decoupled event wiring
+- `RealtimeModule` — Socket.IO gateway (`/realtime`), JWT WebSocket auth, user/session rooms
+- `StrategyModule` — `StrategyOrchestratorService` (full gate chain: structure → confidence → session → subscription → broker → Risk → Execution)
+- `AiModule` — `AiSignalService`, `AiController` with DEV-ONLY `POST /ai/dev/simulate-signal`
+- `TradingModule` — full session management: `POST /trading/sessions/start|stop`, `GET /active|:id`
+- Domain events wired into `ExecutionService`, `RiskService`, `BrokerService`, `TradingService`
+- **234 tests passing, 17 suites, 0 open handles**
+- Build: ✅ `pnpm api:build` passes
 
 ---
 

@@ -359,3 +359,44 @@ SignalAuditEntry {
 ```
 
 This audit chain allows complete reconstruction of why any trade was or was not opened at any point in time.
+
+---
+
+## 12. Sprint 6 — NestJS Signal Intake Foundation (Implemented)
+
+The following components were implemented in Sprint 6 as the NestJS signal intake layer:
+
+### AiSignalCandidate Interface
+
+Defined in `apps/api/src/modules/strategy/interfaces/strategy.interface.ts`. Fields:
+`signalId`, `userId`, `tradingSessionId`, `brokerConnectionId`, `instrument`, `direction`,
+`confidenceScore` (0–1), `suggestedStopLoss`, `suggestedTakeProfit`, `suggestedVolume`,
+`timeframe`, `strategyCode`, `marketRegime`, `volatilityScore`, `generatedAt`, `modelVersion`, `metadata`.
+
+### AiSignalService (`apps/api/src/modules/ai/ai-signal.service.ts`)
+
+- `receiveSignal(candidate)` — validates structure, audit-logs, publishes `AI_SIGNAL_RECEIVED` event, forwards to orchestrator
+- `validateCandidate(candidate)` — structural validation (not execution)
+- `forwardToStrategyOrchestrator(candidate)` — the ONLY forwarding path; never calls ExecutionService directly
+- `buildSimulatedCandidate(userId, dto)` — used by dev simulate endpoint
+
+### StrategyOrchestratorService (`apps/api/src/modules/strategy/strategy-orchestrator.service.ts`)
+
+Full gate chain (fail at any gate = no execution):
+1. Signal structure validation
+2. Confidence threshold (≥ 0.6 required)
+3. Trading session active
+4. Subscription allows AI auto trading
+5. Broker connection active
+6. Risk Engine (`RiskService.validateProposedTrade()`) — MANDATORY
+7. Execution Engine (`ExecutionService.executeTrade()`) — only on APPROVED
+
+### Dev Simulate Endpoint
+
+```
+POST /api/v1/ai/dev/simulate-signal
+```
+- **DISABLED in production** (`NODE_ENV === 'production'` → 403)
+- Requires JWT authentication
+- Routes through full pipeline (no shortcuts)
+- Audit-logged with `source: 'dev-simulate'`

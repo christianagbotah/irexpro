@@ -6,14 +6,16 @@ import { BrokerService } from '../broker/broker.service';
 import { AuditService } from '../audit/audit.service';
 import { UpdateRiskProfileDto } from './dto/update-risk-profile.dto';
 import { ExecutionService } from '../execution/execution.service';
+import { DomainEventBus } from '../events/event-bus.service';
 export declare class RiskService {
     private profileRepo;
     private violationRepo;
     private brokerService;
     private auditService;
     private executionService;
+    private readonly eventBus;
     private readonly logger;
-    constructor(profileRepo: Repository<RiskProfile>, violationRepo: Repository<RiskViolation>, brokerService: BrokerService, auditService: AuditService, executionService: ExecutionService);
+    constructor(profileRepo: Repository<RiskProfile>, violationRepo: Repository<RiskViolation>, brokerService: BrokerService, auditService: AuditService, executionService: ExecutionService, eventBus: DomainEventBus);
     validateProposedTrade(userId: string, trade: ProposedTrade): Promise<RiskDecision>;
     private runValidationPipeline;
     isKillSwitchActive(userId: string): Promise<boolean>;

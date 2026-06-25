@@ -29,6 +29,9 @@ const ai_module_1 = require("./modules/ai/ai.module");
 const risk_module_1 = require("./modules/risk/risk.module");
 const execution_module_1 = require("./modules/execution/execution.module");
 const trading_module_1 = require("./modules/trading/trading.module");
+const events_module_1 = require("./modules/events/events.module");
+const realtime_module_1 = require("./modules/realtime/realtime.module");
+const strategy_module_1 = require("./modules/strategy/strategy.module");
 const health_module_1 = require("./health/health.module");
 let AppModule = class AppModule {
 };
@@ -74,6 +77,7 @@ exports.AppModule = AppModule = __decorate([
                     extra: { max: configService.get('database.maxConnections') },
                 }),
             }),
+            events_module_1.EventsModule,
             auth_module_1.AuthModule,
             users_module_1.UsersModule,
             audit_module_1.AuditModule,
@@ -82,10 +86,12 @@ exports.AppModule = AppModule = __decorate([
             payments_module_1.PaymentsModule,
             notifications_module_1.NotificationsModule,
             broker_module_1.BrokerModule,
-            ai_module_1.AiModule,
             risk_module_1.RiskModule,
             execution_module_1.ExecutionModule,
             trading_module_1.TradingModule,
+            strategy_module_1.StrategyModule,
+            ai_module_1.AiModule,
+            realtime_module_1.RealtimeModule,
             health_module_1.HealthModule,
         ],
         providers: [

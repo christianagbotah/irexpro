@@ -25,15 +25,18 @@ const audit_service_1 = require("../audit/audit.service");
 const audit_action_enum_1 = require("../../common/enums/audit-action.enum");
 const audit_log_entity_1 = require("../audit/entities/audit-log.entity");
 const execution_service_1 = require("../execution/execution.service");
+const event_bus_service_1 = require("../events/event-bus.service");
+const domain_event_type_enum_1 = require("../events/enums/domain-event-type.enum");
 const DEFAULT_PIP_SIZE = 0.00010;
 const JPY_PIP_SIZE = 0.01000;
 let RiskService = RiskService_1 = class RiskService {
-    constructor(profileRepo, violationRepo, brokerService, auditService, executionService) {
+    constructor(profileRepo, violationRepo, brokerService, auditService, executionService, eventBus) {
         this.profileRepo = profileRepo;
         this.violationRepo = violationRepo;
         this.brokerService = brokerService;
         this.auditService = auditService;
         this.executionService = executionService;
+        this.eventBus = eventBus;
         this.logger = new common_1.Logger(RiskService_1.name);
     }
     async validateProposedTrade(userId, trade) {
@@ -213,6 +216,12 @@ let RiskService = RiskService_1 = class RiskService {
         };
         this.logger.log(`Signal ${trade.signalId} APPROVED for user ${userId} ` +
             `(instrument=${trade.instrument}, lots=${effectiveLotSize}, rules=${appliedRules.length})`);
+        this.eventBus.publish(domain_event_type_enum_1.DomainEventType.RISK_SIGNAL_APPROVED, userId, {
+            userId,
+            instrument: trade.instrument,
+            direction: trade.direction,
+            decision: 'APPROVED',
+        });
         return result;
     }
     async isKillSwitchActive(userId) {
@@ -383,6 +392,7 @@ exports.RiskService = RiskService = RiskService_1 = __decorate([
         typeorm_2.Repository,
         broker_service_1.BrokerService,
         audit_service_1.AuditService,
-        execution_service_1.ExecutionService])
+        execution_service_1.ExecutionService,
+        event_bus_service_1.DomainEventBus])
 ], RiskService);
 //# sourceMappingURL=risk.service.js.map

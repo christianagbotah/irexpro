@@ -379,13 +379,65 @@ metadata: Record<string, unknown> | null;
 
 ---
 
+---
+
+## Rule N+1 — WebSocket Payload Safety (Sprint 6)
+
+**WebSocket events MUST NEVER include:**
+- Broker credentials or encrypted credential fields
+- Raw access tokens or refresh tokens
+- Full internal error stack traces
+- Private keys, secrets, or API keys
+
+**Allowed in WebSocket payloads:**
+- Safe IDs (tradeId, sessionId, connectionId, signalId)
+- Status strings, timestamps, reason codes
+- User-facing messages (non-technical)
+- Numeric values safe for display (prices, volumes, P&L)
+
+**Implementation:** All payloads pass through `RealtimeService` methods which enforce this via typed interfaces. Direct `server.emit()` calls outside `RealtimeService` are prohibited.
+
+---
+
+## Rule N+2 — Strategy Orchestrator is Mandatory (Sprint 6)
+
+**The AI Signal Service MUST forward all signals through `StrategyOrchestratorService.processSignal()`.**
+
+No module may call `ExecutionService.executeTrade()` or `RiskService.validateProposedTrade()` based on a raw AI signal without passing through the Strategy Orchestrator first.
+
+The Orchestrator enforces the full gate chain:
+```
+Signal structure → Confidence threshold → Session active → Subscription gate →
+Broker connection → Risk Engine → Execution Engine
+```
+
+**The dev simulate-signal endpoint (`POST /ai/dev/simulate-signal`) is DISABLED in production.**
+
+---
+
+## Rule N+3 — DomainEventBus for Cross-Module Events (Sprint 6)
+
+**Business modules (ExecutionModule, RiskModule, BrokerModule, TradingModule) MUST publish domain events via `DomainEventBus.publish()`, not by directly injecting `RealtimeService` or `RealtimeGateway`.**
+
+This prevents circular dependency chains. `RealtimeService` subscribes to the event bus in `onModuleInit` and forwards events to WebSocket clients.
+
+```typescript
+// Correct
+this.eventBus.publish(DomainEventType.TRADE_OPENED, userId, safePayload);
+
+// Forbidden — creates circular dependency
+this.realtimeService.emitToUser(userId, RealtimeEvent.TRADE_OPENED, payload);
+```
+
+---
+
 ## Code Review Checklist
 
 Before approving any PR touching trading, risk, financial, payment, or regional logic:
 
 - [ ] Risk Engine cannot be bypassed by this change
 - [ ] No monetary calculations use native float/number arithmetic
-- [ ] No broker credentials are exposed in any response
+- [ ] No broker credentials are exposed in any response or WebSocket payload
 - [ ] Audit log entries are created for all state changes
 - [ ] Idempotency is handled for any order-related changes
 - [ ] Performance fee calculation is not affected by deposit events
@@ -398,3 +450,7 @@ Before approving any PR touching trading, risk, financial, payment, or regional 
 - [ ] SMS sent via `ISmsProvider` interface, not direct provider SDK call
 - [ ] Webhook handler validates signature before processing
 - [ ] New country activation requires CountryConfig update, not code change
+- [ ] WebSocket payloads use typed interfaces from `realtime-payloads.interface.ts`
+- [ ] No direct AI signal → Execution bypass exists in the change
+- [ ] Domain events published via `DomainEventBus`, not direct `RealtimeService` injection
+- [ ] Dev-only endpoints check `NODE_ENV !== 'production'`

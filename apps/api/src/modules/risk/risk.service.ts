@@ -18,6 +18,8 @@ import { AuditAction } from '../../common/enums/audit-action.enum';
 import { AuditSeverity } from '../audit/entities/audit-log.entity';
 import { UpdateRiskProfileDto } from './dto/update-risk-profile.dto';
 import { ExecutionService } from '../execution/execution.service';
+import { DomainEventBus } from '../events/event-bus.service';
+import { DomainEventType } from '../events/enums/domain-event-type.enum';
 
 /** Default pip size for standard 5-digit pairs (EURUSD, GBPUSD, etc.) */
 const DEFAULT_PIP_SIZE = 0.00010;
@@ -60,6 +62,7 @@ export class RiskService {
     private auditService: AuditService,
     @Inject(forwardRef(() => ExecutionService))
     private executionService: ExecutionService,
+    private readonly eventBus: DomainEventBus,
   ) {}
 
   // ─── Main validation entry point ──────────────────────────────────────────
@@ -411,6 +414,13 @@ export class RiskService {
       `Signal ${trade.signalId} APPROVED for user ${userId} ` +
         `(instrument=${trade.instrument}, lots=${effectiveLotSize}, rules=${appliedRules.length})`,
     );
+
+    this.eventBus.publish(DomainEventType.RISK_SIGNAL_APPROVED, userId, {
+      userId,
+      instrument: trade.instrument,
+      direction: trade.direction,
+      decision: 'APPROVED',
+    });
 
     return result;
   }

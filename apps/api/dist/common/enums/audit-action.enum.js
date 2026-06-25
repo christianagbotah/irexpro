@@ -55,5 +55,9 @@ var AuditAction;
     AuditAction["TRADE_RECONCILED"] = "TRADE_RECONCILED";
     AuditAction["AI_TRADING_ENABLED"] = "AI_TRADING_ENABLED";
     AuditAction["AI_TRADING_DISABLED"] = "AI_TRADING_DISABLED";
+    AuditAction["AI_SIGNAL_RECEIVED"] = "AI_SIGNAL_RECEIVED";
+    AuditAction["AI_SIGNAL_RISK_REJECTED"] = "AI_SIGNAL_RISK_REJECTED";
+    AuditAction["AI_SIGNAL_EXECUTED"] = "AI_SIGNAL_EXECUTED";
+    AuditAction["AI_SIGNAL_EXECUTION_FAILED"] = "AI_SIGNAL_EXECUTION_FAILED";
 })(AuditAction || (exports.AuditAction = AuditAction = {}));
 //# sourceMappingURL=audit-action.enum.js.map

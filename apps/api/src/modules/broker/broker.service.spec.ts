@@ -13,6 +13,7 @@ import {
   BrokerConnectionStatus,
   BrokerMode,
 } from './interfaces/broker-adapter.interface';
+import { DomainEventBus } from '../events/event-bus.service';
 
 // ─── Mock factories ───────────────────────────────────────────────────────────
 
@@ -57,6 +58,11 @@ const mockAudit = () => ({
   log: jest.fn().mockResolvedValue(undefined),
 });
 
+const mockEventBus = () => ({
+  publish: jest.fn(),
+  subscribe: jest.fn().mockReturnValue(() => {}),
+});
+
 // ─── Connected-connection fixture with full credentials ───────────────────────
 
 const connectedConnection = (overrides: Partial<Record<string, unknown>> = {}) => ({
@@ -96,6 +102,7 @@ describe('BrokerService', () => {
         { provide: CredentialEncryptionService, useFactory: mockEncryption },
         { provide: AuditService, useFactory: mockAudit },
         { provide: DataSource, useValue: {} },
+        { provide: DomainEventBus, useFactory: mockEventBus },
       ],
     }).compile();
 

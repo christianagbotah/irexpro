@@ -1,0 +1,243 @@
+import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { Server } from 'socket.io';
+import { DomainEventBus } from '../events/event-bus.service';
+import { DomainEventType } from '../events/enums/domain-event-type.enum';
+import {
+  TradingSessionEventPayload,
+  TradeEventPayload,
+  RiskDecisionEventPayload,
+  BrokerStatusEventPayload,
+  AiSignalEventPayload,
+  SystemNotificationPayload,
+} from '../events/interfaces/domain-event.interface';
+import { RealtimeEvent } from './events/realtime-event.enum';
+
+/**
+ * RealtimeService — Manages WebSocket room membership and event emission.
+ *
+ * This service:
+ *   1. Subscribes to DomainEventBus events in onModuleInit
+ *   2. Forwards events to the appropriate Socket.IO rooms
+ *   3. Provides explicit emit methods for services that need direct emission
+ *
+ * Room naming convention:
+ *   user:{userId}              — per-user room
+ *   trading-session:{sessionId} — per-session room
+ *   admin:global               — admin broadcast room
+ *
+ * Payload safety: no credentials, no tokens, no stack traces ever emitted.
+ *
+ * See: docs/architecture/06-realtime-event-layer.md
+ */
+@Injectable()
+export class RealtimeService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(RealtimeService.name);
+  private server: Server | null = null;
+  private readonly unsubscribers: Array<() => void> = [];
+
+  constructor(private readonly eventBus: DomainEventBus) {}
+
+  /**
+   * Called by RealtimeGateway once the WebSocket server is ready.
+   */
+  setServer(server: Server): void {
+    this.server = server;
+  }
+
+  onModuleInit(): void {
+    this.subscribeToEvents();
+    this.logger.log('RealtimeService subscribed to DomainEventBus');
+  }
+
+  onModuleDestroy(): void {
+    this.unsubscribers.forEach((unsub) => unsub());
+    this.unsubscribers.length = 0;
+  }
+
+  // ─── Direct emit methods ───────────────────────────────────────────────────
+
+  emitToUser(userId: string, event: RealtimeEvent, payload: Record<string, unknown>): void {
+    if (!this.server) return;
+    this.server.to(`user:${userId}`).emit(event, payload);
+    this.logger.debug(`Emitted ${event} to user:${userId}`);
+  }
+
+  emitToTradingSession(sessionId: string, event: RealtimeEvent, payload: Record<string, unknown>): void {
+    if (!this.server) return;
+    this.server.to(`trading-session:${sessionId}`).emit(event, payload);
+    this.logger.debug(`Emitted ${event} to trading-session:${sessionId}`);
+  }
+
+  emitToAdmins(event: RealtimeEvent, payload: Record<string, unknown>): void {
+    if (!this.server) return;
+    this.server.to('admin:global').emit(event, payload);
+    this.logger.debug(`Emitted ${event} to admin:global`);
+  }
+
+  // ─── DomainEventBus subscriptions ─────────────────────────────────────────
+
+  private subscribeToEvents(): void {
+    this.unsubscribers.push(
+      this.eventBus.subscribe<TradingSessionEventPayload>(
+        DomainEventType.TRADING_SESSION_STARTED,
+        ({ userId, payload }) => {
+          this.emitToUser(userId, RealtimeEvent.TRADING_SESSION_STARTED, {
+            sessionId: payload.sessionId,
+            brokerConnectionId: payload.brokerConnectionId,
+            status: payload.status,
+            startedAt: payload.startedAt,
+          });
+        },
+      ),
+
+      this.eventBus.subscribe<TradingSessionEventPayload>(
+        DomainEventType.TRADING_SESSION_STOPPED,
+        ({ userId, payload }) => {
+          this.emitToUser(userId, RealtimeEvent.TRADING_SESSION_STOPPED, {
+            sessionId: payload.sessionId,
+            status: payload.status,
+            endedAt: payload.endedAt,
+          });
+        },
+      ),
+
+      this.eventBus.subscribe<TradeEventPayload>(
+        DomainEventType.TRADE_PENDING,
+        ({ userId, payload }) => {
+          this.emitToUser(userId, RealtimeEvent.TRADE_PENDING, {
+            tradeId: payload.tradeId,
+            instrument: payload.instrument,
+            direction: payload.direction,
+            volume: payload.volume,
+            status: payload.status,
+          });
+        },
+      ),
+
+      this.eventBus.subscribe<TradeEventPayload>(
+        DomainEventType.TRADE_OPENED,
+        ({ userId, payload }) => {
+          this.emitToUser(userId, RealtimeEvent.TRADE_OPENED, {
+            tradeId: payload.tradeId,
+            instrument: payload.instrument,
+            direction: payload.direction,
+            volume: payload.volume,
+            entryPrice: payload.entryPrice,
+            status: payload.status,
+          });
+          if (payload.sessionId) {
+            this.emitToTradingSession(payload.sessionId, RealtimeEvent.TRADE_OPENED, {
+              tradeId: payload.tradeId,
+              instrument: payload.instrument,
+              direction: payload.direction,
+              volume: payload.volume,
+              entryPrice: payload.entryPrice,
+              status: payload.status,
+            });
+          }
+        },
+      ),
+
+      this.eventBus.subscribe<TradeEventPayload>(
+        DomainEventType.TRADE_REJECTED,
+        ({ userId, payload }) => {
+          this.emitToUser(userId, RealtimeEvent.TRADE_REJECTED, {
+            tradeId: payload.tradeId,
+            instrument: payload.instrument,
+            direction: payload.direction,
+            reason: payload.reason,
+            status: payload.status,
+          });
+        },
+      ),
+
+      this.eventBus.subscribe<TradeEventPayload>(
+        DomainEventType.TRADE_CLOSED,
+        ({ userId, payload }) => {
+          this.emitToUser(userId, RealtimeEvent.TRADE_CLOSED, {
+            tradeId: payload.tradeId,
+            instrument: payload.instrument,
+            direction: payload.direction,
+            exitPrice: payload.exitPrice,
+            realisedPnl: payload.realisedPnl,
+            reason: payload.reason,
+            status: payload.status,
+          });
+        },
+      ),
+
+      this.eventBus.subscribe<RiskDecisionEventPayload>(
+        DomainEventType.RISK_SIGNAL_APPROVED,
+        ({ userId, payload }) => {
+          this.emitToUser(userId, RealtimeEvent.RISK_SIGNAL_APPROVED, {
+            instrument: payload.instrument,
+            direction: payload.direction,
+            decision: payload.decision,
+          });
+        },
+      ),
+
+      this.eventBus.subscribe<RiskDecisionEventPayload>(
+        DomainEventType.RISK_SIGNAL_REJECTED,
+        ({ userId, payload }) => {
+          this.emitToUser(userId, RealtimeEvent.RISK_SIGNAL_REJECTED, {
+            instrument: payload.instrument,
+            direction: payload.direction,
+            decision: payload.decision,
+            rejectionCode: payload.rejectionCode,
+            rejectionReason: payload.rejectionReason,
+          });
+        },
+      ),
+
+      this.eventBus.subscribe<BrokerStatusEventPayload>(
+        DomainEventType.BROKER_STATUS_CHANGED,
+        ({ userId, payload }) => {
+          this.emitToUser(userId, RealtimeEvent.BROKER_CONNECTION_STATUS_CHANGED, {
+            connectionId: payload.connectionId,
+            status: payload.status,
+            previousStatus: payload.previousStatus,
+            reason: payload.reason,
+          });
+        },
+      ),
+
+      this.eventBus.subscribe<AiSignalEventPayload>(
+        DomainEventType.AI_SIGNAL_RECEIVED,
+        ({ userId, payload }) => {
+          this.emitToUser(userId, RealtimeEvent.AI_SIGNAL_RECEIVED, {
+            signalId: payload.signalId,
+            instrument: payload.instrument,
+            direction: payload.direction,
+            confidenceScore: payload.confidenceScore,
+            strategyCode: payload.strategyCode,
+          });
+        },
+      ),
+
+      this.eventBus.subscribe<AiSignalEventPayload>(
+        DomainEventType.AI_SIGNAL_IGNORED,
+        ({ userId, payload }) => {
+          this.emitToUser(userId, RealtimeEvent.AI_SIGNAL_IGNORED, {
+            signalId: payload.signalId,
+            instrument: payload.instrument,
+            direction: payload.direction,
+            ignoredReason: payload.ignoredReason,
+          });
+        },
+      ),
+
+      this.eventBus.subscribe<SystemNotificationPayload>(
+        DomainEventType.SYSTEM_NOTIFICATION,
+        ({ userId, payload }) => {
+          this.emitToUser(userId, RealtimeEvent.SYSTEM_NOTIFICATION, {
+            title: payload.title,
+            message: payload.message,
+            severity: payload.severity,
+            code: payload.code,
+          });
+        },
+      ),
+    );
+  }
+}

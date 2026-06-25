@@ -9,13 +9,25 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.TradingModule = void 0;
 const common_1 = require("@nestjs/common");
 const trading_service_1 = require("./trading.service");
+const trading_controller_1 = require("./trading.controller");
 const broker_module_1 = require("../broker/broker.module");
+const subscriptions_module_1 = require("../subscriptions/subscriptions.module");
+const risk_module_1 = require("../risk/risk.module");
+const execution_module_1 = require("../execution/execution.module");
+const audit_module_1 = require("../audit/audit.module");
 let TradingModule = class TradingModule {
 };
 exports.TradingModule = TradingModule;
 exports.TradingModule = TradingModule = __decorate([
     (0, common_1.Module)({
-        imports: [broker_module_1.BrokerModule],
+        imports: [
+            broker_module_1.BrokerModule,
+            subscriptions_module_1.SubscriptionsModule,
+            risk_module_1.RiskModule,
+            (0, common_1.forwardRef)(() => execution_module_1.ExecutionModule),
+            audit_module_1.AuditModule,
+        ],
+        controllers: [trading_controller_1.TradingController],
         providers: [trading_service_1.TradingService],
         exports: [trading_service_1.TradingService],
     })

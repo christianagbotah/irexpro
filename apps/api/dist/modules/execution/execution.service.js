@@ -27,11 +27,13 @@ const audit_service_1 = require("../audit/audit.service");
 const audit_action_enum_1 = require("../../common/enums/audit-action.enum");
 const audit_log_entity_1 = require("../audit/entities/audit-log.entity");
 const broker_adapter_errors_1 = require("../broker/interfaces/broker-adapter.errors");
+const event_bus_service_1 = require("../events/event-bus.service");
+const domain_event_type_enum_1 = require("../events/enums/domain-event-type.enum");
 const EXECUTION_TIMEOUT_MS = 10_000;
 const MAX_RETRY_ATTEMPTS = 3;
 const RETRY_DELAYS_MS = [1_000, 3_000, 9_000];
 let ExecutionService = ExecutionService_1 = class ExecutionService {
-    constructor(tradeRepo, sessionRepo, brokerService, adapterRegistry, encryptionService, auditService, dataSource) {
+    constructor(tradeRepo, sessionRepo, brokerService, adapterRegistry, encryptionService, auditService, dataSource, eventBus) {
         this.tradeRepo = tradeRepo;
         this.sessionRepo = sessionRepo;
         this.brokerService = brokerService;
@@ -39,6 +41,7 @@ let ExecutionService = ExecutionService_1 = class ExecutionService {
         this.encryptionService = encryptionService;
         this.auditService = auditService;
         this.dataSource = dataSource;
+        this.eventBus = eventBus;
         this.logger = new common_1.Logger(ExecutionService_1.name);
     }
     async executeTrade(userId, riskDecision) {
@@ -92,6 +95,14 @@ let ExecutionService = ExecutionService_1 = class ExecutionService {
                 signalId,
             },
         });
+        this.eventBus.publish(domain_event_type_enum_1.DomainEventType.TRADE_PENDING, userId, {
+            tradeId: trade.id,
+            userId,
+            instrument: order.instrument,
+            direction: order.direction,
+            volume: order.lotSize,
+            status: 'PENDING',
+        });
         try {
             const credentials = this.encryptionService.decrypt({
                 ciphertext: connection.encryptedCredentials,
@@ -138,6 +149,15 @@ let ExecutionService = ExecutionService_1 = class ExecutionService {
                 });
                 this.logger.log(`Trade OPENED: id=${trade.id} externalId=${result.externalOrderId} ` +
                     `${order.direction} ${order.instrument} ${order.lotSize} lots`);
+                this.eventBus.publish(domain_event_type_enum_1.DomainEventType.TRADE_OPENED, userId, {
+                    tradeId: trade.id,
+                    userId,
+                    instrument: order.instrument,
+                    direction: order.direction,
+                    volume: order.lotSize,
+                    entryPrice: result.filledPrice ?? order.entryPrice,
+                    status: 'OPEN',
+                });
             }
             else {
                 await this.tradeRepo.update(trade.id, {
@@ -152,6 +172,15 @@ let ExecutionService = ExecutionService_1 = class ExecutionService {
                     resourceId: trade.id,
                     metadata: { brokerMessage: result.brokerMessage, signalId },
                     severity: audit_log_entity_1.AuditSeverity.WARNING,
+                });
+                this.eventBus.publish(domain_event_type_enum_1.DomainEventType.TRADE_REJECTED, userId, {
+                    tradeId: trade.id,
+                    userId,
+                    instrument: order.instrument,
+                    direction: order.direction,
+                    volume: order.lotSize,
+                    status: 'REJECTED',
+                    reason: result.brokerMessage ?? 'Broker rejected order',
                 });
             }
         }
@@ -169,6 +198,15 @@ let ExecutionService = ExecutionService_1 = class ExecutionService {
                 resourceId: trade.id,
                 metadata: { error: err.message, status: 'RECONCILIATION_PENDING' },
                 severity: audit_log_entity_1.AuditSeverity.CRITICAL,
+            });
+            this.eventBus.publish(domain_event_type_enum_1.DomainEventType.TRADE_RECONCILIATION_PENDING, userId, {
+                tradeId: trade.id,
+                userId,
+                instrument: order.instrument,
+                direction: order.direction,
+                volume: order.lotSize,
+                status: 'RECONCILIATION_PENDING',
+                reason: err.message,
             });
         }
         return trade;
@@ -260,6 +298,9 @@ let ExecutionService = ExecutionService_1 = class ExecutionService {
     async getActiveSession(userId) {
         return this.sessionRepo.findOne({ where: { userId, status: trading_session_entity_1.TradingSessionStatus.ACTIVE } });
     }
+    async findSessionById(sessionId) {
+        return this.sessionRepo.findOne({ where: { id: sessionId } });
+    }
     generateIdempotencyKey(userId, instrument, direction, signalId) {
         return crypto
             .createHash('sha256')
@@ -304,6 +345,7 @@ exports.ExecutionService = ExecutionService = ExecutionService_1 = __decorate([
         broker_adapter_registry_1.BrokerAdapterRegistry,
         credential_encryption_service_1.CredentialEncryptionService,
         audit_service_1.AuditService,
-        typeorm_2.DataSource])
+        typeorm_2.DataSource,
+        event_bus_service_1.DomainEventBus])
 ], ExecutionService);
 //# sourceMappingURL=execution.service.js.map

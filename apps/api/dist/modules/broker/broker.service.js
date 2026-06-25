@@ -26,13 +26,16 @@ const broker_adapter_errors_1 = require("./interfaces/broker-adapter.errors");
 const audit_service_1 = require("../audit/audit.service");
 const audit_action_enum_1 = require("../../common/enums/audit-action.enum");
 const audit_log_entity_1 = require("../audit/entities/audit-log.entity");
+const event_bus_service_1 = require("../events/event-bus.service");
+const domain_event_type_enum_1 = require("../events/enums/domain-event-type.enum");
 let BrokerService = BrokerService_1 = class BrokerService {
-    constructor(connectionRepo, accountRepo, adapterRegistry, encryptionService, auditService) {
+    constructor(connectionRepo, accountRepo, adapterRegistry, encryptionService, auditService, eventBus) {
         this.connectionRepo = connectionRepo;
         this.accountRepo = accountRepo;
         this.adapterRegistry = adapterRegistry;
         this.encryptionService = encryptionService;
         this.auditService = auditService;
+        this.eventBus = eventBus;
         this.logger = new common_1.Logger(BrokerService_1.name);
     }
     async findConnectionsByUser(userId) {
@@ -337,6 +340,13 @@ let BrokerService = BrokerService_1 = class BrokerService {
                     },
                     severity: audit_log_entity_1.AuditSeverity.CRITICAL,
                 });
+                this.eventBus.publish(domain_event_type_enum_1.DomainEventType.BROKER_STATUS_CHANGED, connection.userId, {
+                    userId: connection.userId,
+                    connectionId,
+                    status: broker_adapter_interface_1.BrokerConnectionStatus.SUSPENDED,
+                    previousStatus: broker_adapter_interface_1.BrokerConnectionStatus.CONNECTED,
+                    reason: `Suspended after ${failureCount} consecutive health check failures`,
+                });
             }
             return false;
         }
@@ -390,6 +400,7 @@ exports.BrokerService = BrokerService = BrokerService_1 = __decorate([
         typeorm_2.Repository,
         broker_adapter_registry_1.BrokerAdapterRegistry,
         credential_encryption_service_1.CredentialEncryptionService,
-        audit_service_1.AuditService])
+        audit_service_1.AuditService,
+        event_bus_service_1.DomainEventBus])
 ], BrokerService);
 //# sourceMappingURL=broker.service.js.map

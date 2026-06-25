@@ -5,14 +5,16 @@ import { BrokerAdapterRegistry } from './adapters/broker-adapter.registry';
 import { CredentialEncryptionService } from './services/credential-encryption.service';
 import { AuditService } from '../audit/audit.service';
 import { ConnectBrokerDto } from './dto/connect-broker.dto';
+import { DomainEventBus } from '../events/event-bus.service';
 export declare class BrokerService {
     private connectionRepo;
     private accountRepo;
     private adapterRegistry;
     private encryptionService;
     private auditService;
+    private readonly eventBus;
     private readonly logger;
-    constructor(connectionRepo: Repository<BrokerConnection>, accountRepo: Repository<BrokerAccount>, adapterRegistry: BrokerAdapterRegistry, encryptionService: CredentialEncryptionService, auditService: AuditService);
+    constructor(connectionRepo: Repository<BrokerConnection>, accountRepo: Repository<BrokerAccount>, adapterRegistry: BrokerAdapterRegistry, encryptionService: CredentialEncryptionService, auditService: AuditService, eventBus: DomainEventBus);
     findConnectionsByUser(userId: string): Promise<BrokerConnection[]>;
     findConnectionById(connectionId: string, userId: string): Promise<BrokerConnection>;
     findActiveConnectionForUser(userId: string): Promise<BrokerConnection | null>;

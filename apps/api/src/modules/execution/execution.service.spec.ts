@@ -11,6 +11,7 @@ import { CredentialEncryptionService } from '../broker/services/credential-encry
 import { AuditService } from '../audit/audit.service';
 import { RiskDecision, RiskRejectionCode } from '../risk/interfaces/risk.interface';
 import { BrokerConnectionStatus, BrokerMode } from '../broker/interfaces/broker-adapter.interface';
+import { DomainEventBus } from '../events/event-bus.service';
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -123,6 +124,7 @@ describe('ExecutionService', () => {
         },
         { provide: AuditService, useValue: auditService },
         { provide: DataSource, useValue: dataSource },
+        { provide: DomainEventBus, useValue: { publish: jest.fn(), subscribe: jest.fn().mockReturnValue(() => {}) } },
       ],
     }).compile();
 

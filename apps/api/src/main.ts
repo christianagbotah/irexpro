@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { NestFactory, Reflector } from '@nestjs/core';
 import { ValidationPipe, ClassSerializerInterceptor, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { IoAdapter } from '@nestjs/platform-socket.io';
 import helmet from 'helmet';
 import * as compression from 'compression';
 import * as cookieParser from 'cookie-parser';
@@ -19,6 +20,7 @@ async function bootstrap() {
   const env = configService.get<string>('app.env', 'development');
 
   app.setGlobalPrefix(apiPrefix);
+  app.useWebSocketAdapter(new IoAdapter(app));
 
   // Security
   app.use(helmet());

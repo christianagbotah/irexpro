@@ -23,6 +23,9 @@ import { AiModule } from './modules/ai/ai.module';
 import { RiskModule } from './modules/risk/risk.module';
 import { ExecutionModule } from './modules/execution/execution.module';
 import { TradingModule } from './modules/trading/trading.module';
+import { EventsModule } from './modules/events/events.module';
+import { RealtimeModule } from './modules/realtime/realtime.module';
+import { StrategyModule } from './modules/strategy/strategy.module';
 import { HealthModule } from './health/health.module';
 
 @Module({
@@ -65,6 +68,7 @@ import { HealthModule } from './health/health.module';
         extra: { max: configService.get<number>('database.maxConnections') },
       }),
     }),
+    EventsModule,
     AuthModule,
     UsersModule,
     AuditModule,
@@ -73,10 +77,12 @@ import { HealthModule } from './health/health.module';
     PaymentsModule,
     NotificationsModule,
     BrokerModule,
-    AiModule,
     RiskModule,
     ExecutionModule,
     TradingModule,
+    StrategyModule,
+    AiModule,
+    RealtimeModule,
     HealthModule,
   ],
   providers: [

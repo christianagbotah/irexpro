@@ -8,6 +8,7 @@ import { BrokerService } from '../broker/broker.service';
 import { AuditService } from '../audit/audit.service';
 import { ExecutionService } from '../execution/execution.service';
 import { ProposedTrade, RiskRejectionCode } from './interfaces/risk.interface';
+import { DomainEventBus } from '../events/event-bus.service';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -95,6 +96,7 @@ describe('RiskService', () => {
         { provide: BrokerService, useFactory: mockBrokerService },
         { provide: AuditService, useFactory: mockAuditService },
         { provide: ExecutionService, useFactory: mockExecutionService },
+        { provide: DomainEventBus, useValue: { publish: jest.fn(), subscribe: jest.fn().mockReturnValue(() => {}) } },
       ],
     }).compile();
 

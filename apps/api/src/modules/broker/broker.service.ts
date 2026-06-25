@@ -21,6 +21,8 @@ import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../../common/enums/audit-action.enum';
 import { AuditSeverity } from '../audit/entities/audit-log.entity';
 import { ConnectBrokerDto } from './dto/connect-broker.dto';
+import { DomainEventBus } from '../events/event-bus.service';
+import { DomainEventType } from '../events/enums/domain-event-type.enum';
 
 /**
  * BrokerService — Core broker connection lifecycle management.
@@ -46,6 +48,7 @@ export class BrokerService {
     private adapterRegistry: BrokerAdapterRegistry,
     private encryptionService: CredentialEncryptionService,
     private auditService: AuditService,
+    private readonly eventBus: DomainEventBus,
   ) {}
 
   // ─── Read operations ──────────────────────────────────────────────────────
@@ -496,6 +499,13 @@ export class BrokerService {
             failureCount,
           },
           severity: AuditSeverity.CRITICAL,
+        });
+        this.eventBus.publish(DomainEventType.BROKER_STATUS_CHANGED, connection.userId, {
+          userId: connection.userId,
+          connectionId,
+          status: BrokerConnectionStatus.SUSPENDED,
+          previousStatus: BrokerConnectionStatus.CONNECTED,
+          reason: `Suspended after ${failureCount} consecutive health check failures`,
         });
       }
 

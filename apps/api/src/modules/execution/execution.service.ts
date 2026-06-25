@@ -17,6 +17,8 @@ import { AuditAction } from '../../common/enums/audit-action.enum';
 import { AuditSeverity } from '../audit/entities/audit-log.entity';
 import { BrokerOrderRequest } from '../broker/interfaces/broker-adapter.interface';
 import { RETRYABLE_BROKER_ERRORS } from '../broker/interfaces/broker-adapter.errors';
+import { DomainEventBus } from '../events/event-bus.service';
+import { DomainEventType } from '../events/enums/domain-event-type.enum';
 
 const EXECUTION_TIMEOUT_MS = 10_000;
 const MAX_RETRY_ATTEMPTS = 3;
@@ -57,6 +59,7 @@ export class ExecutionService {
     private encryptionService: CredentialEncryptionService,
     private auditService: AuditService,
     private dataSource: DataSource,
+    private readonly eventBus: DomainEventBus,
   ) {}
 
   // ─── Main entry point ────────────────────────────────────────────────────
@@ -144,6 +147,15 @@ export class ExecutionService {
       },
     });
 
+    this.eventBus.publish(DomainEventType.TRADE_PENDING, userId, {
+      tradeId: trade.id,
+      userId,
+      instrument: order.instrument,
+      direction: order.direction,
+      volume: order.lotSize,
+      status: 'PENDING',
+    });
+
     // ── Step 5: Prepare and submit order to broker ─────────────────────────
     try {
     const credentials = this.encryptionService.decrypt({
@@ -205,6 +217,16 @@ export class ExecutionService {
           `Trade OPENED: id=${trade.id} externalId=${result.externalOrderId} ` +
             `${order.direction} ${order.instrument} ${order.lotSize} lots`,
         );
+
+        this.eventBus.publish(DomainEventType.TRADE_OPENED, userId, {
+          tradeId: trade.id,
+          userId,
+          instrument: order.instrument,
+          direction: order.direction,
+          volume: order.lotSize,
+          entryPrice: result.filledPrice ?? order.entryPrice,
+          status: 'OPEN',
+        });
       } else {
         // ── Step 6b: Broker rejected ───────────────────────────────────────
         await this.tradeRepo.update(trade.id, {
@@ -221,6 +243,16 @@ export class ExecutionService {
           resourceId: trade.id,
           metadata: { brokerMessage: result.brokerMessage, signalId },
           severity: AuditSeverity.WARNING,
+        });
+
+        this.eventBus.publish(DomainEventType.TRADE_REJECTED, userId, {
+          tradeId: trade.id,
+          userId,
+          instrument: order.instrument,
+          direction: order.direction,
+          volume: order.lotSize,
+          status: 'REJECTED',
+          reason: result.brokerMessage ?? 'Broker rejected order',
         });
       }
     } catch (err) {
@@ -244,6 +276,16 @@ export class ExecutionService {
           resourceId: trade.id,
           metadata: { error: (err as Error).message, status: 'RECONCILIATION_PENDING' },
           severity: AuditSeverity.CRITICAL,
+        });
+
+        this.eventBus.publish(DomainEventType.TRADE_RECONCILIATION_PENDING, userId, {
+          tradeId: trade.id,
+          userId,
+          instrument: order.instrument,
+          direction: order.direction,
+          volume: order.lotSize,
+          status: 'RECONCILIATION_PENDING',
+          reason: (err as Error).message,
         });
     }
 
@@ -389,6 +431,10 @@ export class ExecutionService {
 
   async getActiveSession(userId: string): Promise<TradingSession | null> {
     return this.sessionRepo.findOne({ where: { userId, status: TradingSessionStatus.ACTIVE } });
+  }
+
+  async findSessionById(sessionId: string): Promise<TradingSession | null> {
+    return this.sessionRepo.findOne({ where: { id: sessionId } });
   }
 
   // ─── Internal helpers ─────────────────────────────────────────────────────
