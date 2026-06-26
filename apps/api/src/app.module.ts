@@ -27,6 +27,8 @@ import { EventsModule } from './modules/events/events.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
 import { StrategyModule } from './modules/strategy/strategy.module';
 import { HealthModule } from './health/health.module';
+import { MarketDataModule } from './modules/market-data/market-data.module';
+import { AiEngineClientModule } from './modules/ai-engine-client/ai-engine-client.module';
 
 @Module({
   imports: [
@@ -84,6 +86,8 @@ import { HealthModule } from './health/health.module';
     AiModule,
     RealtimeModule,
     HealthModule,
+    MarketDataModule,
+    AiEngineClientModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: AllExceptionsFilter },

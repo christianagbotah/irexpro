@@ -34,5 +34,7 @@ exports.validationSchema = Joi.object({
     BROKER_ENCRYPTION_KEY: Joi.string().min(32).required(),
     METAAPI_TOKEN: Joi.string().optional().allow(''),
     NESTJS_INTERNAL_API_KEY: Joi.string().optional().allow(''),
+    AI_ENGINE_BASE_URL: Joi.string().default('http://localhost:8001/api/v1'),
+    AI_ENGINE_SCHEDULER_ENABLED: Joi.boolean().default(false),
 });
 //# sourceMappingURL=validation.schema.js.map

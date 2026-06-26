@@ -54,5 +54,9 @@ exports.default = () => ({
     internalApi: {
         key: process.env.NESTJS_INTERNAL_API_KEY,
     },
+    aiEngine: {
+        baseUrl: process.env.AI_ENGINE_BASE_URL ?? 'http://localhost:8001/api/v1',
+        schedulerEnabled: process.env.AI_ENGINE_SCHEDULER_ENABLED === 'true',
+    },
 });
 //# sourceMappingURL=configuration.js.map

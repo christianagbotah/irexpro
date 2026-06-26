@@ -16,7 +16,7 @@ from app.domain.signals.signal_generator import SignalGenerator
 def make_generator() -> SignalGenerator:
     provider = MockMarketDataProvider()
     cache = OHLCVRedisCache(redis_client=None)
-    ohlcv_svc = OHLCVService(provider=provider, cache=cache)
+    ohlcv_svc = OHLCVService(mock_provider=provider, cache=cache)
     registry = build_default_registry()
     return SignalGenerator(ohlcv_service=ohlcv_svc, model_registry=registry)
 

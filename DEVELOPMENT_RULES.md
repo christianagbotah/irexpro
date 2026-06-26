@@ -451,6 +451,21 @@ Rules:
 
 ---
 
+## Rule 26 — Market Data & Scheduler Safety (Sprint 8+)
+
+**Python must never access broker credentials. All OHLCV flows through NestJS.**
+
+Rules:
+1. `BrokerMarketDataProvider` calls `GET /market-data/internal/ohlcv` only — never MetaAPI directly.
+2. `AI_SCHEDULER_ENABLED` and `AI_ENGINE_SCHEDULER_ENABLED` default to `false`.
+3. Scheduled generation is **paper mode only** — reject `mode=live` at scheduler endpoints.
+4. Mock market data is blocked in production unless `AI_ALLOW_MOCK_MARKET_DATA=true`.
+5. Redis OHLCV cache key format: `ai:ohlcv:{source}:{instrument}:{timeframe}` — never cache secrets.
+6. Offline training (`app/domain/training/`) is research-only — no startup training, no live approval.
+7. Trading session start/stop must not fail if AI engine notification fails (log warning only).
+
+---
+
 ## Rule 25 — NestJS Internal API Key Guard
 
 **The `POST /ai/internal/signals` endpoint must be protected by `InternalApiKeyGuard` only.**

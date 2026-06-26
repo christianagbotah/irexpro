@@ -351,6 +351,34 @@ let BrokerService = BrokerService_1 = class BrokerService {
             return false;
         }
     }
+    async getOhlcvForConnection(userId, brokerConnectionId, instrument, timeframe, limit) {
+        const connection = await this.findConnectionById(brokerConnectionId, userId);
+        if (connection.status !== broker_adapter_interface_1.BrokerConnectionStatus.CONNECTED) {
+            throw new common_1.ForbiddenException('Broker connection is not active');
+        }
+        const adapter = this.adapterRegistry.getAdapter(connection.brokerId);
+        if (!connection.encryptedCredentials ||
+            !connection.credentialIv ||
+            !connection.credentialTag) {
+            throw new common_1.ForbiddenException('Broker connection credentials unavailable');
+        }
+        const credentials = this.encryptionService.decrypt({
+            ciphertext: connection.encryptedCredentials,
+            iv: connection.credentialIv,
+            tag: connection.credentialTag,
+            keyId: connection.encryptionKeyId ?? 'env-key-v1',
+        });
+        adapter.setMode(connection.accountType);
+        try {
+            await adapter.connect(credentials);
+            return await adapter.getOHLCV(instrument, timeframe, limit);
+        }
+        catch (err) {
+            this.logger.warn(`OHLCV fetch failed connection=${brokerConnectionId} instrument=${instrument}: ` +
+                `${err.message}`);
+            throw err;
+        }
+    }
     async hasActiveConnection(userId) {
         const connection = await this.findActiveConnectionForUser(userId);
         return connection !== null;

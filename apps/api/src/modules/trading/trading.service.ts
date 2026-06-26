@@ -13,6 +13,7 @@ import { ExecutionService } from '../execution/execution.service';
 import { AuditService } from '../audit/audit.service';
 import { DomainEventBus } from '../events/event-bus.service';
 import { DomainEventType } from '../events/enums/domain-event-type.enum';
+import { AiEngineClient } from '../ai-engine-client/ai-engine-client.service';
 import { AuditAction } from '../../common/enums/audit-action.enum';
 import { AuditSeverity } from '../audit/entities/audit-log.entity';
 import { TradingSession, TradingSessionStatus } from '../execution/entities/trading-session.entity';
@@ -54,6 +55,7 @@ export class TradingService {
     private readonly executionService: ExecutionService,
     private readonly auditService: AuditService,
     private readonly eventBus: DomainEventBus,
+    private readonly aiEngineClient: AiEngineClient,
   ) {}
 
   /**
@@ -129,6 +131,24 @@ export class TradingService {
     });
 
     this.logger.log(`Trading session started: userId=${userId} sessionId=${session.id}`);
+
+    // Notify AI engine scheduler (non-blocking — failures are logged only)
+    void this.aiEngineClient
+      .notifySessionStarted({
+        userId,
+        tradingSessionId: session.id,
+        brokerConnectionId: connectionId,
+        instruments: ['EURUSD'],
+        timeframe: 'H1',
+        source: 'broker',
+        mode: 'paper',
+      })
+      .catch((err: Error) =>
+        this.logger.warn(
+          `AI engine start notification failed session=${session.id}: ${err.message}`,
+        ),
+      );
+
     return session;
   }
 
@@ -169,6 +189,14 @@ export class TradingService {
     });
 
     this.logger.log(`Trading session stopped: userId=${userId} sessionId=${sessionId}`);
+
+    void this.aiEngineClient
+      .notifySessionStopped({ tradingSessionId: sessionId })
+      .catch((err: Error) =>
+        this.logger.warn(
+          `AI engine stop notification failed session=${sessionId}: ${err.message}`,
+        ),
+      );
   }
 
   /**

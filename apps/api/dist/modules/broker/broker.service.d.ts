@@ -3,6 +3,7 @@ import { BrokerConnection } from './entities/broker-connection.entity';
 import { BrokerAccount } from './entities/broker-account.entity';
 import { BrokerAdapterRegistry } from './adapters/broker-adapter.registry';
 import { CredentialEncryptionService } from './services/credential-encryption.service';
+import { OHLCV } from './interfaces/broker-adapter.interface';
 import { AuditService } from '../audit/audit.service';
 import { ConnectBrokerDto } from './dto/connect-broker.dto';
 import { DomainEventBus } from '../events/event-bus.service';
@@ -31,6 +32,7 @@ export declare class BrokerService {
     enableLiveTrading(connectionId: string, userId: string, ipAddress?: string): Promise<void>;
     getAllConnectedConnectionIds(): Promise<string[]>;
     healthCheck(connectionId: string): Promise<boolean>;
+    getOhlcvForConnection(userId: string, brokerConnectionId: string, instrument: string, timeframe: string, limit: number): Promise<OHLCV[]>;
     hasActiveConnection(userId: string): Promise<boolean>;
     getBrokerAccountState(connectionId: string): Promise<{
         balance: string;

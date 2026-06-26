@@ -7,6 +7,8 @@ import { RiskModule } from '../risk/risk.module';
 import { ExecutionModule } from '../execution/execution.module';
 import { AuditModule } from '../audit/audit.module';
 
+import { AiEngineClientModule } from '../ai-engine-client/ai-engine-client.module';
+
 /**
  * TradingModule — Trading session lifecycle management.
  *
@@ -24,6 +26,7 @@ import { AuditModule } from '../audit/audit.module';
     RiskModule,
     forwardRef(() => ExecutionModule),
     AuditModule,
+    AiEngineClientModule,
   ],
   controllers: [TradingController],
   providers: [TradingService],

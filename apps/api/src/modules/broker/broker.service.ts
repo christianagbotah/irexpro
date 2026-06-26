@@ -15,6 +15,7 @@ import {
   BrokerConnectionStatus,
   BrokerMode,
   DecryptedBrokerCredentials,
+  OHLCV,
 } from './interfaces/broker-adapter.interface';
 import { BrokerAdapterError } from './interfaces/broker-adapter.errors';
 import { AuditService } from '../audit/audit.service';
@@ -510,6 +511,58 @@ export class BrokerService {
       }
 
       return false;
+    }
+  }
+
+  /**
+   * Fetch OHLCV candles via the user's connected broker adapter.
+   *
+   * SECURITY:
+   * - Verifies connection belongs to userId
+   * - Requires CONNECTED status
+   * - Credentials decrypted in-memory only — never logged or returned
+   */
+  async getOhlcvForConnection(
+    userId: string,
+    brokerConnectionId: string,
+    instrument: string,
+    timeframe: string,
+    limit: number,
+  ): Promise<OHLCV[]> {
+    const connection = await this.findConnectionById(brokerConnectionId, userId);
+
+    if (connection.status !== BrokerConnectionStatus.CONNECTED) {
+      throw new ForbiddenException('Broker connection is not active');
+    }
+
+    const adapter = this.adapterRegistry.getAdapter(connection.brokerId);
+
+    if (
+      !connection.encryptedCredentials ||
+      !connection.credentialIv ||
+      !connection.credentialTag
+    ) {
+      throw new ForbiddenException('Broker connection credentials unavailable');
+    }
+
+    const credentials = this.encryptionService.decrypt({
+      ciphertext: connection.encryptedCredentials,
+      iv: connection.credentialIv,
+      tag: connection.credentialTag,
+      keyId: connection.encryptionKeyId ?? 'env-key-v1',
+    });
+
+    adapter.setMode(connection.accountType);
+
+    try {
+      await adapter.connect(credentials);
+      return await adapter.getOHLCV(instrument, timeframe, limit);
+    } catch (err) {
+      this.logger.warn(
+        `OHLCV fetch failed connection=${brokerConnectionId} instrument=${instrument}: ` +
+          `${(err as Error).message}`,
+      );
+      throw err;
     }
   }
 

@@ -13,10 +13,11 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.v1.routes import health, market_data, models, signals
+from app.api.v1.routes import health, market_data, models, scheduler, signals
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
 from app.domain.models.registry import build_default_registry
+from app.domain.scheduler.signal_scheduler import SignalScheduler
 from app.integrations.redis_client import close_redis_client, get_redis_client
 
 # Shared application state (registry, redis) — avoids circular imports in route deps
@@ -43,9 +44,15 @@ async def lifespan(app: FastAPI):
     # Attempt Redis connection (non-fatal)
     app_state["redis"] = await get_redis_client()
 
+    # Initialise scheduler (disabled by default)
+    app_state["scheduler"] = SignalScheduler()
+
     yield
 
     # Cleanup
+    scheduler = app_state.get("scheduler")
+    if isinstance(scheduler, SignalScheduler):
+        scheduler.shutdown()
     await close_redis_client()
     logger.info("iRexPro AI Engine stopped")
 
@@ -79,6 +86,7 @@ def create_app() -> FastAPI:
     app.include_router(signals.router, prefix=prefix)
     app.include_router(market_data.router, prefix=prefix)
     app.include_router(models.router, prefix=prefix)
+    app.include_router(scheduler.router, prefix=prefix)
 
     return app
 

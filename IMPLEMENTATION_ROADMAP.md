@@ -140,6 +140,22 @@ Tasks (in order):
 
 ---
 
+### ✅ Sprint 8 — Market Data Ingestion + Scheduled Paper-Mode Signal Generation (COMPLETE)
+
+**Sprint 8 delivered:**
+- **NestJS MarketDataModule** — `GET /api/v1/market-data/internal/ohlcv` protected by `InternalApiKeyGuard`
+- **BrokerService.getOhlcvForConnection()** — fetches OHLCV via `IBrokerAdapter`; credentials never exposed
+- **Python BrokerMarketDataProvider** — calls NestJS internal endpoint (no direct MetaAPI from Python)
+- **Redis OHLCV cache** — key format `ai:ohlcv:{source}:{instrument}:{timeframe}`; TTL configurable; graceful fallback
+- **OHLCVService** — mock/broker sources, validation (ordering, no future timestamps, min candle count)
+- **SignalScheduler** — APScheduler paper-mode jobs; disabled by default (`AI_SCHEDULER_ENABLED=false`)
+- **Scheduler API** — `POST /api/v1/scheduler/sessions/start|stop` (internal API key protected)
+- **NestJS AiEngineClient** — notifies AI engine on trading session start/stop (`AI_ENGINE_SCHEDULER_ENABLED=false` default)
+- **Offline training scaffold** — `app/domain/training/` research-only; no live model approval
+- **Safety**: No direct AI→Broker path; scheduler paper-only; mock data blocked in production unless explicitly allowed
+
+---
+
 ### Sprint 3-4 (Weeks 5-8): Broker Integration
 
 1. **BrokerAdapterInterface** — define TypeScript interface (from doc 09)

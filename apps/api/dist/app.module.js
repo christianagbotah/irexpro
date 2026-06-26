@@ -33,6 +33,8 @@ const events_module_1 = require("./modules/events/events.module");
 const realtime_module_1 = require("./modules/realtime/realtime.module");
 const strategy_module_1 = require("./modules/strategy/strategy.module");
 const health_module_1 = require("./health/health.module");
+const market_data_module_1 = require("./modules/market-data/market-data.module");
+const ai_engine_client_module_1 = require("./modules/ai-engine-client/ai-engine-client.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -93,6 +95,8 @@ exports.AppModule = AppModule = __decorate([
             ai_module_1.AiModule,
             realtime_module_1.RealtimeModule,
             health_module_1.HealthModule,
+            market_data_module_1.MarketDataModule,
+            ai_engine_client_module_1.AiEngineClientModule,
         ],
         providers: [
             { provide: core_1.APP_FILTER, useClass: all_exceptions_filter_1.AllExceptionsFilter },

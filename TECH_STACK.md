@@ -73,7 +73,7 @@
 
 ## AI/ML Services — Python (`services/ai-engine/`)
 
-> Sprint 7 baseline scaffold. Paper mode only. No live trading approval.
+> Sprint 8: market-data ingestion via NestJS, Redis OHLCV cache, scheduled paper-mode signals. No live trading approval.
 
 | Technology | Version | Purpose |
 |---|---|---|

@@ -50,4 +50,8 @@ export const validationSchema = Joi.object({
   // Must match NESTJS_INTERNAL_API_KEY in services/ai-engine/.env.
   // In production: store in AWS Secrets Manager / HashiCorp Vault.
   NESTJS_INTERNAL_API_KEY: Joi.string().optional().allow(''),
+
+  // Python AI engine scheduler coordination (NestJS → AI engine)
+  AI_ENGINE_BASE_URL: Joi.string().default('http://localhost:8001/api/v1'),
+  AI_ENGINE_SCHEDULER_ENABLED: Joi.boolean().default(false),
 });

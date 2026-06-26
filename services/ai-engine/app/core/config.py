@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     # ─── NestJS integration ────────────────────────────────────────────────
     nestjs_api_base_url: str = "http://localhost:3000/api/v1"
     nestjs_ai_signal_endpoint: str = "/ai/internal/signals"
+    nestjs_market_data_endpoint: str = "/market-data/internal/ohlcv"
     nestjs_internal_api_key: str = "dev_internal_key_change_me"
 
     # ─── Redis ────────────────────────────────────────────────────────────
@@ -35,11 +36,18 @@ class Settings(BaseSettings):
     redis_port: int = 6379
     redis_password: str = "irexpro_redis_dev_password"
     redis_db: int = 1
+    ai_redis_key_prefix: str = "ai"
+    ai_ohlcv_cache_ttl_seconds: int = 300
 
     # ─── AI behaviour ─────────────────────────────────────────────────────
     ai_default_model_version: str = "baseline-xgboost-v0.1.0"
     ai_min_confidence_score: float = 0.60
     ai_signal_mode: Literal["paper", "sandbox", "live"] = "paper"
+    ai_allow_mock_market_data: bool = False
+
+    # ─── Scheduler ────────────────────────────────────────────────────────
+    ai_scheduler_enabled: bool = False
+    ai_signal_interval_seconds: int = 60
 
     # ─── CORS ─────────────────────────────────────────────────────────────
     ai_cors_origins: str = "http://localhost:3000,http://localhost:3001"
@@ -55,6 +63,10 @@ class Settings(BaseSettings):
     @property
     def nestjs_signal_url(self) -> str:
         return f"{self.nestjs_api_base_url}{self.nestjs_ai_signal_endpoint}"
+
+    @property
+    def nestjs_market_data_url(self) -> str:
+        return f"{self.nestjs_api_base_url}{self.nestjs_market_data_endpoint}"
 
 
 _settings: Settings | None = None

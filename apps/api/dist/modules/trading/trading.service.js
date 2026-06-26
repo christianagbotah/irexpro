@@ -22,17 +22,19 @@ const execution_service_1 = require("../execution/execution.service");
 const audit_service_1 = require("../audit/audit.service");
 const event_bus_service_1 = require("../events/event-bus.service");
 const domain_event_type_enum_1 = require("../events/enums/domain-event-type.enum");
+const ai_engine_client_service_1 = require("../ai-engine-client/ai-engine-client.service");
 const audit_action_enum_1 = require("../../common/enums/audit-action.enum");
 const audit_log_entity_1 = require("../audit/entities/audit-log.entity");
 const trading_session_entity_1 = require("../execution/entities/trading-session.entity");
 let TradingService = TradingService_1 = class TradingService {
-    constructor(brokerService, subscriptionsService, riskService, executionService, auditService, eventBus) {
+    constructor(brokerService, subscriptionsService, riskService, executionService, auditService, eventBus, aiEngineClient) {
         this.brokerService = brokerService;
         this.subscriptionsService = subscriptionsService;
         this.riskService = riskService;
         this.executionService = executionService;
         this.auditService = auditService;
         this.eventBus = eventBus;
+        this.aiEngineClient = aiEngineClient;
         this.logger = new common_1.Logger(TradingService_1.name);
     }
     async startTradingSession(userId, brokerConnectionId) {
@@ -73,6 +75,17 @@ let TradingService = TradingService_1 = class TradingService {
             startedAt: session.startedAt,
         });
         this.logger.log(`Trading session started: userId=${userId} sessionId=${session.id}`);
+        void this.aiEngineClient
+            .notifySessionStarted({
+            userId,
+            tradingSessionId: session.id,
+            brokerConnectionId: connectionId,
+            instruments: ['EURUSD'],
+            timeframe: 'H1',
+            source: 'broker',
+            mode: 'paper',
+        })
+            .catch((err) => this.logger.warn(`AI engine start notification failed session=${session.id}: ${err.message}`));
         return session;
     }
     async stopTradingSession(userId, sessionId) {
@@ -100,6 +113,9 @@ let TradingService = TradingService_1 = class TradingService {
             endedAt: new Date(),
         });
         this.logger.log(`Trading session stopped: userId=${userId} sessionId=${sessionId}`);
+        void this.aiEngineClient
+            .notifySessionStopped({ tradingSessionId: sessionId })
+            .catch((err) => this.logger.warn(`AI engine stop notification failed session=${sessionId}: ${err.message}`));
     }
     async getActiveSession(userId) {
         return this.executionService.getActiveSession(userId);
@@ -135,6 +151,7 @@ exports.TradingService = TradingService = TradingService_1 = __decorate([
         risk_service_1.RiskService,
         execution_service_1.ExecutionService,
         audit_service_1.AuditService,
-        event_bus_service_1.DomainEventBus])
+        event_bus_service_1.DomainEventBus,
+        ai_engine_client_service_1.AiEngineClient])
 ], TradingService);
 //# sourceMappingURL=trading.service.js.map

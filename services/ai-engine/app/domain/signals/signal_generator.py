@@ -18,7 +18,7 @@ from app.core.config import get_settings
 from app.core.errors import LiveModeNotSupportedError, SignalGenerationError
 from app.core.logging import get_logger
 from app.core.security import sanitize_metadata
-from app.domain.market_data.ohlcv_service import OHLCVService
+from app.domain.market_data.ohlcv_service import MarketDataSource, OHLCVService
 from app.domain.market_data.schemas import OHLCVCandle
 from app.domain.models.feature_engineering import candles_to_dataframe, extract_latest_features
 from app.domain.models.registry import ModelRegistry
@@ -47,6 +47,7 @@ class SignalGenerator:
         instrument: str,
         timeframe: str = "H1",
         candles: list[OHLCVCandle] | None = None,
+        source: MarketDataSource = "mock",
     ) -> SignalGenerationResponse:
         """
         Full signal generation pipeline.
@@ -62,7 +63,14 @@ class SignalGenerator:
 
         # 1. Fetch OHLCV data
         if candles is None:
-            candles = await self._ohlcv.get_candles(instrument, timeframe, limit=100)
+            candles = await self._ohlcv.get_ohlcv(
+                source=source,
+                instrument=instrument,
+                timeframe=timeframe,
+                limit=100,
+                user_id=user_id,
+                broker_connection_id=broker_connection_id,
+            )
 
         if len(candles) < 10:
             raise SignalGenerationError(

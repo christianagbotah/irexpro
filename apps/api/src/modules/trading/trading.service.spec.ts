@@ -7,6 +7,7 @@ import { RiskService } from '../risk/risk.service';
 import { ExecutionService } from '../execution/execution.service';
 import { AuditService } from '../audit/audit.service';
 import { DomainEventBus } from '../events/event-bus.service';
+import { AiEngineClient } from '../ai-engine-client/ai-engine-client.service';
 import { TradingSession, TradingSessionStatus } from '../execution/entities/trading-session.entity';
 
 const mockSession = (overrides: Partial<TradingSession> = {}): TradingSession =>
@@ -34,6 +35,7 @@ describe('TradingService', () => {
   let executionService: jest.Mocked<Partial<ExecutionService>>;
   let auditService: jest.Mocked<Partial<AuditService>>;
   let eventBus: jest.Mocked<Partial<DomainEventBus>>;
+  let aiEngineClient: jest.Mocked<Partial<AiEngineClient>>;
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -69,6 +71,12 @@ describe('TradingService', () => {
       subscribe: jest.fn().mockReturnValue(() => {}),
     };
 
+    aiEngineClient = {
+      isSchedulerIntegrationEnabled: jest.fn().mockReturnValue(true),
+      notifySessionStarted: jest.fn().mockResolvedValue(undefined),
+      notifySessionStopped: jest.fn().mockResolvedValue(undefined),
+    };
+
     module = await Test.createTestingModule({
       providers: [
         TradingService,
@@ -78,6 +86,7 @@ describe('TradingService', () => {
         { provide: ExecutionService, useValue: executionService },
         { provide: AuditService, useValue: auditService },
         { provide: DomainEventBus, useValue: eventBus },
+        { provide: AiEngineClient, useValue: aiEngineClient },
       ],
     }).compile();
 
@@ -140,6 +149,28 @@ describe('TradingService', () => {
         expect.objectContaining({ actorUserId: 'user-1', action: 'AI_TRADING_ENABLED' }),
       );
     });
+
+    it('notifies AI engine scheduler when integration is enabled', async () => {
+      await service.startTradingSession('user-1');
+      expect(aiEngineClient.notifySessionStarted).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'user-1',
+          tradingSessionId: 'session-1',
+          brokerConnectionId: 'conn-1',
+          mode: 'paper',
+          source: 'broker',
+        }),
+      );
+    });
+
+    it('does not fail session start when AI engine notification fails', async () => {
+      (aiEngineClient.notifySessionStarted as jest.Mock).mockRejectedValue(
+        new Error('AI engine unavailable'),
+      );
+      await expect(service.startTradingSession('user-1')).resolves.toMatchObject({
+        id: 'session-1',
+      });
+    });
   });
 
   // ─── stopTradingSession() ───────────────────────────────────────────────────
@@ -173,6 +204,13 @@ describe('TradingService', () => {
       expect(auditService.log).toHaveBeenCalledWith(
         expect.objectContaining({ actorUserId: 'user-1', action: 'AI_TRADING_DISABLED' }),
       );
+    });
+
+    it('notifies AI engine scheduler to stop the session job', async () => {
+      await service.stopTradingSession('user-1', 'session-1');
+      expect(aiEngineClient.notifySessionStopped).toHaveBeenCalledWith({
+        tradingSessionId: 'session-1',
+      });
     });
   });
 

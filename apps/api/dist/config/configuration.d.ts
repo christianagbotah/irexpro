@@ -52,5 +52,9 @@ declare const _default: () => {
     internalApi: {
         key: string | undefined;
     };
+    aiEngine: {
+        baseUrl: string;
+        schedulerEnabled: boolean;
+    };
 };
 export default _default;

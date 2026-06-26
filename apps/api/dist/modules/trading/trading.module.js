@@ -15,6 +15,7 @@ const subscriptions_module_1 = require("../subscriptions/subscriptions.module");
 const risk_module_1 = require("../risk/risk.module");
 const execution_module_1 = require("../execution/execution.module");
 const audit_module_1 = require("../audit/audit.module");
+const ai_engine_client_module_1 = require("../ai-engine-client/ai-engine-client.module");
 let TradingModule = class TradingModule {
 };
 exports.TradingModule = TradingModule;
@@ -26,6 +27,7 @@ exports.TradingModule = TradingModule = __decorate([
             risk_module_1.RiskModule,
             (0, common_1.forwardRef)(() => execution_module_1.ExecutionModule),
             audit_module_1.AuditModule,
+            ai_engine_client_module_1.AiEngineClientModule,
         ],
         controllers: [trading_controller_1.TradingController],
         providers: [trading_service_1.TradingService],

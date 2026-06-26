@@ -13,7 +13,6 @@ from pydantic import BaseModel
 from app.core.config import get_settings
 from app.core.errors import LiveModeNotSupportedError, NestJsIntegrationError, SignalGenerationError
 from app.domain.market_data.ohlcv_service import OHLCVService
-from app.domain.market_data.providers.mock_provider import MockMarketDataProvider
 from app.domain.market_data.redis_cache import OHLCVRedisCache
 from app.domain.models.registry import ModelRegistry
 from app.domain.signals.schemas import SignalGenerationRequest, SignalGenerationResponse
@@ -27,7 +26,7 @@ def get_signal_generator(registry: ModelRegistry | None = None) -> SignalGenerat
     from app.main import app_state
     reg = registry or app_state["registry"]
     cache = OHLCVRedisCache(redis_client=app_state.get("redis"))
-    ohlcv_svc = OHLCVService(provider=MockMarketDataProvider(), cache=cache)
+    ohlcv_svc = OHLCVService(cache=cache)
     return SignalGenerator(ohlcv_service=ohlcv_svc, model_registry=reg)
 
 

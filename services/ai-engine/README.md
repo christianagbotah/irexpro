@@ -1,6 +1,6 @@
 # iRexPro AI Signal Engine
 
-> **Sprint 7 baseline scaffold. Paper mode only.**
+> **Sprint 8: market-data ingestion + scheduled paper-mode signal generation. No live trading approval.**
 
 The AI Signal Engine produces `AiSignalCandidate` objects from market data and
 model inference. **It never executes trades directly.** All candidates are
@@ -87,16 +87,24 @@ mypy app
 | POST | `/api/v1/market-data/mock-ohlcv` | Mock OHLCV data (dev only) |
 | POST | `/api/v1/signals/generate` | Generate signal candidate (not published) |
 | POST | `/api/v1/signals/publish-to-api` | Generate + publish to NestJS |
+| POST | `/api/v1/scheduler/sessions/start` | [INTERNAL] Register paper-mode scheduler job |
+| POST | `/api/v1/scheduler/sessions/stop` | [INTERNAL] Unregister scheduler job |
+
+NestJS internal market-data endpoint (called by `BrokerMarketDataProvider`):
+`GET /api/v1/market-data/internal/ohlcv` (requires `x-irexpro-internal-api-key`)
 
 ---
 
 ## Safety Rules
 
-1. `AI_SIGNAL_MODE` defaults to `paper`. Live mode is not supported in Sprint 7.
-2. No model is approved for live trading by default.
-3. Signal candidates are never executed by this service.
-4. Secrets are never logged or included in signal payloads.
-5. The baseline XGBoost model is a scaffold — it does not contain real trained weights.
+1. `AI_SIGNAL_MODE` defaults to `paper`. Live mode is not supported.
+2. `AI_SCHEDULER_ENABLED` defaults to `false`. Production requires explicit config.
+3. No model is approved for live trading by default.
+4. Python never accesses broker credentials — OHLCV flows through NestJS `BrokerService`.
+5. Signal candidates are never executed by this service.
+6. Secrets are never logged or included in signal payloads.
+7. Mock market data is blocked in production unless `AI_ALLOW_MOCK_MARKET_DATA=true`.
+8. The baseline XGBoost model is a scaffold — it does not contain real trained weights.
 
 ---
 
