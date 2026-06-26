@@ -451,6 +451,22 @@ Rules:
 
 ---
 
+## Rule 27 — Backtesting Safety (Sprint 9+)
+
+**Backtest results are simulated only. No performance guarantees.**
+
+Rules:
+1. `BacktestResult.simulated_only` must always be `True`.
+2. `BacktestEngine` must never call `NestJsClient.publish_signal()`.
+3. `BacktestEngine` must never call any broker or execution API.
+4. No lookahead bias: signal generation at index `i` uses only `candles[:i]`.
+5. Same-candle SL/TP: stop-loss assumed to trigger first (conservative, documented).
+6. Mock backtests are blocked in production unless `AI_ALLOW_MOCK_MARKET_DATA=true`.
+7. `PaperBrokerAdapter.setMode(LIVE)` must be silently rejected.
+8. Backtest metrics must not be presented as guaranteed future performance.
+
+---
+
 ## Rule 26 — Market Data & Scheduler Safety (Sprint 8+)
 
 **Python must never access broker credentials. All OHLCV flows through NestJS.**

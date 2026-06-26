@@ -13,7 +13,7 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.v1.routes import health, market_data, models, scheduler, signals
+from app.api.v1.routes import backtests, health, market_data, models, scheduler, signals
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
 from app.domain.models.registry import build_default_registry
@@ -87,6 +87,7 @@ def create_app() -> FastAPI:
     app.include_router(market_data.router, prefix=prefix)
     app.include_router(models.router, prefix=prefix)
     app.include_router(scheduler.router, prefix=prefix)
+    app.include_router(backtests.router, prefix=prefix)
 
     return app
 

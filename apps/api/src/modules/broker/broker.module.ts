@@ -7,6 +7,7 @@ import { BrokerConnection } from './entities/broker-connection.entity';
 import { BrokerAccount } from './entities/broker-account.entity';
 import { BrokerAdapterRegistry } from './adapters/broker-adapter.registry';
 import { MetaTraderAdapter } from './adapters/metatrader.adapter';
+import { PaperBrokerAdapter } from './adapters/paper-broker.adapter';
 import { CredentialEncryptionService } from './services/credential-encryption.service';
 import { MetaApiClientService } from './services/metaapi-client.service';
 import { BrokerHealthCheckJob, BROKER_HEALTH_QUEUE } from './jobs/broker-health-check.job';
@@ -43,19 +44,22 @@ import { AuditModule } from '../audit/audit.module';
     MetaApiClientService,
     BrokerAdapterRegistry,
     MetaTraderAdapter,
+    PaperBrokerAdapter,
     BrokerHealthCheckJob,
     BrokerHealthCheckProducer,
   ],
-  exports: [BrokerService, BrokerAdapterRegistry],
+  exports: [BrokerService, BrokerAdapterRegistry, PaperBrokerAdapter],
 })
 export class BrokerModule implements OnModuleInit {
   constructor(
     private registry: BrokerAdapterRegistry,
     private metaTraderAdapter: MetaTraderAdapter,
+    private paperBrokerAdapter: PaperBrokerAdapter,
   ) {}
 
   onModuleInit() {
     this.registry.register(this.metaTraderAdapter);
+    this.registry.register(this.paperBrokerAdapter);
     // Future: this.registry.register(this.oandaAdapter);
     // Future: this.registry.register(this.cTraderAdapter);
   }

@@ -89,6 +89,8 @@ mypy app
 | POST | `/api/v1/signals/publish-to-api` | Generate + publish to NestJS |
 | POST | `/api/v1/scheduler/sessions/start` | [INTERNAL] Register paper-mode scheduler job |
 | POST | `/api/v1/scheduler/sessions/stop` | [INTERNAL] Unregister scheduler job |
+| POST | `/api/v1/backtests/run` | Run isolated backtest (SIMULATED ONLY) |
+| GET  | `/api/v1/backtests/sample-report` | Sample backtest report (mock data) |
 
 NestJS internal market-data endpoint (called by `BrokerMarketDataProvider`):
 `GET /api/v1/market-data/internal/ohlcv` (requires `x-irexpro-internal-api-key`)
@@ -105,6 +107,8 @@ NestJS internal market-data endpoint (called by `BrokerMarketDataProvider`):
 6. Secrets are never logged or included in signal payloads.
 7. Mock market data is blocked in production unless `AI_ALLOW_MOCK_MARKET_DATA=true`.
 8. The baseline XGBoost model is a scaffold — it does not contain real trained weights.
+9. Backtest results are `simulatedOnly=True` and never reflect real trading performance.
+10. `BacktestEngine` never calls NestJS signal endpoint or any broker API.
 
 ---
 

@@ -156,6 +156,20 @@ Tasks (in order):
 
 ---
 
+### ✅ Sprint 9 — Backtesting and Paper Trading Validation Engine (COMPLETE)
+
+**Sprint 9 delivered:**
+- **Python backtesting engine** — `app/domain/backtesting/` (schemas, engine, simulator, metrics, report_builder, validation)
+- **BacktestEngine** — no-lookahead iteration over OHLCV candles; never publishes to NestJS
+- **TradeSimulator** — BUY/SELL simulation with SL/TP/spread/slippage; conservative same-candle SL/TP assumption
+- **BacktestMetrics** — win rate, net profit, profit factor, max drawdown, balance curve
+- **BacktestResult** — `simulatedOnly=True` always; includes simulation warnings
+- **Backtest API** — `POST /api/v1/backtests/run`, `GET /api/v1/backtests/sample-report`
+- **NestJS PaperBrokerAdapter** — `paper-broker` implements `IBrokerAdapter`; PAPER_ONLY; LIVE mode rejected
+- **Safety**: backtest never calls broker/NestJS execution; paper adapter cannot be set to LIVE mode
+
+---
+
 ### Sprint 3-4 (Weeks 5-8): Broker Integration
 
 1. **BrokerAdapterInterface** — define TypeScript interface (from doc 09)
