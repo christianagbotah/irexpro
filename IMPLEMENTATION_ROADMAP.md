@@ -119,6 +119,27 @@ Tasks (in order):
 
 ---
 
+### ✅ Sprint 7 — Python AI Signal Engine Scaffold + Safe Market-Data Pipeline (COMPLETE)
+
+**Sprint 7 delivered:**
+- `services/ai-engine/` — Full FastAPI Python service scaffold
+- **Configuration** — `pydantic-settings` based config; `AI_SIGNAL_MODE=paper` default; live mode blocked
+- **Signal Schema** — `AiSignalCandidate` compatible with NestJS Sprint 6 interface (camelCase ↔ snake_case mapping)
+- **Market Data Foundation** — `MarketDataProvider` interface, `MockMarketDataProvider` (deterministic synthetic OHLCV), `BrokerMarketDataProvider` placeholder
+- **Redis OHLCV Cache** — `OHLCVRedisCache` with graceful degradation when Redis unavailable
+- **Feature Engineering** — 9 baseline features (returns, MAs, volatility, body size, HL range); anti-lookahead validated
+- **Baseline XGBoost Scaffold** — `BaselineXGBoostModel` with heuristic placeholder (no real weights); approved for paper only
+- **Model Registry + Governance** — `ModelRegistry`, `ModelGovernanceMetadata`; no live approval by default
+- **Signal Generator** — full pipeline: OHLCV → features → model → confidence gate → `AiSignalCandidate`
+- **NestJS Integration Client** — `NestJsClient` POSTs candidates via `x-irexpro-internal-api-key`
+- **NestJS Internal Endpoint** — `POST /api/v1/ai/internal/signals` protected by `InternalApiKeyGuard`
+- **Docker Compose** — `ai-engine` service added (port 8001, depends on redis)
+- **Python tests** — 20+ tests (health, schema, mock data, feature engineering, signal generator, NestJS client)
+- **NestJS tests** — `ai.controller.internal.spec.ts` (5 tests for guard + endpoint)
+- **Safety**: Paper mode enforced, no live approval, no direct broker calls, all signals through Risk Engine
+
+---
+
 ### Sprint 3-4 (Weeks 5-8): Broker Integration
 
 1. **BrokerAdapterInterface** — define TypeScript interface (from doc 09)

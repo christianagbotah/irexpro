@@ -1,9 +1,11 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { AiService } from './ai.service';
 import { AiSignalService } from './ai-signal.service';
 import { AiController } from './ai.controller';
 import { StrategyModule } from '../strategy/strategy.module';
 import { AuditModule } from '../audit/audit.module';
+import { InternalApiKeyGuard } from '../../common/guards/internal-api-key.guard';
 
 /**
  * AiModule — AI Signal Engine intake and routing.
@@ -22,9 +24,9 @@ import { AuditModule } from '../audit/audit.module';
  * See: docs/architecture/10-ai-trading-architecture.md
  */
 @Module({
-  imports: [StrategyModule, AuditModule],
+  imports: [ConfigModule, StrategyModule, AuditModule],
   controllers: [AiController],
-  providers: [AiService, AiSignalService],
+  providers: [AiService, AiSignalService, InternalApiKeyGuard],
   exports: [AiService, AiSignalService],
 })
 export class AiModule {}

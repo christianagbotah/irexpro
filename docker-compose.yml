@@ -63,6 +63,32 @@ services:
       - ./apps/api/src:/app/src:ro
     command: pnpm start:dev
 
+  ai-engine:
+    build:
+      context: ./services/ai-engine
+      dockerfile: Dockerfile
+    container_name: irexpro_ai_engine
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      AI_ENGINE_ENV: development
+      AI_ENGINE_PORT: 8001
+      AI_SIGNAL_MODE: paper
+      NESTJS_API_BASE_URL: http://api:3000/api/v1
+      NESTJS_AI_SIGNAL_ENDPOINT: /ai/internal/signals
+      NESTJS_INTERNAL_API_KEY: ${NESTJS_INTERNAL_API_KEY:-dev_internal_key_change_me}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-irexpro_redis_dev_password}
+      REDIS_DB: 1
+      AI_DEFAULT_MODEL_VERSION: baseline-xgboost-v0.1.0
+      AI_MIN_CONFIDENCE_SCORE: "0.60"
+    ports:
+      - '8001:8001'
+    # No real secrets in this file — override via .env or secrets manager in production
+
 volumes:
   postgres_data:
   redis_data:

@@ -45,4 +45,9 @@ export const validationSchema = Joi.object({
   // Obtain from: https://app.metaapi.cloud/api-access/generate-token
   // In production: store in AWS Secrets Manager / HashiCorp Vault
   METAAPI_TOKEN: Joi.string().optional().allow(''),
+
+  // Internal API key for Python AI Engine → NestJS communication.
+  // Must match NESTJS_INTERNAL_API_KEY in services/ai-engine/.env.
+  // In production: store in AWS Secrets Manager / HashiCorp Vault.
+  NESTJS_INTERNAL_API_KEY: Joi.string().optional().allow(''),
 });

@@ -431,6 +431,41 @@ this.realtimeService.emitToUser(userId, RealtimeEvent.TRADE_OPENED, payload);
 
 ---
 
+---
+
+## Rule 24 — Python AI Engine Safety Rules (Sprint 7+)
+
+**The Python AI Engine (`services/ai-engine/`) is a signal producer only. It must never execute trades.**
+
+Rules:
+1. `AI_SIGNAL_MODE` must default to `paper`. Never default to `live`.
+2. `BaselineXGBoostModel` (or any model) must have `approved_for_live=False` until a formal governance review.
+3. All signals must be POSTed to NestJS `POST /ai/internal/signals` via `NestJsClient`.
+4. `NestJsClient` must include the `x-irexpro-internal-api-key` header — never a user JWT.
+5. Signal metadata must be sanitized before inclusion — `sanitize_metadata()` must be called.
+6. `AI_SIGNAL_MODE=live` must be blocked in this sprint and must require explicit governance unlock.
+7. Feature engineering must not use future data (lookahead bias is a critical defect — unit test required).
+8. No real trained model weights may be committed to the repository.
+9. Mock OHLCV data must be clearly labeled `source: mock_test_only` in all candles.
+10. Redis cache must never store secrets, credentials, or tokens.
+
+---
+
+## Rule 25 — NestJS Internal API Key Guard
+
+**The `POST /ai/internal/signals` endpoint must be protected by `InternalApiKeyGuard` only.**
+
+Rules:
+- `InternalApiKeyGuard` validates `x-irexpro-internal-api-key` header using `crypto.timingSafeEqual`.
+- The endpoint must be annotated `@Public()` to bypass the global `JwtAuthGuard`.
+- If `NESTJS_INTERNAL_API_KEY` is not configured, the guard must block all requests.
+- The key value must never be logged.
+- This endpoint is NOT a substitute for user authentication. It is service-to-service only.
+- All signals received via this endpoint still flow through the full pipeline:
+  `AiSignalService → StrategyOrchestrator → RiskEngine → ExecutionEngine`
+
+---
+
 ## Code Review Checklist
 
 Before approving any PR touching trading, risk, financial, payment, or regional logic:
@@ -454,3 +489,7 @@ Before approving any PR touching trading, risk, financial, payment, or regional 
 - [ ] No direct AI signal → Execution bypass exists in the change
 - [ ] Domain events published via `DomainEventBus`, not direct `RealtimeService` injection
 - [ ] Dev-only endpoints check `NODE_ENV !== 'production'`
+- [ ] Python AI engine `AI_SIGNAL_MODE` is `paper` (not `live`) in any new config or fixture
+- [ ] No model approved for live trading without governance metadata confirmation
+- [ ] `sanitize_metadata()` called before including metadata in any signal payload
+- [ ] Feature engineering tests include anti-lookahead validation

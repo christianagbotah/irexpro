@@ -1,0 +1,108 @@
+"""
+Feature engineering for the AI Signal Engine.
+
+IMPORTANT WARNINGS:
+1. These features are BASELINE ONLY — not a profitable trading strategy.
+2. No lookahead bias is permitted: features must use only data available
+   at the time of the candle being evaluated (index i uses data [0..i] only).
+3. Features are inputs to the model, not trading signals.
+4. Do not overfit to historical data.
+5. Do not present these as predictive of profitable outcomes.
+"""
+from __future__ import annotations
+
+import pandas as pd
+
+from app.domain.market_data.schemas import OHLCVCandle
+
+
+def candles_to_dataframe(candles: list[OHLCVCandle]) -> pd.DataFrame:
+    """Convert a list of OHLCVCandle to a pandas DataFrame, sorted by timestamp."""
+    records = [
+        {
+            "timestamp": c.timestamp,
+            "open": c.open,
+            "high": c.high,
+            "low": c.low,
+            "close": c.close,
+            "volume": c.volume,
+        }
+        for c in candles
+    ]
+    df = pd.DataFrame(records).sort_values("timestamp").reset_index(drop=True)
+    return df
+
+
+def compute_features(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Compute basic technical features.
+
+    All rolling calculations use only past data (shift or min_periods ensures this).
+    No future data leakage is possible in this implementation.
+
+    Features:
+    - simple_return: (close - prev_close) / prev_close
+    - ma_5, ma_10, ma_20: simple moving averages
+    - price_vs_ma20: (close - ma_20) / ma_20  — momentum proxy
+    - volatility_10: rolling std of simple returns over 10 bars
+    - candle_body: abs(close - open) / (high - low + 1e-10)  — candle body ratio
+    - hl_range: (high - low)  — candle range
+    - volume_change: (volume - prev_volume) / (prev_volume + 1e-10)
+    """
+    result = df.copy()
+
+    # Avoid division by zero throughout
+    eps = 1e-10
+
+    # Simple return (no lookahead: uses only current and prior close)
+    result["simple_return"] = result["close"].pct_change()
+
+    # Moving averages (min_periods prevents NaN-based cheating)
+    result["ma_5"] = result["close"].rolling(5, min_periods=1).mean()
+    result["ma_10"] = result["close"].rolling(10, min_periods=1).mean()
+    result["ma_20"] = result["close"].rolling(20, min_periods=1).mean()
+
+    # Price relative to MA20 — trend direction proxy
+    result["price_vs_ma20"] = (result["close"] - result["ma_20"]) / (result["ma_20"] + eps)
+
+    # Rolling volatility of returns (10-bar window, no lookahead)
+    result["volatility_10"] = result["simple_return"].rolling(10, min_periods=2).std()
+
+    # Candle body size relative to full range
+    range_ = (result["high"] - result["low"]).clip(lower=eps)
+    result["candle_body"] = (result["close"] - result["open"]).abs() / range_
+
+    # High-low range
+    result["hl_range"] = result["high"] - result["low"]
+
+    # Volume change
+    result["volume_change"] = result["volume"].pct_change()
+
+    # Fill remaining NaNs with 0 (safe — model handles sparse features)
+    feature_cols = [
+        "simple_return", "ma_5", "ma_10", "ma_20",
+        "price_vs_ma20", "volatility_10", "candle_body", "hl_range", "volume_change",
+    ]
+    result[feature_cols] = result[feature_cols].fillna(0.0)
+
+    return result
+
+
+FEATURE_COLUMNS = [
+    "simple_return",
+    "ma_5",
+    "ma_10",
+    "ma_20",
+    "price_vs_ma20",
+    "volatility_10",
+    "candle_body",
+    "hl_range",
+    "volume_change",
+]
+
+
+def extract_latest_features(df: pd.DataFrame) -> dict[str, float]:
+    """Extract the most recent row's features as a dict."""
+    featured = compute_features(df)
+    last = featured.iloc[-1]
+    return {col: float(last[col]) for col in FEATURE_COLUMNS}

@@ -1,0 +1,25 @@
+Metadata-Version: 2.4
+Name: irexpro-ai-engine
+Version: 0.1.0
+Summary: iRexPro AI Signal Engine — Paper-mode baseline scaffold
+Requires-Python: >=3.11
+Requires-Dist: fastapi>=0.115.0
+Requires-Dist: uvicorn[standard]>=0.32.0
+Requires-Dist: pydantic>=2.9.0
+Requires-Dist: pydantic-settings>=2.6.0
+Requires-Dist: httpx>=0.27.0
+Requires-Dist: redis>=5.2.0
+Requires-Dist: pandas>=2.2.0
+Requires-Dist: numpy>=2.1.0
+Requires-Dist: scikit-learn>=1.5.0
+Requires-Dist: xgboost>=2.1.0
+Requires-Dist: python-dotenv>=1.0.0
+Requires-Dist: structlog>=24.4.0
+Provides-Extra: dev
+Requires-Dist: pytest>=8.3.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.24.0; extra == "dev"
+Requires-Dist: httpx>=0.27.0; extra == "dev"
+Requires-Dist: ruff>=0.7.0; extra == "dev"
+Requires-Dist: mypy>=1.13.0; extra == "dev"
+Requires-Dist: types-redis>=4.6.0; extra == "dev"
+Requires-Dist: coverage>=7.6.0; extra == "dev"

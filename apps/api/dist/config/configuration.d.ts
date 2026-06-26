@@ -49,5 +49,8 @@ declare const _default: () => {
         encryptionKey: string | undefined;
         metaApiToken: string | undefined;
     };
+    internalApi: {
+        key: string | undefined;
+    };
 };
 export default _default;

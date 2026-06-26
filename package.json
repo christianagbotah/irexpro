@@ -13,7 +13,10 @@
     "db:migrate": "pnpm --filter @irexpro/api migration:run",
     "db:migrate:revert": "pnpm --filter @irexpro/api migration:revert",
     "db:seed": "pnpm --filter @irexpro/api seed",
-    "install:all": "pnpm install"
+    "install:all": "pnpm install",
+    "ai:test": "cd services/ai-engine && python -m pytest",
+    "ai:lint": "cd services/ai-engine && python -m ruff check .",
+    "ai:typecheck": "cd services/ai-engine && python -m mypy app"
   },
   "engines": {
     "node": ">=20.0.0",

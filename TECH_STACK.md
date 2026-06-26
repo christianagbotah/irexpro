@@ -71,28 +71,44 @@
 
 ---
 
-## AI/ML Services — Python
+## AI/ML Services — Python (`services/ai-engine/`)
+
+> Sprint 7 baseline scaffold. Paper mode only. No live trading approval.
 
 | Technology | Version | Purpose |
 |---|---|---|
 | **Python** | 3.11+ | Runtime |
-| **FastAPI** | Latest | HTTP API framework |
-| **Uvicorn** | Latest | ASGI server |
-| **pandas** | Latest | Data manipulation |
-| **pandas-ta** | Latest | Technical analysis indicators |
-| **TA-Lib** | Latest | Additional technical indicators |
-| **scikit-learn** | Latest | ML models (classification, regression) |
-| **XGBoost** | Latest | Gradient boosting classifier (primary model) |
-| **LightGBM** | Latest | Alternative gradient boosting |
-| **PyTorch** | Latest | Future deep learning models |
-| **MLflow** | Latest | Model versioning and experiment tracking |
-| **APScheduler** | Latest | Scheduled jobs within Python services |
-| **Redis (redis-py)** | Latest | Cache and pub/sub |
-| **SQLAlchemy** | Latest | DB access from Python services |
-| **Pydantic** | v2 | Data validation and settings |
-| **httpx** | Latest | Async HTTP client |
-| **pytest** | Latest | Testing |
-| **pytest-asyncio** | Latest | Async test support |
+| **FastAPI** | 0.115+ | HTTP API framework |
+| **Uvicorn** | 0.32+ | ASGI server |
+| **pydantic** | v2.9+ | Data validation and schemas |
+| **pydantic-settings** | 2.6+ | Environment variable config |
+| **pandas** | 2.2+ | Data manipulation and feature engineering |
+| **numpy** | 2.1+ | Numerical computation |
+| **scikit-learn** | 1.5+ | ML preprocessing |
+| **XGBoost** | 2.1+ | Gradient boosting classifier (baseline scaffold) |
+| **redis (redis-py async)** | 5.2+ | OHLCV Redis cache (separate DB from API) |
+| **httpx** | 0.27+ | Async HTTP client for NestJS integration |
+| **structlog** | 24.4+ | Structured JSON logging |
+| **python-dotenv** | 1.0+ | .env file loading |
+| **pytest** | 8.3+ | Testing |
+| **pytest-asyncio** | 0.24+ | Async test support |
+| **ruff** | 0.7+ | Fast linter and formatter |
+| **mypy** | 1.13+ | Static type checking |
+| **coverage** | 7.6+ | Test coverage |
+| **APScheduler** | Latest | Scheduled signal generation jobs (Sprint 8+) |
+| **MLflow** | Latest | Model versioning and experiment tracking (Sprint 9+) |
+| **LightGBM / PyTorch** | Latest | Alternative models (future sprints) |
+
+**Service endpoints:**
+- `GET /api/v1/health` — health check
+- `GET /api/v1/models/active` — active model metadata
+- `POST /api/v1/market-data/mock-ohlcv` — mock OHLCV (dev only)
+- `POST /api/v1/signals/generate` — generate candidate (not published)
+- `POST /api/v1/signals/publish-to-api` — generate + forward to NestJS
+
+**NestJS integration:**
+- `POST /api/v1/ai/internal/signals` — protected by `InternalApiKeyGuard` (`x-irexpro-internal-api-key`)
+- All signals route through `AiSignalService → StrategyOrchestrator → RiskEngine → Execution`
 
 ---
 

@@ -17,8 +17,12 @@ exports.AiController = void 0;
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const config_1 = require("@nestjs/config");
+const public_decorator_1 = require("../../common/decorators/public.decorator");
+const internal_api_key_guard_1 = require("../../common/guards/internal-api-key.guard");
 const ai_signal_service_1 = require("./ai-signal.service");
 const simulate_signal_dto_1 = require("./dto/simulate-signal.dto");
+const internal_signal_dto_1 = require("./dto/internal-signal.dto");
+const uuid_1 = require("uuid");
 let AiController = AiController_1 = class AiController {
     constructor(aiSignalService, configService) {
         this.aiSignalService = aiSignalService;
@@ -53,6 +57,32 @@ let AiController = AiController_1 = class AiController {
         });
         return this.aiSignalService.receiveSignal(candidate);
     }
+    async receiveInternalSignal(dto) {
+        this.logger.log(`[INTERNAL] Signal received from AI engine: ` +
+            `instrument=${dto.instrument} direction=${dto.direction} ` +
+            `user=${dto.userId} model=${dto.modelVersion}`);
+        const candidate = {
+            signalId: dto.signalId ?? (0, uuid_1.v4)(),
+            userId: dto.userId,
+            tradingSessionId: dto.tradingSessionId,
+            brokerConnectionId: dto.brokerConnectionId,
+            instrument: dto.instrument,
+            direction: dto.direction,
+            confidenceScore: dto.confidenceScore,
+            suggestedEntryPrice: dto.suggestedEntryPrice,
+            suggestedStopLoss: dto.suggestedStopLoss,
+            suggestedTakeProfit: dto.suggestedTakeProfit,
+            suggestedVolume: dto.suggestedVolume,
+            timeframe: dto.timeframe,
+            strategyCode: dto.strategyCode,
+            marketRegime: dto.marketRegime,
+            volatilityScore: dto.volatilityScore,
+            generatedAt: dto.generatedAt ? new Date(dto.generatedAt) : new Date(),
+            modelVersion: dto.modelVersion,
+            metadata: { ...dto.metadata, source: 'python-ai-engine' },
+        };
+        return this.aiSignalService.receiveSignal(candidate);
+    }
 };
 exports.AiController = AiController;
 __decorate([
@@ -69,8 +99,29 @@ __decorate([
     __metadata("design:paramtypes", [Object, simulate_signal_dto_1.SimulateSignalDto]),
     __metadata("design:returntype", Promise)
 ], AiController.prototype, "simulateSignal", null);
+__decorate([
+    (0, common_1.Post)('internal/signals'),
+    (0, public_decorator_1.Public)(),
+    (0, common_1.UseGuards)(internal_api_key_guard_1.InternalApiKeyGuard),
+    (0, swagger_1.ApiOperation)({
+        summary: '[INTERNAL] Receive signal from Python AI Engine',
+        description: 'Service-to-service endpoint for the Python AI Engine. ' +
+            'Protected by internal API key (x-irexpro-internal-api-key). ' +
+            'All signals route through the full Strategy Orchestrator → Risk Engine → Execution pipeline. ' +
+            'Does not bypass any safety gates.',
+    }),
+    (0, swagger_1.ApiHeader)({
+        name: internal_api_key_guard_1.INTERNAL_API_KEY_HEADER,
+        description: 'Internal service API key',
+        required: true,
+    }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [internal_signal_dto_1.InternalSignalDto]),
+    __metadata("design:returntype", Promise)
+], AiController.prototype, "receiveInternalSignal", null);
 exports.AiController = AiController = AiController_1 = __decorate([
-    (0, swagger_1.ApiTags)('AI (Dev)'),
+    (0, swagger_1.ApiTags)('AI'),
     (0, common_1.Controller)('ai'),
     __metadata("design:paramtypes", [ai_signal_service_1.AiSignalService,
         config_1.ConfigService])

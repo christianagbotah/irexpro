@@ -51,5 +51,8 @@ exports.default = () => ({
         encryptionKey: process.env.BROKER_ENCRYPTION_KEY,
         metaApiToken: process.env.METAAPI_TOKEN,
     },
+    internalApi: {
+        key: process.env.NESTJS_INTERNAL_API_KEY,
+    },
 });
 //# sourceMappingURL=configuration.js.map

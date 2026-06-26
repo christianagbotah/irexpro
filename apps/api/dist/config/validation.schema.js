@@ -33,5 +33,6 @@ exports.validationSchema = Joi.object({
     COOKIE_SECRET: Joi.string().min(16).required(),
     BROKER_ENCRYPTION_KEY: Joi.string().min(32).required(),
     METAAPI_TOKEN: Joi.string().optional().allow(''),
+    NESTJS_INTERNAL_API_KEY: Joi.string().optional().allow(''),
 });
 //# sourceMappingURL=validation.schema.js.map

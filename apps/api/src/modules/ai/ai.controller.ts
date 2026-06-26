@@ -5,29 +5,41 @@ import {
   Logger,
   Post,
   Request,
+  UseGuards,
 } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
+import { Public } from '../../common/decorators/public.decorator';
+import { InternalApiKeyGuard, INTERNAL_API_KEY_HEADER } from '../../common/guards/internal-api-key.guard';
 import { AiSignalService } from './ai-signal.service';
 import { SimulateSignalDto } from './dto/simulate-signal.dto';
+import { InternalSignalDto } from './dto/internal-signal.dto';
 import { StrategyResult } from '../strategy/interfaces/strategy.interface';
+import { AiSignalCandidate } from './interfaces/ai-signal-candidate.interface';
+import { v4 as uuidv4 } from 'uuid';
 
 /**
- * AiController — DEV/TEST endpoints for the AI Signal Engine.
+ * AiController
+ *
+ * Provides two categories of endpoints:
+ *
+ * 1. DEV/TEST — POST /ai/dev/simulate-signal
+ *    - Disabled in production
+ *    - Requires JWT authentication
+ *    - Simulates signals for pipeline testing
+ *
+ * 2. INTERNAL — POST /ai/internal/signals
+ *    - For Python AI Engine → NestJS integration
+ *    - Protected by x-irexpro-internal-api-key header (InternalApiKeyGuard)
+ *    - Not accessible with user JWT alone
+ *    - All signals go through the FULL pipeline
  *
  * ═══════════════════════════════════════════════════════════════════════
- * WARNING: POST /ai/dev/simulate-signal is DISABLED in production.
- * It is for local development and staging testing ONLY.
- *
- * All simulated signals go through the FULL pipeline:
- *   StrategyOrchestrator → RiskEngine → ExecutionEngine → Broker
- *
- * There is NO direct AI → Broker shortcut.
+ * There is NO direct AI → Broker shortcut. Every signal path goes through:
+ *   AiSignalService → StrategyOrchestrator → RiskEngine → ExecutionEngine → Broker
  * ═══════════════════════════════════════════════════════════════════════
- *
- * JWT authentication is required on all routes (enforced by global JwtAuthGuard).
  */
-@ApiTags('AI (Dev)')
+@ApiTags('AI')
 @Controller('ai')
 export class AiController {
   private readonly logger = new Logger(AiController.name);
@@ -89,6 +101,62 @@ export class AiController {
       modelVersion: dto.modelVersion,
       metadata: { source: 'dev-simulate', env },
     });
+
+    return this.aiSignalService.receiveSignal(candidate);
+  }
+
+  /**
+   * INTERNAL: Receive a signal candidate from the Python AI Engine.
+   *
+   * Protected by InternalApiKeyGuard — requires x-irexpro-internal-api-key header.
+   * Not accessible via user JWT alone.
+   * Routes through the FULL pipeline — does NOT bypass Risk Engine or subscriptions.
+   *
+   * POST /api/v1/ai/internal/signals
+   */
+  @Post('internal/signals')
+  @Public()
+  @UseGuards(InternalApiKeyGuard)
+  @ApiOperation({
+    summary: '[INTERNAL] Receive signal from Python AI Engine',
+    description:
+      'Service-to-service endpoint for the Python AI Engine. ' +
+      'Protected by internal API key (x-irexpro-internal-api-key). ' +
+      'All signals route through the full Strategy Orchestrator → Risk Engine → Execution pipeline. ' +
+      'Does not bypass any safety gates.',
+  })
+  @ApiHeader({
+    name: INTERNAL_API_KEY_HEADER,
+    description: 'Internal service API key',
+    required: true,
+  })
+  async receiveInternalSignal(@Body() dto: InternalSignalDto): Promise<StrategyResult> {
+    this.logger.log(
+      `[INTERNAL] Signal received from AI engine: ` +
+      `instrument=${dto.instrument} direction=${dto.direction} ` +
+      `user=${dto.userId} model=${dto.modelVersion}`,
+    );
+
+    const candidate: AiSignalCandidate = {
+      signalId: dto.signalId ?? uuidv4(),
+      userId: dto.userId,
+      tradingSessionId: dto.tradingSessionId,
+      brokerConnectionId: dto.brokerConnectionId,
+      instrument: dto.instrument,
+      direction: dto.direction,
+      confidenceScore: dto.confidenceScore,
+      suggestedEntryPrice: dto.suggestedEntryPrice,
+      suggestedStopLoss: dto.suggestedStopLoss,
+      suggestedTakeProfit: dto.suggestedTakeProfit,
+      suggestedVolume: dto.suggestedVolume,
+      timeframe: dto.timeframe,
+      strategyCode: dto.strategyCode,
+      marketRegime: dto.marketRegime,
+      volatilityScore: dto.volatilityScore,
+      generatedAt: dto.generatedAt ? new Date(dto.generatedAt) : new Date(),
+      modelVersion: dto.modelVersion,
+      metadata: { ...dto.metadata, source: 'python-ai-engine' },
+    };
 
     return this.aiSignalService.receiveSignal(candidate);
   }
