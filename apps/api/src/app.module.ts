@@ -29,6 +29,7 @@ import { StrategyModule } from './modules/strategy/strategy.module';
 import { HealthModule } from './health/health.module';
 import { MarketDataModule } from './modules/market-data/market-data.module';
 import { AiEngineClientModule } from './modules/ai-engine-client/ai-engine-client.module';
+import { PerformanceFeesModule } from './modules/performance-fees/performance-fees.module';
 
 @Module({
   imports: [
@@ -88,6 +89,7 @@ import { AiEngineClientModule } from './modules/ai-engine-client/ai-engine-clien
     HealthModule,
     MarketDataModule,
     AiEngineClientModule,
+    PerformanceFeesModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: AllExceptionsFilter },

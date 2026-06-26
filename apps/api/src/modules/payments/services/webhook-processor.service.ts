@@ -2,19 +2,43 @@ import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { QueryFailedError, Repository } from 'typeorm';
 import { PaymentWebhookEvent } from '../entities/payment-webhook-event.entity';
-import { PaymentTransaction, PaymentTransactionStatus } from '../entities/payment-transaction.entity';
+import { PaymentTransaction, PaymentPurpose, PaymentTransactionStatus } from '../entities/payment-transaction.entity';
 import { Invoice, InvoiceStatus } from '../entities/invoice.entity';
+import { PerformanceFeeAssessment, AssessmentStatus } from '../../performance-fees/entities/performance-fee-assessment.entity';
+import { PerformanceFeeLedgerEntry, LedgerEntryType } from '../../performance-fees/entities/performance-fee-ledger-entry.entity';
+import { TradingAccountPerformance } from '../../performance-fees/entities/trading-account-performance.entity';
 import { PaymentProviderRegistry } from '../registry/payment-provider.registry';
 import { PaymentEventType } from '../interfaces/payment-provider.interface';
 import { AuditService } from '../../audit/audit.service';
 import { AuditAction } from '../../../common/enums/audit-action.enum';
 import { AuditSeverity } from '../../audit/entities/audit-log.entity';
 import { SubscriptionsService } from '../../subscriptions/subscriptions.service';
+import { BillingInterval } from '../../subscriptions/entities/subscription-plan.entity';
 
 export interface WebhookProcessResult {
   accepted: boolean;
   idempotent: boolean;
   message: string;
+}
+
+/**
+ * Compute the subscription period end date from a start date and billing interval.
+ * Supports MONTHLY, QUARTERLY, and ANNUAL. Unknown intervals fall back to MONTHLY.
+ */
+function computePeriodEnd(from: Date, billingInterval: BillingInterval): Date {
+  const end = new Date(from);
+  switch (billingInterval) {
+    case BillingInterval.QUARTERLY:
+      end.setMonth(end.getMonth() + 3);
+      break;
+    case BillingInterval.ANNUAL:
+      end.setFullYear(end.getFullYear() + 1);
+      break;
+    case BillingInterval.MONTHLY:
+    default:
+      end.setMonth(end.getMonth() + 1);
+  }
+  return end;
 }
 
 /**
@@ -30,6 +54,9 @@ export interface WebhookProcessResult {
  * - Never double-process the same providerEventId.
  * - Never store raw payload — store payloadSummary only.
  * - All state changes are audit-logged.
+ * - Billing period end is computed from plan.billingInterval (not hardcoded).
+ * - Duplicate webhook with processed=true → idempotent success.
+ * - Duplicate webhook with processed=false → safe retry.
  */
 @Injectable()
 export class WebhookProcessorService {
@@ -45,6 +72,12 @@ export class WebhookProcessorService {
     private readonly transactionRepo: Repository<PaymentTransaction>,
     @InjectRepository(Invoice)
     private readonly invoiceRepo: Repository<Invoice>,
+    @InjectRepository(PerformanceFeeAssessment)
+    private readonly assessmentRepo: Repository<PerformanceFeeAssessment>,
+    @InjectRepository(PerformanceFeeLedgerEntry)
+    private readonly ledgerRepo: Repository<PerformanceFeeLedgerEntry>,
+    @InjectRepository(TradingAccountPerformance)
+    private readonly performanceRepo: Repository<TradingAccountPerformance>,
   ) {}
 
   async processWebhook(
@@ -114,11 +147,30 @@ export class WebhookProcessorService {
       webhookRecord = await this.webhookEventRepo.save(webhookRecord);
     } catch (err) {
       if (err instanceof QueryFailedError && (err as { code?: string }).code === '23505') {
-        // Unique constraint violation — already processed
-        this.logger.log(`[Webhook] Idempotent: event ${event.providerEventId} already received from ${providerId}`);
-        return { accepted: true, idempotent: true, message: 'Already processed' };
+        // Duplicate event — check if the existing record was successfully processed
+        const existing = await this.webhookEventRepo.findOne({
+          where: { provider: providerId, providerEventId: event.providerEventId },
+        });
+
+        if (!existing) throw err;
+
+        if (existing.processed) {
+          // Already processed successfully → idempotent success, no reprocessing
+          this.logger.log(
+            `[Webhook] Idempotent (processed=true): event ${event.providerEventId} from ${providerId}`,
+          );
+          return { accepted: true, idempotent: true, message: 'Already processed' };
+        }
+
+        // processed=false — previous attempt had a transient failure; retry safely
+        this.logger.log(
+          `[Webhook] Retry (processed=false): event ${event.providerEventId} from ${providerId}`,
+        );
+        webhookRecord = existing;
+        // Fall through to process
+      } else {
+        throw err;
       }
-      throw err;
     }
 
     // 4. Process event
@@ -179,78 +231,210 @@ export class WebhookProcessorService {
         })
       : null;
 
-    if (transaction) {
-      await this.transactionRepo.update(transaction.id, {
-        status: PaymentTransactionStatus.SUCCEEDED,
-        providerPayloadSummary: {
-          ...(transaction.providerPayloadSummary ?? {}),
-          succeededAt: new Date().toISOString(),
-          providerEventId: event.providerEventId,
-        },
-      });
-
-      await this.auditService.log({
-        actorUserId: transaction.userId,
-        actorType: 'SYSTEM',
-        action: AuditAction.PAYMENT_SUCCEEDED,
-        resourceType: 'PaymentTransaction',
-        resourceId: transaction.id,
-        metadata: { provider: providerId, amountMinor: event.amountMinor, currency: event.currency },
-        severity: AuditSeverity.INFO,
-      });
-
-      // Mark invoice paid
-      if (transaction.invoiceId) {
-        await this.invoiceRepo.update(transaction.invoiceId, {
-          status: InvoiceStatus.PAID,
-          paidAt: new Date(),
-        });
-
-        await this.auditService.log({
-          actorUserId: transaction.userId,
-          actorType: 'SYSTEM',
-          action: AuditAction.INVOICE_PAID,
-          resourceType: 'Invoice',
-          resourceId: transaction.invoiceId,
-          metadata: { provider: providerId, transactionId: transaction.id },
-          severity: AuditSeverity.INFO,
-        });
-      }
-
-      // Activate subscription
-      const now = new Date();
-      const periodEnd = new Date(now);
-      periodEnd.setMonth(periodEnd.getMonth() + 1);
-
-      const planId = transaction.providerPayloadSummary?.planId as string | undefined ?? null;
-
-      const subscription = await this.subscriptionsService.activateSubscriptionFromPayment(
-        transaction.userId,
-        planId,
-        providerId,
-        event.providerSubscriptionId ?? null,
-        now,
-        periodEnd,
-      );
-
-      await this.auditService.log({
-        actorUserId: transaction.userId,
-        actorType: 'SYSTEM',
-        action: AuditAction.SUBSCRIPTION_ACTIVATED,
-        resourceType: 'UserSubscription',
-        resourceId: subscription.id,
-        metadata: {
-          provider: providerId,
-          transactionId: transaction.id,
-          periodEnd: periodEnd.toISOString(),
-        },
-        severity: AuditSeverity.INFO,
-      });
-    } else {
+    if (!transaction) {
       this.logger.warn(
         `[Webhook] Payment succeeded but no matching transaction found: ref=${event.providerTransactionReference}, provider=${providerId}`,
       );
+      return;
     }
+
+    await this.transactionRepo.update(transaction.id, {
+      status: PaymentTransactionStatus.SUCCEEDED,
+      providerPayloadSummary: {
+        ...(transaction.providerPayloadSummary ?? {}),
+        succeededAt: new Date().toISOString(),
+        providerEventId: event.providerEventId,
+      },
+    });
+
+    await this.auditService.log({
+      actorUserId: transaction.userId,
+      actorType: 'SYSTEM',
+      action: AuditAction.PAYMENT_SUCCEEDED,
+      resourceType: 'PaymentTransaction',
+      resourceId: transaction.id,
+      metadata: { provider: providerId, amountMinor: event.amountMinor, currency: event.currency },
+      severity: AuditSeverity.INFO,
+    });
+
+    // Mark invoice paid
+    if (transaction.invoiceId) {
+      await this.invoiceRepo.update(transaction.invoiceId, {
+        status: InvoiceStatus.PAID,
+        paidAt: new Date(),
+      });
+
+      await this.auditService.log({
+        actorUserId: transaction.userId,
+        actorType: 'SYSTEM',
+        action: AuditAction.INVOICE_PAID,
+        resourceType: 'Invoice',
+        resourceId: transaction.invoiceId,
+        metadata: { provider: providerId, transactionId: transaction.id },
+        severity: AuditSeverity.INFO,
+      });
+    }
+
+    // Route post-payment logic by payment purpose
+    if (transaction.paymentPurpose === PaymentPurpose.PERFORMANCE_FEE) {
+      await this.handlePerformanceFeePaymentSucceeded(transaction, providerId);
+    } else {
+      await this.handleSubscriptionPaymentSucceeded(transaction, providerId, event);
+    }
+  }
+
+  private async handleSubscriptionPaymentSucceeded(
+    transaction: PaymentTransaction,
+    providerId: string,
+    event: { providerSubscriptionId?: string; providerEventId: string },
+  ): Promise<void> {
+    const now = new Date();
+
+    // Load plan to determine the correct billing period end
+    const planId = transaction.providerPayloadSummary?.planId as string | undefined ?? null;
+    let periodEnd: Date;
+
+    if (planId) {
+      const plan = await this.subscriptionsService.getPlanById(planId);
+      periodEnd = plan
+        ? computePeriodEnd(now, plan.billingInterval)
+        : computePeriodEnd(now, BillingInterval.MONTHLY);
+
+      if (!plan) {
+        this.logger.warn(
+          `[Webhook] Plan ${planId} not found — defaulting period end to MONTHLY for tx ${transaction.id}`,
+        );
+      }
+    } else {
+      // No planId stored — safe fallback to monthly
+      periodEnd = computePeriodEnd(now, BillingInterval.MONTHLY);
+      this.logger.warn(
+        `[Webhook] No planId in transaction ${transaction.id} providerPayloadSummary — defaulting period end to MONTHLY`,
+      );
+    }
+
+    const subscription = await this.subscriptionsService.activateSubscriptionFromPayment(
+      transaction.userId,
+      planId,
+      providerId,
+      event.providerSubscriptionId ?? null,
+      now,
+      periodEnd,
+    );
+
+    await this.auditService.log({
+      actorUserId: transaction.userId,
+      actorType: 'SYSTEM',
+      action: AuditAction.SUBSCRIPTION_ACTIVATED,
+      resourceType: 'UserSubscription',
+      resourceId: subscription.id,
+      metadata: {
+        provider: providerId,
+        transactionId: transaction.id,
+        planId,
+        periodEnd: periodEnd.toISOString(),
+      },
+      severity: AuditSeverity.INFO,
+    });
+  }
+
+  private async handlePerformanceFeePaymentSucceeded(
+    transaction: PaymentTransaction,
+    providerId: string,
+  ): Promise<void> {
+    if (!transaction.invoiceId) {
+      this.logger.warn(`[Webhook] PERFORMANCE_FEE transaction ${transaction.id} has no invoiceId`);
+      return;
+    }
+
+    const assessment = await this.assessmentRepo.findOne({
+      where: { invoiceId: transaction.invoiceId },
+    });
+
+    if (!assessment) {
+      this.logger.warn(
+        `[Webhook] No assessment found for performance fee invoice ${transaction.invoiceId}`,
+      );
+      return;
+    }
+
+    if (assessment.status === AssessmentStatus.PAID) {
+      this.logger.log(`[Webhook] Assessment ${assessment.id} already PAID — idempotent`);
+      return;
+    }
+
+    // Mark assessment PAID
+    await this.assessmentRepo.update(assessment.id, { status: AssessmentStatus.PAID });
+
+    // Add FEE_PAID ledger entry
+    await this.ledgerRepo.save({
+      userId: transaction.userId,
+      assessmentId: assessment.id,
+      brokerConnectionId: assessment.brokerConnectionId,
+      entryType: LedgerEntryType.FEE_PAID,
+      currency: transaction.currency,
+      amount: transaction.amountMinor,
+      sourceReference: transaction.id,
+      occurredAt: new Date(),
+      metadata: {
+        transactionId: transaction.id,
+        invoiceId: transaction.invoiceId,
+        provider: providerId,
+      },
+    });
+
+    // Update HWM and total fees in TradingAccountPerformance
+    const performance = await this.performanceRepo.findOne({
+      where: { userId: transaction.userId, brokerConnectionId: assessment.brokerConnectionId ?? undefined },
+    });
+
+    if (performance) {
+      const newHWM = assessment.endingRealisedBalance;
+      const oldHWM = performance.currentHighWaterMark;
+      const newTotalFees = (BigInt(performance.totalFeesCharged) + BigInt(transaction.amountMinor)).toString();
+
+      await this.performanceRepo.update(performance.id, {
+        currentHighWaterMark: newHWM,
+        totalFeesCharged: newTotalFees,
+      });
+
+      await this.auditService.log({
+        actorUserId: transaction.userId,
+        actorType: 'SYSTEM',
+        action: AuditAction.HIGH_WATER_MARK_UPDATED,
+        resourceType: 'TradingAccountPerformance',
+        resourceId: performance.id,
+        metadata: {
+          userId: transaction.userId,
+          oldHWM,
+          newHWM,
+          assessmentId: assessment.id,
+          transactionId: transaction.id,
+        },
+        severity: AuditSeverity.INFO,
+      });
+    }
+
+    await this.auditService.log({
+      actorUserId: transaction.userId,
+      actorType: 'SYSTEM',
+      action: AuditAction.PERFORMANCE_FEE_PAID,
+      resourceType: 'PerformanceFeeAssessment',
+      resourceId: assessment.id,
+      metadata: {
+        userId: transaction.userId,
+        invoiceId: transaction.invoiceId,
+        transactionId: transaction.id,
+        feeAmount: transaction.amountMinor,
+        currency: transaction.currency,
+        provider: providerId,
+      },
+      severity: AuditSeverity.INFO,
+    });
+
+    this.logger.log(
+      `[Webhook] PERFORMANCE_FEE paid: assessment=${assessment.id}, tx=${transaction.id}`,
+    );
   }
 
   private async handlePaymentFailed(

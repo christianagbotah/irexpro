@@ -246,6 +246,22 @@ All providers implement `IPaymentProvider`. No direct SDK calls in business logi
 
 ---
 
+## Sprint 11 — Performance Fee Engine (Implemented)
+
+| Component | Location | Status |
+|---|---|---|
+| `PerformanceFeePolicy` entity | `performance-fees/entities/` | ✅ Sprint 11 |
+| `TradingAccountPerformance` entity | `performance-fees/entities/` | ✅ Sprint 11 |
+| `PerformanceFeeAssessment` entity | `performance-fees/entities/` | ✅ Sprint 11 |
+| `PerformanceFeeLedgerEntry` entity | `performance-fees/entities/` | ✅ Sprint 11 |
+| `PerformanceFeeService` | `performance-fees/services/` | ✅ Sprint 11 |
+| `PerformanceFeesController` | `performance-fees/` | ✅ Sprint 11 |
+| Migration `1751000000000` | `database/migrations/` | ✅ Sprint 11 |
+
+**Key arithmetic rule:** Performance fee calculations use `BigInt` arithmetic to avoid floating-point precision loss. Formula: `fee = floor(profitAboveHWM × feePercent × 100 / 1_000_000)`.
+
+---
+
 ## Decimal Arithmetic Policy
 
 **All financial calculations must use `Decimal.js` (TypeScript) or Python's `decimal.Decimal` module.**

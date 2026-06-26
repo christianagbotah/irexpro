@@ -55,6 +55,10 @@ export class SubscriptionsService {
     private paymentRoutingService: PaymentRoutingService,
   ) {}
 
+  async getPlanById(planId: string): Promise<SubscriptionPlan | null> {
+    return this.planRepo.findOne({ where: { id: planId } });
+  }
+
   async findActivePlans(): Promise<SubscriptionPlan[]> {
     return this.planRepo.find({
       where: { isActive: true },
@@ -242,10 +246,10 @@ export class SubscriptionsService {
       throw new BadRequestException(`Payment checkout failed: ${message}`);
     }
 
-    // Update transaction with provider reference
+    // Update transaction with provider reference; include planId so webhook handler can load billing interval
     await this.transactionRepo.update(savedTx.id, {
       providerTransactionReference: sessionResult.providerTransactionReference ?? sessionResult.sessionId,
-      providerPayloadSummary: { sessionId: sessionResult.sessionId, provider: provider.providerId },
+      providerPayloadSummary: { sessionId: sessionResult.sessionId, provider: provider.providerId, planId },
     });
 
     // 7. Audit log

@@ -536,6 +536,44 @@ Rules:
 
 ---
 
+## Rule 21 — Performance Fees Apply Only to Realised Profit Above the High-Water Mark
+
+**Performance fee calculations must strictly follow:**
+
+1. **Realised only** — fee applies solely to closed-trade P&L. Open, floating, or unrealised positions are NEVER counted.
+2. **Deposits excluded** — capital added by the user (deposits, top-ups, bonuses, credits) does NOT count as profit.
+3. **HWM gating** — fee applies only to profit above the previous high-water mark. No profit above HWM → zero fee.
+4. **No double-charging** — HWM updates ONLY after the fee assessment is confirmed PAID via verified webhook.
+5. **No auto-withdrawal** — the platform NEVER automatically withdraws fees from a user's broker account. Invoice only.
+6. **No fee without subscription** — a valid active subscription with a performance fee policy is required.
+7. **No fee on demo/paper/backtest** — results from demo brokers, paper trading, or backtest runs must NEVER generate fee entries.
+8. **Zero-fee assessment** — when profit is not above HWM, assessment status stays DRAFT; no invoice is created.
+9. **BigInt arithmetic** — all fee calculations use BigInt to avoid floating-point precision loss.
+10. **Audit trail** — every assessment is reproducible from its `calculationMetadata`; every state change is audit-logged.
+
+---
+
+## Rule 22 — Billing Period Must Respect Plan Interval
+
+**`handlePaymentSucceeded` must use `plan.billingInterval` to compute `periodEnd`.**
+
+- MONTHLY → +1 month
+- QUARTERLY → +3 months
+- ANNUAL → +1 year
+- Plan not found → safe fallback to MONTHLY with a warning log
+
+---
+
+## Rule 23 — Webhook Idempotency Is Status-Aware
+
+**When a duplicate webhook arrives (unique constraint violation on providerEventId):**
+
+- `processed=true` → return idempotent success immediately, no reprocessing.
+- `processed=false` → safe retry: load existing record and continue processing.
+- Either path must NOT double-activate subscriptions or double-charge fees.
+
+---
+
 ## Code Review Checklist
 
 Before approving any PR touching trading, risk, financial, payment, or regional logic:
@@ -571,3 +609,9 @@ Before approving any PR touching trading, risk, financial, payment, or regional 
 - [ ] All monetary values stored as bigint strings (minor units) — never float
 - [ ] providerPayloadSummary only — never full raw payload (may contain secrets)
 - [ ] Webhook idempotency: check providerEventId before processing
+- [ ] Performance fee not assessed on deposits, top-ups, bonuses, unrealised P&L, or demo/backtest results
+- [ ] Performance fee HWM updated ONLY after confirmed payment (status=PAID)
+- [ ] No automatic broker withdrawal for performance fees — invoice only
+- [ ] Performance fee invoice created only when feeAmount > 0
+- [ ] Billing period computed from plan.billingInterval (not hardcoded)
+- [ ] Duplicate webhook with processed=false → retry safely, not silently ignored

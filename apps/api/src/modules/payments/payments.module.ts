@@ -16,10 +16,21 @@ import { Invoice } from './entities/invoice.entity';
 import { PaymentWebhookEvent } from './entities/payment-webhook-event.entity';
 import { CountryConfig } from '../global-config/entities/country-config.entity';
 import { AuditModule } from '../audit/audit.module';
+import { PerformanceFeeAssessment } from '../performance-fees/entities/performance-fee-assessment.entity';
+import { PerformanceFeeLedgerEntry } from '../performance-fees/entities/performance-fee-ledger-entry.entity';
+import { TradingAccountPerformance } from '../performance-fees/entities/trading-account-performance.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([PaymentTransaction, Invoice, PaymentWebhookEvent, CountryConfig]),
+    TypeOrmModule.forFeature([
+      PaymentTransaction,
+      Invoice,
+      PaymentWebhookEvent,
+      CountryConfig,
+      PerformanceFeeAssessment,
+      PerformanceFeeLedgerEntry,
+      TradingAccountPerformance,
+    ]),
     AuditModule,
   ],
   controllers: [PaymentsController],

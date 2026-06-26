@@ -379,7 +379,53 @@ Withdrawal adjustments are recorded in the audit log and FeeRecord history.
 
 ---
 
-## 12. Subscription and Revenue Audit Log
+## 12. Sprint 11 — Performance Fee Engine Implementation (Current)
+
+### Entities Implemented
+
+| Entity | Schema | Purpose |
+|---|---|---|
+| `PerformanceFeePolicy` | `performance_fees` | Defines fee terms (rate, frequency, mode) per plan |
+| `TradingAccountPerformance` | `performance_fees` | Tracks HWM, realised P&L, deposits, fees per account |
+| `PerformanceFeeAssessment` | `performance_fees` | Full audit record of one fee calculation period |
+| `PerformanceFeeLedgerEntry` | `performance_fees` | Immutable event log for all fee-relevant monetary movements |
+
+### Fee Calculation Rules (Enforced)
+
+1. **Realised profit only** — REALISED_TRADE_PROFIT + REALISED_TRADE_LOSS ledger entries only
+2. **Deposits excluded** — DEPOSIT ledger entries are NEVER counted as profit
+3. **HWM comparison** — fee applies only when cumulative realised P&L exceeds current HWM
+4. **Zero-fee assessment** — if profit ≤ HWM, feeAmount=0 and status=DRAFT; no invoice created
+5. **HWM update** — only after assessment status transitions to PAID via verified webhook
+6. **No automatic withdrawal** — invoice created; payment handled via existing payment provider flow
+7. **No demo/paper/backtest fees** — only live broker REALISED_TRADE_* entries are valid input
+8. **BigInt arithmetic** — `fee = floor(profitAboveHWM × feePercent × 100 / 1_000_000)` — no float precision loss
+
+### API Endpoints (Admin Only Except Summary)
+
+```
+GET    /api/v1/performance-fees/policies                    (ADMIN+)
+POST   /api/v1/performance-fees/policies                    (ADMIN+)
+GET    /api/v1/performance-fees/me/summary                  (authenticated user — own data)
+GET    /api/v1/performance-fees/assessments                 (ADMIN+)
+POST   /api/v1/performance-fees/assessments/calculate       (ADMIN+)
+POST   /api/v1/performance-fees/assessments/:id/invoice     (ADMIN+)
+POST   /api/v1/performance-fees/ledger-entries              (ADMIN+)
+```
+
+### Assessment Lifecycle
+
+```
+DRAFT → ASSESSED (when feeAmount > 0)
+ASSESSED → INVOICED (via invoiceAssessment)
+INVOICED → PAID (via verified payment webhook)
+ASSESSED → WAIVED (admin action — future sprint)
+DRAFT/ASSESSED/INVOICED → CANCELLED (admin action — future sprint)
+```
+
+---
+
+## 13. Subscription and Revenue Audit Log
 
 All subscription, payment, and revenue events produce immutable audit log entries:
 

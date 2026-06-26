@@ -1,6 +1,6 @@
 # iRexPro — Implementation Roadmap
 
-## Current Phase: Phase 1 Sprint 10 Complete — Secure Global Subscription Billing and Payment Gateway Foundation
+## Current Phase: Phase 1 Sprint 11 Complete — Performance Fee + High-Water Mark Engine
 
 ---
 
@@ -153,6 +153,79 @@ Tasks (in order):
 - **NestJS AiEngineClient** — notifies AI engine on trading session start/stop (`AI_ENGINE_SCHEDULER_ENABLED=false` default)
 - **Offline training scaffold** — `app/domain/training/` research-only; no live model approval
 - **Safety**: No direct AI→Broker path; scheduler paper-only; mock data blocked in production unless explicitly allowed
+
+---
+
+### ✅ Sprint 10 — Secure Global Subscription Billing and Payment Gateway Foundation (COMPLETE)
+
+**Sprint 10 delivered:**
+- `PaymentTransaction`, `Invoice`, `PaymentWebhookEvent` entities with explicit PostgreSQL types
+- `IPaymentProvider` hardened interface: `createCheckoutSession`, `verifyWebhookSignature`, `getTransactionStatus`, `refundPayment`
+- `PaymentRoutingService` — country/currency-aware provider routing (excludes ManualPaymentProvider from public checkout)
+- `WebhookProcessorService` — fail-closed signature verification, idempotency, event routing, no raw body storage
+- `SubscriptionsService.initiateCheckout` — full checkout flow with DRAFT invoice + PENDING transaction
+- `SubscriptionsService.activateSubscriptionFromPayment` — called only from verified webhook handler
+- `PaymentsController` — `GET /payments/providers`, `POST /payments/webhooks/:provider` (rawBody enabled)
+- Migration `1750900000000-CreatePaymentsSchema` — payments schema, enums, tables, indexes
+- Sprint 10 audit fixes: `rawBody: true` in main.ts, ManualPaymentProvider blocked from webhook endpoint, `INVOICE_CREATED` audit log added
+- **341 tests passing, 24 suites**
+
+---
+
+### ✅ Sprint 11 — Performance Fee + High-Water Mark Engine (COMPLETE)
+
+**Sprint 11 delivered:**
+
+**Part A — Sprint 10 Warning Fixes:**
+- Billing interval fix: `handlePaymentSucceeded` now uses `plan.billingInterval` (MONTHLY/QUARTERLY/ANNUAL) for correct `periodEnd` computation via `computePeriodEnd()` helper. Safe fallback to MONTHLY when plan not found.
+- Idempotency fix: duplicate webhook with `processed=true` → idempotent success; `processed=false` → safe retry. No double-activation.
+- `SubscriptionsService.getPlanById()` added. `initiateCheckout` now stores `planId` in `providerPayloadSummary`.
+
+**Part B — Performance Fee Domain Model:**
+- `PerformanceFeePolicy` entity — `feePercent`, `billingFrequency`, `calculationMode=HIGH_WATER_MARK`, `appliesTo=REALISED_PROFIT_ONLY`
+- `TradingAccountPerformance` entity — `currentHighWaterMark`, `totalRealisedProfit`, `totalFeesCharged`, deposit/withdrawal tracking
+- `PerformanceFeeAssessment` entity — full audit trail: HWM start/end, deposits excluded, realised profit for fee, fee amount, status lifecycle
+- `PerformanceFeeLedgerEntry` entity — immutable event log: DEPOSIT (excluded), REALISED_TRADE_PROFIT, REALISED_TRADE_LOSS, FEE_ASSESSED, FEE_PAID, ADJUSTMENT
+- Migration `1751000000000-CreatePerformanceFeesSchema` — `performance_fees` schema, enums, tables, indexes; safe `down()`
+
+**Part C — PerformanceFeeService:**
+- `calculateAssessment()` — loads subscription, finds policy, loads ledger entries, excludes deposits, computes net realised P&L, HWM comparison, BigInt-safe fee arithmetic
+- `invoiceAssessment()` — creates `Invoice` + `PaymentTransaction` (purpose=PERFORMANCE_FEE), `FEE_ASSESSED` ledger entry
+- `markAssessmentPaid()` — marks PAID, updates HWM to new peak, updates `totalFeesCharged`
+- `recordLedgerEntry()` — admin-only manual entry with audit log
+- Fee formula: `feeAmount = floor(profitAboveHWM × feePercent × 100 / 1_000_000)` (BigInt, no float precision loss)
+
+**Part D — Payment Integration:**
+- `WebhookProcessorService.handlePaymentSucceeded` now routes on `paymentPurpose`:
+  - `SUBSCRIPTION_*` → existing subscription activation path
+  - `PERFORMANCE_FEE` → marks assessment PAID, adds FEE_PAID ledger entry, updates HWM, emits `PERFORMANCE_FEE_PAID` audit event
+
+**Part E — API Endpoints:**
+- `GET /api/v1/performance-fees/policies` — ADMIN+
+- `POST /api/v1/performance-fees/policies` — ADMIN+
+- `GET /api/v1/performance-fees/me/summary` — authenticated user (own data)
+- `GET /api/v1/performance-fees/assessments` — ADMIN+
+- `POST /api/v1/performance-fees/assessments/calculate` — ADMIN+
+- `POST /api/v1/performance-fees/assessments/:id/invoice` — ADMIN+
+- `POST /api/v1/performance-fees/ledger-entries` — ADMIN+
+
+**Part F — Audit Actions:**
+- `PERFORMANCE_FEE_POLICY_CREATED`, `PERFORMANCE_FEE_ASSESSMENT_CALCULATED`, `PERFORMANCE_FEE_ASSESSMENT_INVOICED`, `PERFORMANCE_FEE_ASSESSMENT_WAIVED`, `PERFORMANCE_FEE_PAID`, `PERFORMANCE_FEE_LEDGER_ENTRY_CREATED`, `HIGH_WATER_MARK_UPDATED`
+
+**Part G — Tests:**
+- `performance-fee.service.spec.ts` — 23 tests: HWM logic, deposit exclusion, realised-only rule, duplicate prevention, invoice integration, subscription checks, security
+- `webhook-processor.service.spec.ts` — expanded with 10 new tests: billing interval (monthly/quarterly/annual/unknown), idempotency retry, PERFORMANCE_FEE webhook payment
+- **378 tests passing, 25 suites**
+
+**Safety invariants enforced:**
+- No live broker withdrawals — invoice only
+- No fee on deposits, top-ups, bonuses, credits
+- No fee on unrealised/floating P&L
+- No fee on demo, paper, or backtest results
+- HWM updated only after confirmed payment (status=PAID)
+- No duplicate assessment for same user/broker/period (unless DRAFT)
+- No invoice for zero-fee assessment
+- No automatic payment provider charge
 
 ---
 
