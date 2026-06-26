@@ -14,9 +14,10 @@ let StripePaymentProvider = class StripePaymentProvider extends base_provider_1.
         super(...arguments);
         this.providerId = 'stripe';
         this.displayName = 'Stripe';
-        this.supportedCountries = ['GB', 'US', 'CA', 'AU', 'SG', 'AE', 'DE', 'FR', 'NL', 'IE'];
-        this.supportedCurrencies = ['GBP', 'USD', 'EUR', 'AUD', 'CAD', 'SGD', 'AED'];
+        this.supportedCountries = ['GB', 'US', 'CA', 'AU', 'SG', 'AE', 'DE', 'FR', 'NL', 'IE', 'NG', 'KE', 'GH', 'ZA'];
+        this.supportedCurrencies = ['GBP', 'USD', 'EUR', 'AUD', 'CAD', 'SGD', 'AED', 'NGN', 'KES', 'GHS', 'ZAR'];
         this.isLive = false;
+        this.supportedPaymentMethods = ['card'];
     }
 };
 exports.StripePaymentProvider = StripePaymentProvider;

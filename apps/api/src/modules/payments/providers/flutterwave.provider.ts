@@ -17,4 +17,5 @@ export class FlutterwavePaymentProvider extends BasePaymentProvider {
   readonly supportedCountries = ['GH', 'NG', 'KE', 'ZA', 'UG', 'TZ', 'CM', 'CI', 'SN'];
   readonly supportedCurrencies = ['NGN', 'GHS', 'KES', 'ZAR', 'UGX', 'TZS', 'USD'];
   readonly isLive = false;
+  readonly supportedPaymentMethods = ['card', 'mobile_money', 'bank_transfer', 'ussd'];
 }

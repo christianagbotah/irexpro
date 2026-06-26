@@ -17,4 +17,5 @@ export class WisePayoutProvider extends BasePaymentProvider {
   readonly supportedCountries = ['GB', 'US', 'CA', 'AU', 'SG', 'DE', 'FR', 'NL'];
   readonly supportedCurrencies = ['GBP', 'USD', 'EUR', 'AUD', 'CAD', 'SGD'];
   readonly isLive = false;
+  readonly supportedPaymentMethods = ['bank_transfer'];
 }

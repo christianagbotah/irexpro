@@ -1,10 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
+  CreateCheckoutSessionRequest,
+  CreateCheckoutSessionResult,
   CreateCustomerParams,
   CreatePaymentIntentParams,
   CreateSubscriptionParams,
   IPaymentProvider,
   PaymentEventType,
+  PaymentProviderTransactionStatus,
   ProviderCustomerResult,
   ProviderPaymentIntentResult,
   ProviderSubscriptionResult,
@@ -35,6 +38,7 @@ export class ManualPaymentProvider implements IPaymentProvider {
   readonly supportedCountries = ['*'];
   readonly supportedCurrencies = ['*'];
   readonly isLive = false;
+  readonly supportedPaymentMethods = ['manual'];
 
   async createCustomer(params: CreateCustomerParams): Promise<ProviderCustomerResult> {
     this.logger.warn(`[DEV/TEST] ManualPaymentProvider.createCustomer called for user ${params.userId}`);
@@ -44,7 +48,57 @@ export class ManualPaymentProvider implements IPaymentProvider {
     };
   }
 
-  async createSubscription(params: CreateSubscriptionParams): Promise<ProviderSubscriptionResult> {
+  async createCheckoutSession(
+    request: CreateCheckoutSessionRequest,
+  ): Promise<CreateCheckoutSessionResult> {
+    this.logger.warn(`[DEV/TEST] ManualPaymentProvider.createCheckoutSession for user ${request.userId}`);
+    const sessionId = `manual_session_${uuidv4()}`;
+    return {
+      sessionId,
+      checkoutUrl: undefined,
+      providerTransactionReference: sessionId,
+      provider: this.providerId,
+    };
+  }
+
+  verifyWebhookSignature(
+    _rawBody: Buffer,
+    _headers: Record<string, string | string[] | undefined>,
+  ): boolean {
+    this.logger.warn('[DEV/TEST] ManualPaymentProvider.verifyWebhookSignature — always true in dev');
+    return true;
+  }
+
+  parseWebhookEvent(
+    _rawBody: Buffer,
+    _headers: Record<string, string | string[] | undefined>,
+  ): ProviderWebhookEvent {
+    return {
+      eventType: PaymentEventType.PAYMENT_SUCCEEDED,
+      providerEventId: `manual_evt_${uuidv4()}`,
+    };
+  }
+
+  async getTransactionStatus(providerReference: string): Promise<PaymentProviderTransactionStatus> {
+    this.logger.warn(`[DEV/TEST] ManualPaymentProvider.getTransactionStatus: ${providerReference}`);
+    return {
+      providerReference,
+      status: 'SUCCEEDED',
+      paidAt: new Date(),
+    };
+  }
+
+  async cancelSubscription(providerSubscriptionId: string): Promise<void> {
+    this.logger.warn(`[DEV/TEST] ManualPaymentProvider.cancelSubscription: ${providerSubscriptionId}`);
+  }
+
+  async refundPayment(providerReference: string, _amountMinor?: number): Promise<void> {
+    this.logger.warn(`[DEV/TEST] ManualPaymentProvider.refundPayment: ${providerReference}`);
+  }
+
+  // ─── Deprecated compat methods ────────────────────────────────────────────
+
+  async createSubscription(_params: CreateSubscriptionParams): Promise<ProviderSubscriptionResult> {
     this.logger.warn(`[DEV/TEST] ManualPaymentProvider.createSubscription called`);
     const now = new Date();
     const end = new Date(now);
@@ -55,10 +109,6 @@ export class ManualPaymentProvider implements IPaymentProvider {
       currentPeriodStart: now,
       currentPeriodEnd: end,
     };
-  }
-
-  async cancelSubscription(providerSubscriptionId: string): Promise<void> {
-    this.logger.warn(`[DEV/TEST] ManualPaymentProvider.cancelSubscription: ${providerSubscriptionId}`);
   }
 
   async createPaymentIntent(params: CreatePaymentIntentParams): Promise<ProviderPaymentIntentResult> {
@@ -72,12 +122,5 @@ export class ManualPaymentProvider implements IPaymentProvider {
   validateWebhookSignature(_rawBody: Buffer, _signature: string): boolean {
     this.logger.warn('[DEV/TEST] ManualPaymentProvider.validateWebhookSignature — always true in dev');
     return true;
-  }
-
-  parseWebhookEvent(_rawBody: Buffer): ProviderWebhookEvent {
-    return {
-      eventType: PaymentEventType.PAYMENT_SUCCEEDED,
-      providerEventId: `manual_evt_${uuidv4()}`,
-    };
   }
 }

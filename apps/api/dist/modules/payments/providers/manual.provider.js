@@ -19,6 +19,7 @@ let ManualPaymentProvider = ManualPaymentProvider_1 = class ManualPaymentProvide
         this.supportedCountries = ['*'];
         this.supportedCurrencies = ['*'];
         this.isLive = false;
+        this.supportedPaymentMethods = ['manual'];
     }
     async createCustomer(params) {
         this.logger.warn(`[DEV/TEST] ManualPaymentProvider.createCustomer called for user ${params.userId}`);
@@ -27,7 +28,41 @@ let ManualPaymentProvider = ManualPaymentProvider_1 = class ManualPaymentProvide
             provider: this.providerId,
         };
     }
-    async createSubscription(params) {
+    async createCheckoutSession(request) {
+        this.logger.warn(`[DEV/TEST] ManualPaymentProvider.createCheckoutSession for user ${request.userId}`);
+        const sessionId = `manual_session_${(0, uuid_1.v4)()}`;
+        return {
+            sessionId,
+            checkoutUrl: undefined,
+            providerTransactionReference: sessionId,
+            provider: this.providerId,
+        };
+    }
+    verifyWebhookSignature(_rawBody, _headers) {
+        this.logger.warn('[DEV/TEST] ManualPaymentProvider.verifyWebhookSignature — always true in dev');
+        return true;
+    }
+    parseWebhookEvent(_rawBody, _headers) {
+        return {
+            eventType: payment_provider_interface_1.PaymentEventType.PAYMENT_SUCCEEDED,
+            providerEventId: `manual_evt_${(0, uuid_1.v4)()}`,
+        };
+    }
+    async getTransactionStatus(providerReference) {
+        this.logger.warn(`[DEV/TEST] ManualPaymentProvider.getTransactionStatus: ${providerReference}`);
+        return {
+            providerReference,
+            status: 'SUCCEEDED',
+            paidAt: new Date(),
+        };
+    }
+    async cancelSubscription(providerSubscriptionId) {
+        this.logger.warn(`[DEV/TEST] ManualPaymentProvider.cancelSubscription: ${providerSubscriptionId}`);
+    }
+    async refundPayment(providerReference, _amountMinor) {
+        this.logger.warn(`[DEV/TEST] ManualPaymentProvider.refundPayment: ${providerReference}`);
+    }
+    async createSubscription(_params) {
         this.logger.warn(`[DEV/TEST] ManualPaymentProvider.createSubscription called`);
         const now = new Date();
         const end = new Date(now);
@@ -39,9 +74,6 @@ let ManualPaymentProvider = ManualPaymentProvider_1 = class ManualPaymentProvide
             currentPeriodEnd: end,
         };
     }
-    async cancelSubscription(providerSubscriptionId) {
-        this.logger.warn(`[DEV/TEST] ManualPaymentProvider.cancelSubscription: ${providerSubscriptionId}`);
-    }
     async createPaymentIntent(params) {
         this.logger.warn(`[DEV/TEST] ManualPaymentProvider.createPaymentIntent: ${params.amountCents} ${params.currency}`);
         return {
@@ -52,12 +84,6 @@ let ManualPaymentProvider = ManualPaymentProvider_1 = class ManualPaymentProvide
     validateWebhookSignature(_rawBody, _signature) {
         this.logger.warn('[DEV/TEST] ManualPaymentProvider.validateWebhookSignature — always true in dev');
         return true;
-    }
-    parseWebhookEvent(_rawBody) {
-        return {
-            eventType: payment_provider_interface_1.PaymentEventType.PAYMENT_SUCCEEDED,
-            providerEventId: `manual_evt_${(0, uuid_1.v4)()}`,
-        };
     }
 };
 exports.ManualPaymentProvider = ManualPaymentProvider;

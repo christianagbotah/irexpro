@@ -7,6 +7,10 @@
  * RULE: Services must NEVER call provider SDKs directly.
  * Always interact through this interface via PaymentProviderRegistry.
  *
+ * RULE: Provider secrets must NEVER be stored in DB rows, logs, or API responses.
+ * RULE: Raw card data must NEVER be stored.
+ * RULE: Webhook signatures must be verified before processing any state change.
+ *
  * See: docs/architecture/21-payment-provider-architecture.md
  */
 export interface IPaymentProvider {
@@ -25,27 +29,58 @@ export interface IPaymentProvider {
   /** Whether this provider is available for live use (false for placeholders) */
   readonly isLive: boolean;
 
+  /** Payment methods summary e.g. ['card', 'mobile_money', 'bank_transfer'] */
+  readonly supportedPaymentMethods: string[];
+
   /**
    * Create or retrieve a customer record at the provider for a given user.
    * Must be idempotent — calling twice for the same user returns the same reference.
    */
   createCustomer(params: CreateCustomerParams): Promise<ProviderCustomerResult>;
 
-  /** Create a subscription at the provider */
-  createSubscription(params: CreateSubscriptionParams): Promise<ProviderSubscriptionResult>;
+  /**
+   * Create a checkout session (redirect URL or inline token) for a subscription or one-time payment.
+   * Returns a checkout URL or reference the frontend can use to redirect/display.
+   * NEVER returns or stores raw card data.
+   */
+  createCheckoutSession(request: CreateCheckoutSessionRequest): Promise<CreateCheckoutSessionResult>;
+
+  /**
+   * Verify the signature on an incoming webhook.
+   * Must be called BEFORE processing ANY webhook payload.
+   * Must fail closed — any error or missing secret should return false.
+   */
+  verifyWebhookSignature(rawBody: Buffer, headers: Record<string, string | string[] | undefined>): boolean;
+
+  /**
+   * Parse a verified webhook payload into a normalised event.
+   * Should only be called AFTER verifyWebhookSignature returns true.
+   */
+  parseWebhookEvent(
+    rawBody: Buffer,
+    headers: Record<string, string | string[] | undefined>,
+  ): ProviderWebhookEvent;
+
+  /** Get the current status of a transaction by provider reference */
+  getTransactionStatus(providerReference: string): Promise<PaymentProviderTransactionStatus>;
 
   /** Cancel a subscription at the provider */
-  cancelSubscription(providerSubscriptionId: string): Promise<void>;
+  cancelSubscription(providerSubscriptionReference: string): Promise<void>;
 
-  /** Create a one-time payment intent (e.g., for performance fee collection) */
+  /** Issue a refund for a payment, optionally partial */
+  refundPayment(providerReference: string, amountMinor?: number): Promise<void>;
+
+  /** @deprecated Use createCheckoutSession for new flows */
+  createSubscription(params: CreateSubscriptionParams): Promise<ProviderSubscriptionResult>;
+
+  /** @deprecated Use createCheckoutSession for new flows */
   createPaymentIntent(params: CreatePaymentIntentParams): Promise<ProviderPaymentIntentResult>;
 
-  /** Validate an incoming webhook payload. Must be called BEFORE processing. */
+  /** @deprecated Use verifyWebhookSignature */
   validateWebhookSignature(rawBody: Buffer, signature: string): boolean;
-
-  /** Parse a validated webhook payload into a normalised event */
-  parseWebhookEvent(rawBody: Buffer): ProviderWebhookEvent;
 }
+
+// ─── Request / Result DTOs ────────────────────────────────────────────────────
 
 export interface CreateCustomerParams {
   userId: string;
@@ -60,6 +95,51 @@ export interface ProviderCustomerResult {
   providerCustomerId: string;
   provider: string;
   raw?: Record<string, unknown>;
+}
+
+export interface CreateCheckoutSessionRequest {
+  userId: string;
+  email: string;
+  planId: string;
+  currency: string;
+  amountMinor: number;
+  countryCode: string;
+  providerCustomerId?: string;
+  providerPlanId?: string;
+  invoiceId?: string;
+  successUrl?: string;
+  cancelUrl?: string;
+  metadata?: Record<string, string>;
+}
+
+export interface CreateCheckoutSessionResult {
+  /** Opaque provider session or payment reference */
+  sessionId: string;
+  /** URL to redirect user to (if redirect-based flow) */
+  checkoutUrl?: string;
+  /** Client-side token (if embedded flow) */
+  clientToken?: string;
+  /** Provider-specific transaction reference */
+  providerTransactionReference?: string;
+  provider: string;
+  expiresAt?: Date;
+}
+
+export interface PaymentProviderTransactionStatus {
+  providerReference: string;
+  status: 'PENDING' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED' | 'REFUNDED';
+  amountMinor?: number;
+  currency?: string;
+  paidAt?: Date;
+  failureCode?: string;
+  failureMessage?: string;
+}
+
+export interface PaymentProviderError {
+  code: string;
+  message: string;
+  providerCode?: string;
+  retryable: boolean;
 }
 
 export interface CreateSubscriptionParams {
@@ -98,10 +178,10 @@ export interface ProviderWebhookEvent {
   providerEventId: string;
   providerSubscriptionId?: string;
   providerCustomerId?: string;
-  amountCents?: number;
+  providerTransactionReference?: string;
+  amountMinor?: number;
   currency?: string;
   metadata?: Record<string, unknown>;
-  raw?: Record<string, unknown>;
 }
 
 export enum PaymentEventType {

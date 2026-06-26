@@ -169,7 +169,11 @@ let AuthService = AuthService_1 = class AuthService {
         return this.userRepo.findOne({ where: { id } });
     }
     async hashPassword(password) {
-        return argon2.hash(password);
+        return argon2.hash(password, {
+            memoryCost: this.configService.get('auth.argon2MemoryCost', 65536),
+            timeCost: this.configService.get('auth.argon2TimeCost', 3),
+            parallelism: this.configService.get('auth.argon2Parallelism', 1),
+        });
     }
     async verifyPassword(hash, password) {
         return argon2.verify(hash, password);

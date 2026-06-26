@@ -11,7 +11,14 @@ import { setupSwagger } from './config/swagger.config';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
-  const app = await NestFactory.create(AppModule, { logger: ['log', 'error', 'warn', 'debug'] });
+  // rawBody: true preserves the unparsed request body on req.rawBody, which is
+  // REQUIRED for payment webhook signature verification
+  // (POST /payments/webhooks/:provider). Without this, req.rawBody is undefined
+  // and provider signature checks cannot be performed.
+  const app = await NestFactory.create(AppModule, {
+    logger: ['log', 'error', 'warn', 'debug'],
+    rawBody: true,
+  });
 
   const configService = app.get(ConfigService);
   const apiPrefix = configService.get<string>('app.apiPrefix', 'api/v1');

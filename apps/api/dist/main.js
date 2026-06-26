@@ -12,7 +12,10 @@ const app_module_1 = require("./app.module");
 const swagger_config_1 = require("./config/swagger.config");
 async function bootstrap() {
     const logger = new common_1.Logger('Bootstrap');
-    const app = await core_1.NestFactory.create(app_module_1.AppModule, { logger: ['log', 'error', 'warn', 'debug'] });
+    const app = await core_1.NestFactory.create(app_module_1.AppModule, {
+        logger: ['log', 'error', 'warn', 'debug'],
+        rawBody: true,
+    });
     const configService = app.get(config_1.ConfigService);
     const apiPrefix = configService.get('app.apiPrefix', 'api/v1');
     const port = configService.get('app.port', 3000);

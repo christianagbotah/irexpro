@@ -17,6 +17,7 @@ let PaystackPaymentProvider = class PaystackPaymentProvider extends base_provide
         this.supportedCountries = ['GH', 'NG', 'KE', 'ZA'];
         this.supportedCurrencies = ['GHS', 'NGN', 'KES', 'ZAR', 'USD'];
         this.isLive = false;
+        this.supportedPaymentMethods = ['card', 'mobile_money', 'bank_transfer'];
     }
 };
 exports.PaystackPaymentProvider = PaystackPaymentProvider;

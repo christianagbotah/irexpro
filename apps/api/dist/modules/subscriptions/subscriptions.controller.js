@@ -17,6 +17,7 @@ const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const subscriptions_service_1 = require("./subscriptions.service");
 const manual_activate_dto_1 = require("./dto/manual-activate.dto");
+const checkout_dto_1 = require("./dto/checkout.dto");
 const jwt_auth_guard_1 = require("../../common/guards/jwt-auth.guard");
 const roles_guard_1 = require("../../common/guards/roles.guard");
 const roles_decorator_1 = require("../../common/decorators/roles.decorator");
@@ -32,6 +33,20 @@ let SubscriptionsController = class SubscriptionsController {
     }
     async getMySubscription(user) {
         return this.subscriptionsService.findUserSubscription(user.id);
+    }
+    async checkout(dto, user, req) {
+        return this.subscriptionsService.initiateCheckout({
+            userId: user.id,
+            email: user.email,
+            planId: dto.planId,
+            currency: dto.currency,
+            countryCode: dto.countryCode ?? 'US',
+            provider: dto.provider,
+            ipAddress: req.ip,
+        });
+    }
+    async cancelSubscription(dto, user, req) {
+        return this.subscriptionsService.cancelSubscription(user.id, dto.reason, req.ip);
     }
     async manualActivate(dto, admin, req) {
         return this.subscriptionsService.manualActivate(dto.userId, dto.planId, admin.id, req.ip);
@@ -53,6 +68,40 @@ __decorate([
     __metadata("design:paramtypes", [user_entity_1.User]),
     __metadata("design:returntype", Promise)
 ], SubscriptionsController.prototype, "getMySubscription", null);
+__decorate([
+    (0, common_1.Post)('checkout'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.CREATED),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Initiate subscription checkout',
+        description: 'Creates a pending invoice and payment transaction, then returns a checkout URL or session ' +
+            'reference. Subscription is activated ONLY after verified provider webhook — never on ' +
+            'frontend callback alone.',
+    }),
+    (0, swagger_1.ApiResponse)({ status: 201, description: 'Checkout session created' }),
+    (0, swagger_1.ApiResponse)({ status: 400, description: 'Invalid plan, pricing, or provider' }),
+    (0, swagger_1.ApiResponse)({ status: 404, description: 'Plan not found' }),
+    __param(0, (0, common_1.Body)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [checkout_dto_1.CheckoutDto,
+        user_entity_1.User, Object]),
+    __metadata("design:returntype", Promise)
+], SubscriptionsController.prototype, "checkout", null);
+__decorate([
+    (0, common_1.Post)('cancel'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiOperation)({ summary: 'Cancel current subscription' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Subscription cancelled' }),
+    (0, swagger_1.ApiResponse)({ status: 404, description: 'No active subscription found' }),
+    __param(0, (0, common_1.Body)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [checkout_dto_1.CancelSubscriptionDto,
+        user_entity_1.User, Object]),
+    __metadata("design:returntype", Promise)
+], SubscriptionsController.prototype, "cancelSubscription", null);
 __decorate([
     (0, common_1.Post)('dev/manual-activate'),
     (0, common_1.UseGuards)(roles_guard_1.RolesGuard),

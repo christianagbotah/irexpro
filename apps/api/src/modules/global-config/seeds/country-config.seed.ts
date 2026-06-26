@@ -87,7 +87,7 @@ export const COUNTRY_CONFIG_SEEDS: Partial<CountryConfig>[] = [
     region: 'North America',
     defaultCurrency: 'USD',
     supportedCurrencies: ['USD'],
-    enabledPaymentProviders: ['stripe', 'paypal', 'manual'],
+    enabledPaymentProviders: ['stripe', 'paypal', 'manual'], // paypal = PayPalBraintreePaymentProvider
     enabledSmsProviders: ['twilio'],
     enabledBrokers: [],
     timezone: 'America/New_York',

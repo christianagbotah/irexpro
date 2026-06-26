@@ -17,4 +17,5 @@ export class PaystackPaymentProvider extends BasePaymentProvider {
   readonly supportedCountries = ['GH', 'NG', 'KE', 'ZA'];
   readonly supportedCurrencies = ['GHS', 'NGN', 'KES', 'ZAR', 'USD'];
   readonly isLive = false;
+  readonly supportedPaymentMethods = ['card', 'mobile_money', 'bank_transfer'];
 }

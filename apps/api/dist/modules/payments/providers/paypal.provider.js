@@ -17,6 +17,7 @@ let PayPalBraintreePaymentProvider = class PayPalBraintreePaymentProvider extend
         this.supportedCountries = ['US', 'GB', 'CA', 'AU', 'DE', 'FR', 'NL'];
         this.supportedCurrencies = ['USD', 'GBP', 'EUR', 'AUD', 'CAD'];
         this.isLive = false;
+        this.supportedPaymentMethods = ['paypal', 'card'];
     }
 };
 exports.PayPalBraintreePaymentProvider = PayPalBraintreePaymentProvider;

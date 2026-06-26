@@ -17,6 +17,7 @@ let HubtelPaymentProvider = class HubtelPaymentProvider extends base_provider_1.
         this.supportedCountries = ['GH'];
         this.supportedCurrencies = ['GHS', 'USD'];
         this.isLive = false;
+        this.supportedPaymentMethods = ['mobile_money', 'card'];
     }
 };
 exports.HubtelPaymentProvider = HubtelPaymentProvider;

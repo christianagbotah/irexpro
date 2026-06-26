@@ -5,4 +5,5 @@ export declare class FlutterwavePaymentProvider extends BasePaymentProvider {
     readonly supportedCountries: string[];
     readonly supportedCurrencies: string[];
     readonly isLive = false;
+    readonly supportedPaymentMethods: string[];
 }

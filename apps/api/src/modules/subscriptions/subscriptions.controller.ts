@@ -17,6 +17,7 @@ import {
 import { Request } from 'express';
 import { SubscriptionsService } from './subscriptions.service';
 import { ManualActivateDto } from './dto/manual-activate.dto';
+import { CheckoutDto, CancelSubscriptionDto } from './dto/checkout.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -41,6 +42,55 @@ export class SubscriptionsController {
   @ApiOperation({ summary: 'Get current user subscription' })
   async getMySubscription(@CurrentUser() user: User) {
     return this.subscriptionsService.findUserSubscription(user.id);
+  }
+
+  /**
+   * Initiate subscription checkout via the selected payment provider.
+   *
+   * IMPORTANT:
+   * - Frontend payment success alone does NOT activate subscription.
+   * - Subscription is activated ONLY after verified provider webhook.
+   * - ManualPaymentProvider is NOT available through this endpoint.
+   */
+  @Post('checkout')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Initiate subscription checkout',
+    description:
+      'Creates a pending invoice and payment transaction, then returns a checkout URL or session ' +
+      'reference. Subscription is activated ONLY after verified provider webhook — never on ' +
+      'frontend callback alone.',
+  })
+  @ApiResponse({ status: 201, description: 'Checkout session created' })
+  @ApiResponse({ status: 400, description: 'Invalid plan, pricing, or provider' })
+  @ApiResponse({ status: 404, description: 'Plan not found' })
+  async checkout(
+    @Body() dto: CheckoutDto,
+    @CurrentUser() user: User,
+    @Req() req: Request,
+  ) {
+    return this.subscriptionsService.initiateCheckout({
+      userId: user.id,
+      email: user.email,
+      planId: dto.planId,
+      currency: dto.currency,
+      countryCode: dto.countryCode ?? 'US',
+      provider: dto.provider,
+      ipAddress: req.ip,
+    });
+  }
+
+  @Post('cancel')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Cancel current subscription' })
+  @ApiResponse({ status: 200, description: 'Subscription cancelled' })
+  @ApiResponse({ status: 404, description: 'No active subscription found' })
+  async cancelSubscription(
+    @Body() dto: CancelSubscriptionDto,
+    @CurrentUser() user: User,
+    @Req() req: Request,
+  ) {
+    return this.subscriptionsService.cancelSubscription(user.id, dto.reason, req.ip);
   }
 
   /**

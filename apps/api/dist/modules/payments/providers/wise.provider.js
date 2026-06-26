@@ -17,6 +17,7 @@ let WisePayoutProvider = class WisePayoutProvider extends base_provider_1.BasePa
         this.supportedCountries = ['GB', 'US', 'CA', 'AU', 'SG', 'DE', 'FR', 'NL'];
         this.supportedCurrencies = ['GBP', 'USD', 'EUR', 'AUD', 'CAD', 'SGD'];
         this.isLive = false;
+        this.supportedPaymentMethods = ['bank_transfer'];
     }
 };
 exports.WisePayoutProvider = WisePayoutProvider;

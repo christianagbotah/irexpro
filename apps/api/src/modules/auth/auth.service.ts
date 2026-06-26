@@ -188,9 +188,20 @@ export class AuthService {
     return this.userRepo.findOne({ where: { id } });
   }
 
-  /** Hashes a password using argon2. Exposed for testing. */
+  /**
+   * Hashes a password using argon2 with the configured cost parameters.
+   * Uses the same ConfigService values as register() so that test environments
+   * can inject low-cost values without weakening production security.
+   *
+   * Production defaults: memoryCost=65536, timeCost=3, parallelism=1
+   * Test override:       memoryCost=256,   timeCost=1, parallelism=1
+   */
   async hashPassword(password: string): Promise<string> {
-    return argon2.hash(password);
+    return argon2.hash(password, {
+      memoryCost: this.configService.get<number>('auth.argon2MemoryCost', 65536),
+      timeCost: this.configService.get<number>('auth.argon2TimeCost', 3),
+      parallelism: this.configService.get<number>('auth.argon2Parallelism', 1),
+    });
   }
 
   /** Verifies a password against an argon2 hash. Exposed for testing. */

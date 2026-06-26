@@ -4,12 +4,17 @@ export interface IPaymentProvider {
     readonly supportedCountries: string[];
     readonly supportedCurrencies: string[];
     readonly isLive: boolean;
+    readonly supportedPaymentMethods: string[];
     createCustomer(params: CreateCustomerParams): Promise<ProviderCustomerResult>;
+    createCheckoutSession(request: CreateCheckoutSessionRequest): Promise<CreateCheckoutSessionResult>;
+    verifyWebhookSignature(rawBody: Buffer, headers: Record<string, string | string[] | undefined>): boolean;
+    parseWebhookEvent(rawBody: Buffer, headers: Record<string, string | string[] | undefined>): ProviderWebhookEvent;
+    getTransactionStatus(providerReference: string): Promise<PaymentProviderTransactionStatus>;
+    cancelSubscription(providerSubscriptionReference: string): Promise<void>;
+    refundPayment(providerReference: string, amountMinor?: number): Promise<void>;
     createSubscription(params: CreateSubscriptionParams): Promise<ProviderSubscriptionResult>;
-    cancelSubscription(providerSubscriptionId: string): Promise<void>;
     createPaymentIntent(params: CreatePaymentIntentParams): Promise<ProviderPaymentIntentResult>;
     validateWebhookSignature(rawBody: Buffer, signature: string): boolean;
-    parseWebhookEvent(rawBody: Buffer): ProviderWebhookEvent;
 }
 export interface CreateCustomerParams {
     userId: string;
@@ -23,6 +28,43 @@ export interface ProviderCustomerResult {
     providerCustomerId: string;
     provider: string;
     raw?: Record<string, unknown>;
+}
+export interface CreateCheckoutSessionRequest {
+    userId: string;
+    email: string;
+    planId: string;
+    currency: string;
+    amountMinor: number;
+    countryCode: string;
+    providerCustomerId?: string;
+    providerPlanId?: string;
+    invoiceId?: string;
+    successUrl?: string;
+    cancelUrl?: string;
+    metadata?: Record<string, string>;
+}
+export interface CreateCheckoutSessionResult {
+    sessionId: string;
+    checkoutUrl?: string;
+    clientToken?: string;
+    providerTransactionReference?: string;
+    provider: string;
+    expiresAt?: Date;
+}
+export interface PaymentProviderTransactionStatus {
+    providerReference: string;
+    status: 'PENDING' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED' | 'REFUNDED';
+    amountMinor?: number;
+    currency?: string;
+    paidAt?: Date;
+    failureCode?: string;
+    failureMessage?: string;
+}
+export interface PaymentProviderError {
+    code: string;
+    message: string;
+    providerCode?: string;
+    retryable: boolean;
 }
 export interface CreateSubscriptionParams {
     providerCustomerId: string;
@@ -56,10 +98,10 @@ export interface ProviderWebhookEvent {
     providerEventId: string;
     providerSubscriptionId?: string;
     providerCustomerId?: string;
-    amountCents?: number;
+    providerTransactionReference?: string;
+    amountMinor?: number;
     currency?: string;
     metadata?: Record<string, unknown>;
-    raw?: Record<string, unknown>;
 }
 export declare enum PaymentEventType {
     PAYMENT_SUCCEEDED = "PAYMENT_SUCCEEDED",

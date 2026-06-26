@@ -1,6 +1,6 @@
 # iRexPro — Implementation Roadmap
 
-## Current Phase: Phase 1 Sprint 6 Complete — Realtime Event Layer + Strategy Orchestrator
+## Current Phase: Phase 1 Sprint 10 Complete — Secure Global Subscription Billing and Payment Gateway Foundation
 
 ---
 
@@ -459,3 +459,81 @@ Critical rules (from DEVELOPMENT_RULES.md):
 - All payment events logged to AuditModule
 - All SMS delivery attempts logged to notifications.sms_deliveries
 ```
+
+---
+
+## Sprint 10 Complete — Secure Global Subscription Billing and Payment Gateway Foundation
+
+**Completed:** 2026-06-26
+
+### What was built
+
+**Payment Domain Model (PART A)**
+- `PaymentTransaction` entity (`payments.payment_transactions`) — tracks all payment attempts, provider refs, status, amount in minor units
+- `Invoice` entity (`payments.invoices`) — draft/issued/paid/void lifecycle, all amounts in bigint cents
+- `PaymentWebhookEvent` entity (`payments.payment_webhook_events`) — idempotency store with provider+eventId unique constraint
+- Migration: `CreatePaymentsSchema1750900000000`
+
+**IPaymentProvider Hardening (PART B)**
+- Added `createCheckoutSession(request)` → `CreateCheckoutSessionResult`
+- Added `verifyWebhookSignature(rawBody, headers)` — fail-closed on base provider
+- Added `getTransactionStatus(reference)`
+- Added `refundPayment(reference, amountMinor?)`
+- Added `supportedPaymentMethods[]` field on all providers
+- All placeholder providers fail closed (return `false` or throw `NotImplementedException`)
+
+**PaymentRoutingService (PART C)**
+- Routes checkout to best provider via `CountryConfig.enabledPaymentProviders`
+- Prioritises: preferred provider → CountryConfig order → Stripe global fallback
+- Exposes `GET /api/v1/payments/providers` (no secrets)
+- Rejects blocked countries, unsupported currency/country combinations
+- ManualPaymentProvider never routable via public checkout
+
+**Subscription Checkout Flow (PART D)**
+- `POST /api/v1/subscriptions/checkout` — creates invoice + transaction → calls provider → returns session
+- `POST /api/v1/subscriptions/cancel`
+- Subscription activated ONLY via verified webhook — never via frontend callback
+
+**Webhook Handling (PART E)**
+- `POST /api/v1/payments/webhooks/:provider` — raw body capture for signature verification
+- Signature verification BEFORE any state change
+- Idempotent: duplicate providerEventId returns safe success
+- `PAYMENT_SUCCEEDED` → marks transaction SUCCEEDED, marks invoice PAID, activates subscription
+- `PAYMENT_FAILED` → marks transaction FAILED, subscription remains inactive
+- All events audit-logged
+
+**Provider Placeholders (PART F)**
+- All 6 providers (Stripe, Paystack, Flutterwave, Hubtel, PayPal/Braintree, Wise) have `supportedPaymentMethods`
+- All fail closed: `verifyWebhookSignature` returns `false` until live integration
+- `createCheckoutSession` throws `NotImplementedException` until live HTTP integration built
+
+**CountryConfig Seed (PART G)**
+- GH: hubtel, paystack, flutterwave, stripe (Stripe fallback)
+- US: stripe, paypal (PayPal/Braintree)
+- GB: stripe, paypal, wise (payout future)
+- NG: paystack, flutterwave, stripe
+- KE: flutterwave, stripe
+- ZA: paystack, flutterwave, stripe
+
+**Audit Actions Added (PART I)**
+- `PAYMENT_CHECKOUT_INITIATED`, `PAYMENT_CHECKOUT_FAILED`
+- `PAYMENT_WEBHOOK_RECEIVED`, `PAYMENT_WEBHOOK_SIGNATURE_FAILED`
+- `PAYMENT_SUCCEEDED`, `PAYMENT_FAILED`
+- `INVOICE_CREATED`, `INVOICE_PAID`
+- `SUBSCRIPTION_ACTIVATED`
+
+**Tests (PART J)**
+- `payment-routing.service.spec.ts` — 14 tests covering routing, country filtering, Ghana/US providers, edge cases
+- `webhook-processor.service.spec.ts` — 6 tests covering signature rejection, idempotency, activation, security
+- Updated `subscriptions.service.spec.ts` — 22 tests (gate regression, checkout, cancel, manual activate)
+- Updated `payments.spec.ts` — 26 tests (fail-closed providers, ManualPaymentProvider, registry)
+
+**Test count:** 339 tests, 24 suites — all passing
+
+### Safety rules enforced
+- ManualPaymentProvider cannot be routed to via `PaymentRoutingService.routeForCheckout()`
+- `verifyWebhookSignature` must return `true` before any state change
+- No provider secrets in responses, logs, or test fixtures
+- Subscription activation only via verified webhook
+- All amounts stored as bigint strings (no float)
+- Frontend payment success alone never activates subscription

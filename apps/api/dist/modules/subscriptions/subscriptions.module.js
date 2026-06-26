@@ -12,17 +12,21 @@ const typeorm_1 = require("@nestjs/typeorm");
 const subscription_plan_entity_1 = require("./entities/subscription-plan.entity");
 const plan_pricing_entity_1 = require("./entities/plan-pricing.entity");
 const user_subscription_entity_1 = require("./entities/user-subscription.entity");
+const invoice_entity_1 = require("../payments/entities/invoice.entity");
+const payment_transaction_entity_1 = require("../payments/entities/payment-transaction.entity");
 const subscriptions_controller_1 = require("./subscriptions.controller");
 const subscriptions_service_1 = require("./subscriptions.service");
 const audit_module_1 = require("../audit/audit.module");
+const payments_module_1 = require("../payments/payments.module");
 let SubscriptionsModule = class SubscriptionsModule {
 };
 exports.SubscriptionsModule = SubscriptionsModule;
 exports.SubscriptionsModule = SubscriptionsModule = __decorate([
     (0, common_1.Module)({
         imports: [
-            typeorm_1.TypeOrmModule.forFeature([subscription_plan_entity_1.SubscriptionPlan, plan_pricing_entity_1.PlanPricing, user_subscription_entity_1.UserSubscription]),
+            typeorm_1.TypeOrmModule.forFeature([subscription_plan_entity_1.SubscriptionPlan, plan_pricing_entity_1.PlanPricing, user_subscription_entity_1.UserSubscription, invoice_entity_1.Invoice, payment_transaction_entity_1.PaymentTransaction]),
             audit_module_1.AuditModule,
+            payments_module_1.PaymentsModule,
         ],
         controllers: [subscriptions_controller_1.SubscriptionsController],
         providers: [subscriptions_service_1.SubscriptionsService],

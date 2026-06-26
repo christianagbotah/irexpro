@@ -16,4 +16,5 @@ export class PayPalBraintreePaymentProvider extends BasePaymentProvider {
   readonly supportedCountries = ['US', 'GB', 'CA', 'AU', 'DE', 'FR', 'NL'];
   readonly supportedCurrencies = ['USD', 'GBP', 'EUR', 'AUD', 'CAD'];
   readonly isLive = false;
+  readonly supportedPaymentMethods = ['paypal', 'card'];
 }

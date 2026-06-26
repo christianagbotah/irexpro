@@ -17,4 +17,5 @@ export class HubtelPaymentProvider extends BasePaymentProvider {
   readonly supportedCountries = ['GH'];
   readonly supportedCurrencies = ['GHS', 'USD'];
   readonly isLive = false;
+  readonly supportedPaymentMethods = ['mobile_money', 'card'];
 }

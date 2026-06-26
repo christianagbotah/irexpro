@@ -19,18 +19,21 @@ const broker_connection_entity_1 = require("./entities/broker-connection.entity"
 const broker_account_entity_1 = require("./entities/broker-account.entity");
 const broker_adapter_registry_1 = require("./adapters/broker-adapter.registry");
 const metatrader_adapter_1 = require("./adapters/metatrader.adapter");
+const paper_broker_adapter_1 = require("./adapters/paper-broker.adapter");
 const credential_encryption_service_1 = require("./services/credential-encryption.service");
 const metaapi_client_service_1 = require("./services/metaapi-client.service");
 const broker_health_check_job_1 = require("./jobs/broker-health-check.job");
 const broker_health_check_producer_1 = require("./jobs/broker-health-check.producer");
 const audit_module_1 = require("../audit/audit.module");
 let BrokerModule = class BrokerModule {
-    constructor(registry, metaTraderAdapter) {
+    constructor(registry, metaTraderAdapter, paperBrokerAdapter) {
         this.registry = registry;
         this.metaTraderAdapter = metaTraderAdapter;
+        this.paperBrokerAdapter = paperBrokerAdapter;
     }
     onModuleInit() {
         this.registry.register(this.metaTraderAdapter);
+        this.registry.register(this.paperBrokerAdapter);
     }
 };
 exports.BrokerModule = BrokerModule;
@@ -48,12 +51,14 @@ exports.BrokerModule = BrokerModule = __decorate([
             metaapi_client_service_1.MetaApiClientService,
             broker_adapter_registry_1.BrokerAdapterRegistry,
             metatrader_adapter_1.MetaTraderAdapter,
+            paper_broker_adapter_1.PaperBrokerAdapter,
             broker_health_check_job_1.BrokerHealthCheckJob,
             broker_health_check_producer_1.BrokerHealthCheckProducer,
         ],
-        exports: [broker_service_1.BrokerService, broker_adapter_registry_1.BrokerAdapterRegistry],
+        exports: [broker_service_1.BrokerService, broker_adapter_registry_1.BrokerAdapterRegistry, paper_broker_adapter_1.PaperBrokerAdapter],
     }),
     __metadata("design:paramtypes", [broker_adapter_registry_1.BrokerAdapterRegistry,
-        metatrader_adapter_1.MetaTraderAdapter])
+        metatrader_adapter_1.MetaTraderAdapter,
+        paper_broker_adapter_1.PaperBrokerAdapter])
 ], BrokerModule);
 //# sourceMappingURL=broker.module.js.map

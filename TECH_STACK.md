@@ -157,15 +157,24 @@
 
 ## Payment Providers (IPaymentProvider Adapters)
 
-| Provider | ID | Region | Phase |
-|---|---|---|---|
-| **Stripe** | `stripe` | Global | Phase 2 live |
-| **PayPal / Braintree** | `paypal` | Global | Phase 2 live |
-| **Paystack** | `paystack` | Africa (NG, GH, KE, ZA) | Phase 2 live |
-| **Flutterwave** | `flutterwave` | Pan-Africa (30+ countries) | Phase 2 live |
-| **Hubtel** | `hubtel` | Ghana | Phase 2 live |
-| **Wise** | `wise` | Global (payouts) | Phase 3 |
-| **Manual (Admin)** | `manual` | All | Phase 1 (pilot) |
+Routing: `PaymentRoutingService` → `CountryConfig.enabledPaymentProviders` → provider selection.
+All providers implement `IPaymentProvider`. No direct SDK calls in business logic.
+
+| Provider | ID | Region | Payment Methods | Status |
+|---|---|---|---|---|
+| **Stripe** | `stripe` | Global (incl. NG, KE, GH, ZA) | Card | Sandbox placeholder — Sprint 10+ |
+| **PayPal / Braintree** | `paypal` | Global (US, GB, CA, AU, DE, FR) | PayPal, Card | Sandbox placeholder |
+| **Paystack** | `paystack` | Africa (NG, GH, KE, ZA) | Card, Mobile Money, Bank | Sandbox placeholder |
+| **Flutterwave** | `flutterwave` | Pan-Africa (30+ countries) | Card, Mobile Money, USSD | Sandbox placeholder |
+| **Hubtel** | `hubtel` | Ghana | Mobile Money (MTN/Vodafone/Airtel), Card | Sandbox placeholder |
+| **Wise** | `wise` | Global (payout-only) | Bank Transfer | Sandbox placeholder — Phase 3 |
+| **Manual (Admin)** | `manual` | All | Manual | DEV/TEST ONLY — never public checkout |
+
+**Security rules:**
+- Placeholder providers fail closed: `verifyWebhookSignature` returns `false`
+- ManualPaymentProvider excluded from `PaymentRoutingService.routeForCheckout()`
+- Subscription activated ONLY via verified webhook — frontend payment success never trusted
+- All monetary amounts stored as bigint strings (minor units) — never float
 
 ---
 

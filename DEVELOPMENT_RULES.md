@@ -497,6 +497,45 @@ Rules:
 
 ---
 
+## Rule 17 — Payment Webhooks Must Verify Signatures Before Processing
+
+**Webhook endpoints must verify provider signatures before changing any subscription or payment state.**
+
+- `verifyWebhookSignature(rawBody, headers)` must be called and must return `true` before any state change.
+- Placeholder providers fail closed — `verifyWebhookSignature` returns `false` until live credentials are configured.
+- Invalid signatures must be audit-logged as `PAYMENT_WEBHOOK_SIGNATURE_FAILED`.
+
+**Why:** An unsigned webhook could be a replay attack or forged event that falsely activates a subscription.
+
+---
+
+## Rule 18 — Frontend Payment Success Never Activates Subscriptions
+
+**Subscription status must only change after server-side webhook verification.**
+
+- Only `WebhookProcessorService.processWebhook()` may call `activateSubscriptionFromPayment()`.
+- Checkout flow returns a URL/sessionId for external completion — return URL is not trusted.
+
+---
+
+## Rule 19 — ManualPaymentProvider Is Never Available for Public Checkout
+
+**`PaymentRoutingService.routeForCheckout()` must never select the ManualPaymentProvider.**
+
+- Filtered out by `providerId === 'manual'` in the routing service.
+- Admin-supervised activation only via `POST /subscriptions/dev/manual-activate`.
+
+---
+
+## Rule 20 — All Monetary Values Are Decimal-Safe
+
+**No monetary value may be stored as a float or JavaScript `number` in any database column.**
+
+- Use `bigint` columns for all minor-unit amounts (stored as strings by TypeORM).
+- Convert to display values at the presentation layer only.
+
+---
+
 ## Code Review Checklist
 
 Before approving any PR touching trading, risk, financial, payment, or regional logic:
@@ -524,3 +563,11 @@ Before approving any PR touching trading, risk, financial, payment, or regional 
 - [ ] No model approved for live trading without governance metadata confirmation
 - [ ] `sanitize_metadata()` called before including metadata in any signal payload
 - [ ] Feature engineering tests include anti-lookahead validation
+- [ ] Payment webhook verifies signature BEFORE any state change
+- [ ] Subscription activated ONLY via verified webhook — never frontend callback
+- [ ] ManualPaymentProvider not routable via PaymentRoutingService.routeForCheckout()
+- [ ] No raw card data stored (ever)
+- [ ] No provider secrets in logs, responses, tests, or Swagger
+- [ ] All monetary values stored as bigint strings (minor units) — never float
+- [ ] providerPayloadSummary only — never full raw payload (may contain secrets)
+- [ ] Webhook idempotency: check providerEventId before processing

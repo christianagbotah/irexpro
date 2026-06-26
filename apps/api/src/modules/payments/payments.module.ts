@@ -1,4 +1,5 @@
 import { Module, OnModuleInit } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { ManualPaymentProvider } from './providers/manual.provider';
 import { StripePaymentProvider } from './providers/stripe.provider';
 import { PaystackPaymentProvider } from './providers/paystack.provider';
@@ -7,8 +8,21 @@ import { HubtelPaymentProvider } from './providers/hubtel.provider';
 import { PayPalBraintreePaymentProvider } from './providers/paypal.provider';
 import { WisePayoutProvider } from './providers/wise.provider';
 import { PaymentProviderRegistry } from './registry/payment-provider.registry';
+import { PaymentRoutingService } from './services/payment-routing.service';
+import { WebhookProcessorService } from './services/webhook-processor.service';
+import { PaymentsController } from './payments.controller';
+import { PaymentTransaction } from './entities/payment-transaction.entity';
+import { Invoice } from './entities/invoice.entity';
+import { PaymentWebhookEvent } from './entities/payment-webhook-event.entity';
+import { CountryConfig } from '../global-config/entities/country-config.entity';
+import { AuditModule } from '../audit/audit.module';
 
 @Module({
+  imports: [
+    TypeOrmModule.forFeature([PaymentTransaction, Invoice, PaymentWebhookEvent, CountryConfig]),
+    AuditModule,
+  ],
+  controllers: [PaymentsController],
   providers: [
     PaymentProviderRegistry,
     ManualPaymentProvider,
@@ -18,9 +32,13 @@ import { PaymentProviderRegistry } from './registry/payment-provider.registry';
     HubtelPaymentProvider,
     PayPalBraintreePaymentProvider,
     WisePayoutProvider,
+    PaymentRoutingService,
+    WebhookProcessorService,
   ],
   exports: [
     PaymentProviderRegistry,
+    PaymentRoutingService,
+    WebhookProcessorService,
     ManualPaymentProvider,
     StripePaymentProvider,
     PaystackPaymentProvider,

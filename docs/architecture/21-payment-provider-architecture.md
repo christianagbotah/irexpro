@@ -435,6 +435,41 @@ class ManualPaymentProvider implements IPaymentProvider {
 
 ---
 
+---
+
+## 15. Sprint 10 Implementation Status (2026-06-26)
+
+### What is implemented
+
+| Component | Status |
+|---|---|
+| `IPaymentProvider` interface | ✅ Hardened — `createCheckoutSession`, `verifyWebhookSignature`, `getTransactionStatus`, `refundPayment` |
+| `BasePaymentProvider` | ✅ Fail-closed — all live methods throw `NotImplementedException`, `verifyWebhookSignature` returns `false` |
+| `ManualPaymentProvider` | ✅ DEV/TEST only — full interface, all methods warn |
+| Stripe, Paystack, Flutterwave, Hubtel, PayPal, Wise | ✅ Safe sandbox placeholders — fail closed |
+| `PaymentRoutingService` | ✅ Country/currency routing via `CountryConfig`, excludes `manual` |
+| `PaymentTransaction` entity | ✅ `payments.payment_transactions` — bigint minor units |
+| `Invoice` entity | ✅ `payments.invoices` — bigint minor units |
+| `PaymentWebhookEvent` entity | ✅ `payments.payment_webhook_events` — idempotency store |
+| `WebhookProcessorService` | ✅ Signature verification → idempotency → state change → audit |
+| `POST /subscriptions/checkout` | ✅ Creates invoice + transaction, returns session reference |
+| `POST /subscriptions/cancel` | ✅ Cancels subscription with audit log |
+| `POST /payments/webhooks/:provider` | ✅ Raw body capture, signature verify, idempotent processing |
+| `GET /payments/providers` | ✅ Public provider list — no secrets |
+| Audit actions | ✅ 9 new actions added |
+| Migration | ✅ `CreatePaymentsSchema1750900000000` |
+
+### What is NOT yet implemented (future sprints)
+
+- Live HTTP integration for any provider (Stripe SDK, Paystack API, etc.)
+- Real webhook signature verification (requires live provider credentials)
+- Subscription renewal scheduling
+- Performance fee collection flow
+- Refund management UI
+- Invoice PDF generation
+
+---
+
 ## 14. Failure Cases
 
 | Failure | Response |

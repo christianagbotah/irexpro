@@ -17,6 +17,7 @@ let FlutterwavePaymentProvider = class FlutterwavePaymentProvider extends base_p
         this.supportedCountries = ['GH', 'NG', 'KE', 'ZA', 'UG', 'TZ', 'CM', 'CI', 'SN'];
         this.supportedCurrencies = ['NGN', 'GHS', 'KES', 'ZAR', 'UGX', 'TZS', 'USD'];
         this.isLive = false;
+        this.supportedPaymentMethods = ['card', 'mobile_money', 'bank_transfer', 'ussd'];
     }
 };
 exports.FlutterwavePaymentProvider = FlutterwavePaymentProvider;

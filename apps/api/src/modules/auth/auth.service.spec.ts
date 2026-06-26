@@ -19,7 +19,22 @@ const mockProfileRepo = { create: jest.fn(), save: jest.fn() };
 const mockUserRoleRepo = { create: jest.fn(), save: jest.fn() };
 const mockRoleRepo = { findOne: jest.fn() };
 const mockJwtService = { sign: jest.fn(() => 'mock_token'), verify: jest.fn() };
-const mockConfigService = { get: jest.fn((key: string, def?: unknown) => def) };
+/**
+ * Use minimal argon2 cost parameters in tests to avoid CPU/memory timeouts.
+ * Production values (memoryCost=65536, timeCost=3) are not changed.
+ * These are injected via ConfigService — the same path register() and hashPassword() use.
+ */
+// argon2 enforces: memoryCost >= 1024, timeCost >= 2, parallelism >= 1.
+// These values sit at (or near) the library minimums — ~64× cheaper than
+// production defaults (65536 / 3 / 1) while still exercising the real hash path.
+const TEST_ARGON2_COSTS: Record<string, unknown> = {
+  'auth.argon2MemoryCost': 1024,
+  'auth.argon2TimeCost': 2,
+  'auth.argon2Parallelism': 1,
+};
+const mockConfigService = {
+  get: jest.fn((key: string, def?: unknown) => TEST_ARGON2_COSTS[key] ?? def),
+};
 const mockAuditService = { log: jest.fn() };
 const mockQueryRunner = {
   connect: jest.fn(),
@@ -67,8 +82,9 @@ describe('AuthService', () => {
   });
 
   describe('hashPassword / verifyPassword', () => {
-    // bcrypt is CPU-intensive; allow generous time under parallel worker load
-    const BCRYPT_TIMEOUT = 20_000;
+    // Argon2 with test-injected low cost (memoryCost=256, timeCost=1) is fast.
+    // Timeout is generous to stay safe under parallel worker load on Windows.
+    const ARGON2_TEST_TIMEOUT = 10_000;
 
     it('should hash and verify a password correctly', async () => {
       const password = 'TestP@ssw0rd!';
@@ -76,13 +92,13 @@ describe('AuthService', () => {
       expect(hash).not.toBe(password);
       const isValid = await service.verifyPassword(hash, password);
       expect(isValid).toBe(true);
-    }, BCRYPT_TIMEOUT);
+    }, ARGON2_TEST_TIMEOUT);
 
     it('should reject a wrong password', async () => {
       const hash = await service.hashPassword('CorrectP@ss1!');
       const isValid = await service.verifyPassword(hash, 'WrongP@ss1!');
       expect(isValid).toBe(false);
-    }, BCRYPT_TIMEOUT);
+    }, ARGON2_TEST_TIMEOUT);
   });
 
   describe('register', () => {
@@ -115,6 +131,8 @@ describe('AuthService', () => {
     });
 
     it('should throw UnauthorizedException for wrong password', async () => {
+      // hashPassword() now uses test-injected low argon2 cost (memoryCost=256, timeCost=1)
+      // so this completes well within the timeout even on Windows under parallel load.
       const hash = await service.hashPassword('CorrectP@ss1!');
       mockUserRepo.findOne.mockResolvedValueOnce({
         id: 'user-id',
@@ -126,7 +144,7 @@ describe('AuthService', () => {
       await expect(
         service.login({ email: 'test@example.com', password: 'WrongP@ss1!' }),
       ).rejects.toThrow(UnauthorizedException);
-    });
+    }, 10_000);
 
     it('should throw UnauthorizedException for suspended account', async () => {
       mockUserRepo.findOne.mockResolvedValueOnce({
