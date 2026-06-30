@@ -379,6 +379,40 @@ let BrokerService = BrokerService_1 = class BrokerService {
             throw err;
         }
     }
+    async getClosedTradesForConnection(connectionId, userId, from, to) {
+        const connection = await this.findConnectionById(connectionId, userId);
+        if (connection.status !== broker_adapter_interface_1.BrokerConnectionStatus.CONNECTED) {
+            throw new common_1.ForbiddenException(`Broker connection ${connectionId} is not CONNECTED (status: ${connection.status})`);
+        }
+        const adapter = this.adapterRegistry.getAdapter(connection.brokerId);
+        if (!connection.encryptedCredentials ||
+            !connection.credentialIv ||
+            !connection.credentialTag) {
+            throw new common_1.ForbiddenException('Broker connection credentials unavailable');
+        }
+        const credentials = this.encryptionService.decrypt({
+            ciphertext: connection.encryptedCredentials,
+            iv: connection.credentialIv,
+            tag: connection.credentialTag,
+            keyId: connection.encryptionKeyId ?? 'env-key-v1',
+        });
+        adapter.setMode(connection.accountType);
+        try {
+            await adapter.connect(credentials);
+            const trades = await adapter.getClosedTrades(from, to);
+            return { connection, trades };
+        }
+        catch (err) {
+            this.logger.warn(`getClosedTrades failed connection=${connectionId} from=${from.toISOString()} to=${to.toISOString()}: ` +
+                `${err.message}`);
+            throw err;
+        }
+        finally {
+            Object.keys(credentials).forEach((k) => {
+                credentials[k] = null;
+            });
+        }
+    }
     async hasActiveConnection(userId) {
         const connection = await this.findActiveConnectionForUser(userId);
         return connection !== null;

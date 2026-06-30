@@ -119,14 +119,36 @@ Phase 5: Platform Expansion
 | Risk violation recording | P0 |
 | Risk Engine unit tests (100% branch coverage) | P0 |
 
-### Sprint 11-12: Execution Engine (3 weeks)
+### Sprint 11: Performance Fee + High-Water Mark Engine ✅ Complete
+
+| Task | Status |
+|---|---|
+| PerformanceFeePolicy entity and service | ✅ |
+| TradingAccountPerformance HWM tracking | ✅ |
+| PerformanceFeeAssessment + PerformanceFeeLedgerEntry | ✅ |
+| Invoice + payment flow integration | ✅ |
+| markAssessmentPaid + HWM update on payment | ✅ |
+| Duplicate assessment guard (app-level) | ✅ |
+
+### Sprint 12: Broker Trade Reconciliation ✅ Complete
+
+| Task | Status |
+|---|---|
+| BrokerTradeReconciliationRun entity + migration | ✅ |
+| BrokerReconciledTrade entity + deduplication index | ✅ |
+| ClosedTradeNormalizerService (major→minor units, skip rules) | ✅ |
+| BrokerTradeReconciliationService (fee eligibility, ledger integration) | ✅ |
+| DB-level assessment duplicate guard (partial unique indexes) | ✅ |
+| BrokerReconciliationModule + Controller | ✅ |
+| 45+ tests covering all safety invariants | ✅ |
+
+### Sprint 13+: Execution Engine (3 weeks)
 
 | Task | Priority |
 |---|---|
 | ExecutionModule: order preparation and submission | P0 |
 | Idempotency key service | P0 |
 | Trade lifecycle management | P0 |
-| Reconciliation job | P0 |
 | Trade audit events | P0 |
 
 ### Sprint 13-14: Trading Session and WebSocket (2 weeks)

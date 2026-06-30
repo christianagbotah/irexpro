@@ -22,11 +22,17 @@ iRexPro supports users from multiple countries worldwide with regional payment p
 
 ## Current Status
 
-**Phase 0 — Architecture and Planning Foundation: Complete**
+**Phase 1 Sprint 12 — Broker Trade Reconciliation: Complete**
 
-All architecture documentation, ADRs, domain models, and planning files have been created. Backend scaffolding must not begin until this foundation has been reviewed and accepted.
+- ✅ Sprint 1-2: Backend Foundation (NestJS, Auth, Users, Audit)
+- ✅ Sprint 3-4: Broker Integration (MetaTrader adapter, credentials, health checks)
+- ✅ Sprint 5-6: Subscriptions + Payments (providers, webhooks, checkout)
+- ✅ Sprint 7-8: AI Signal Engine (Python FastAPI, indicators, signals)
+- ✅ Sprint 9-10: Risk Engine (kill switch, risk profiles, position sizing)
+- ✅ Sprint 11: Performance Fee + High-Water Mark Engine
+- ✅ Sprint 12: Broker Trade Reconciliation → Realised P&L Ledger Entries
 
-See [IMPLEMENTATION_ROADMAP.md](./IMPLEMENTATION_ROADMAP.md) for the next steps and ready-to-use Cursor prompts.
+See [IMPLEMENTATION_ROADMAP.md](./IMPLEMENTATION_ROADMAP.md) for the next steps and Cursor prompts.
 
 ---
 

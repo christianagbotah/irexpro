@@ -30,6 +30,7 @@ import { HealthModule } from './health/health.module';
 import { MarketDataModule } from './modules/market-data/market-data.module';
 import { AiEngineClientModule } from './modules/ai-engine-client/ai-engine-client.module';
 import { PerformanceFeesModule } from './modules/performance-fees/performance-fees.module';
+import { BrokerReconciliationModule } from './modules/broker-reconciliation/broker-reconciliation.module';
 
 @Module({
   imports: [
@@ -90,6 +91,7 @@ import { PerformanceFeesModule } from './modules/performance-fees/performance-fe
     MarketDataModule,
     AiEngineClientModule,
     PerformanceFeesModule,
+    BrokerReconciliationModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: AllExceptionsFilter },

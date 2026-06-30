@@ -615,3 +615,13 @@ Before approving any PR touching trading, risk, financial, payment, or regional 
 - [ ] Performance fee invoice created only when feeAmount > 0
 - [ ] Billing period computed from plan.billingInterval (not hardcoded)
 - [ ] Duplicate webhook with processed=false → retry safely, not silently ignored
+- [ ] Broker reconciliation triggered only by admin/system — never auto-started
+- [ ] Broker reconciliation never creates performance fee assessments or invoices automatically
+- [ ] Broker reconciliation never triggers live broker withdrawals
+- [ ] Only LIVE broker connections (accountType=LIVE) are used for fee reconciliation
+- [ ] Demo, paper, backtest, and mock trades are NEVER fee-eligible
+- [ ] Broker account balance is NEVER used as fee basis — only reconciled closed trades
+- [ ] BrokerReconciledTrade deduplication enforced by (userId, brokerConnectionId, brokerTradeId)
+- [ ] netRealisedPnl = grossRealisedPnl + commission + swap — do not double-subtract
+- [ ] No raw broker payloads stored in BrokerReconciledTrade or audit logs
+- [ ] Reconciliation time window must be ≤ 90 days, fromTime < toTime, no future toTime

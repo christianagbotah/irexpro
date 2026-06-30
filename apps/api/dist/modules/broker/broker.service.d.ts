@@ -33,6 +33,10 @@ export declare class BrokerService {
     getAllConnectedConnectionIds(): Promise<string[]>;
     healthCheck(connectionId: string): Promise<boolean>;
     getOhlcvForConnection(userId: string, brokerConnectionId: string, instrument: string, timeframe: string, limit: number): Promise<OHLCV[]>;
+    getClosedTradesForConnection(connectionId: string, userId: string, from: Date, to: Date): Promise<{
+        connection: BrokerConnection;
+        trades: import('./interfaces/broker-adapter.interface').BrokerClosedTrade[];
+    }>;
     hasActiveConnection(userId: string): Promise<boolean>;
     getBrokerAccountState(connectionId: string): Promise<{
         balance: string;

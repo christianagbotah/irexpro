@@ -260,6 +260,22 @@ All providers implement `IPaymentProvider`. No direct SDK calls in business logi
 
 **Key arithmetic rule:** Performance fee calculations use `BigInt` arithmetic to avoid floating-point precision loss. Formula: `fee = floor(profitAboveHWM × feePercent × 100 / 1_000_000)`.
 
+### Broker Trade Reconciliation (Sprint 12)
+
+| Component | Location | Status |
+|---|---|---|
+| `BrokerTradeReconciliationRun` entity | `broker-reconciliation/entities/` | ✅ Sprint 12 |
+| `BrokerReconciledTrade` entity | `broker-reconciliation/entities/` | ✅ Sprint 12 |
+| `NormalizedClosedTrade` interface | `broker-reconciliation/interfaces/` | ✅ Sprint 12 |
+| `ClosedTradeNormalizerService` | `broker-reconciliation/services/` | ✅ Sprint 12 |
+| `BrokerTradeReconciliationService` | `broker-reconciliation/services/` | ✅ Sprint 12 |
+| `BrokerReconciliationController` | `broker-reconciliation/` | ✅ Sprint 12 |
+| `BrokerReconciliationModule` | `broker-reconciliation/` | ✅ Sprint 12 |
+| Migration `1751100000000` (assessment duplicate guard) | `database/migrations/` | ✅ Sprint 12 |
+| Migration `1751200000000` (broker_reconciliation schema) | `database/migrations/` | ✅ Sprint 12 |
+
+**Reconciliation P&L arithmetic:** `netRealisedPnl = grossRealisedPnl + commission + swap` (all in minor currency units as bigint strings). Major-unit decimal strings from broker adapters are converted using string arithmetic — no float risk.
+
 ---
 
 ## Decimal Arithmetic Policy

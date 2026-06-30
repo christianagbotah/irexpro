@@ -452,3 +452,60 @@ All subscription, payment, and revenue events produce immutable audit log entrie
 | Settlement completed | SETTLEMENT_COMPLETED |
 | High-water mark updated | HIGH_WATER_MARK_UPDATED |
 | Revenue entry posted | REVENUE_ENTRY_POSTED |
+| Broker reconciliation started | BROKER_RECONCILIATION_STARTED |
+| Broker reconciliation completed | BROKER_RECONCILIATION_COMPLETED |
+| Broker reconciliation failed | BROKER_RECONCILIATION_FAILED |
+| Broker trade reconciled | BROKER_TRADE_RECONCILED |
+| Broker trade reconciliation skipped | BROKER_TRADE_RECONCILIATION_SKIPPED |
+| Ledger entry from broker trade | PERFORMANCE_FEE_LEDGER_ENTRY_CREATED_FROM_BROKER_TRADE |
+
+---
+
+## 11. Broker Trade Reconciliation (Sprint 12)
+
+### Realised P&L Source of Truth
+
+`PerformanceFeeLedgerEntry` is the single source of truth for performance-fee calculations. Sprint 12 introduces the broker reconciliation pipeline that populates it from real confirmed closed broker trades.
+
+### Reconciliation Architecture
+
+```
+IBrokerAdapter.getClosedTrades(from, to)
+        ↓
+ClosedTradeNormalizerService
+  - Maps externalOrderId → brokerTradeId
+  - Converts major-unit decimal → minor-unit bigint strings
+  - Validates: non-empty ID, past closedAt, valid P&L
+  - Computes: netRealisedPnl = grossRealisedPnl + commission + swap
+        ↓
+BrokerTradeReconciliationService
+  - Validates time range (< 90 days, no future, from < to)
+  - Enforces LIVE-only broker connections
+  - Checks fee eligibility (active subscription + policy)
+  - Deduplicates by (userId, brokerConnectionId, brokerTradeId)
+        ↓
+BrokerReconciledTrade (immutable record)
+  + PerformanceFeeLedgerEntry (fee-eligible trades only)
+        ↓
+PerformanceFeeService.calculateAssessment() reads from ledger
+```
+
+### Fee Eligibility Rules
+
+A trade is fee-eligible only when ALL of:
+1. Broker connection is `accountType = LIVE` (not DEMO)
+2. User has an active subscription
+3. Subscription plan has an active performance fee policy
+4. `netRealisedPnl ≠ 0`
+5. Trade has not already been reconciled
+
+**Never fee-eligible:** demo broker, paper broker, backtest, mock, open/unrealised positions, future closedAt, missing brokerTradeId.
+
+### Safety Invariants
+
+- No live broker withdrawals are implemented or triggered
+- No automatic fee assessments or invoices from reconciliation
+- Broker account balance is never used as fee basis
+- High-water mark only advances after confirmed fee payment
+- Deduplication enforced at DB level (unique index on userId + brokerConnectionId + brokerTradeId)
+- No secrets, credentials, or raw broker payloads in any reconciliation record or audit log

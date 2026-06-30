@@ -1,0 +1,30 @@
+import { Repository } from 'typeorm';
+import { BrokerTradeReconciliationRun } from '../entities/broker-trade-reconciliation-run.entity';
+import { BrokerReconciledTrade } from '../entities/broker-reconciled-trade.entity';
+import { PerformanceFeeLedgerEntry } from '../../performance-fees/entities/performance-fee-ledger-entry.entity';
+import { PerformanceFeePolicy } from '../../performance-fees/entities/performance-fee-policy.entity';
+import { UserSubscription } from '../../subscriptions/entities/user-subscription.entity';
+import { BrokerService } from '../../broker/broker.service';
+import { AuditService } from '../../audit/audit.service';
+import { ClosedTradeNormalizerService } from './closed-trade-normalizer.service';
+export declare class BrokerTradeReconciliationService {
+    private readonly runRepo;
+    private readonly tradeRepo;
+    private readonly ledgerRepo;
+    private readonly policyRepo;
+    private readonly subscriptionRepo;
+    private readonly brokerService;
+    private readonly normalizerService;
+    private readonly auditService;
+    private readonly logger;
+    constructor(runRepo: Repository<BrokerTradeReconciliationRun>, tradeRepo: Repository<BrokerReconciledTrade>, ledgerRepo: Repository<PerformanceFeeLedgerEntry>, policyRepo: Repository<PerformanceFeePolicy>, subscriptionRepo: Repository<UserSubscription>, brokerService: BrokerService, normalizerService: ClosedTradeNormalizerService, auditService: AuditService);
+    getRuns(userId?: string): Promise<BrokerTradeReconciliationRun[]>;
+    getReconciledTrades(userId?: string, brokerConnectionId?: string): Promise<BrokerReconciledTrade[]>;
+    runReconciliation(userId: string, brokerConnectionId: string, fromTime: Date, toTime: Date, actorId: string, ipAddress?: string): Promise<BrokerTradeReconciliationRun>;
+    private processTrade;
+    private isFeeEligible;
+    private loadFeeEligibilityContext;
+    private findApplicablePolicy;
+    private validateTimeRange;
+    private finaliseRun;
+}

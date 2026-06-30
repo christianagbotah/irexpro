@@ -1,6 +1,6 @@
 # iRexPro — Implementation Roadmap
 
-## Current Phase: Phase 1 Sprint 11 Complete — Performance Fee + High-Water Mark Engine
+## Current Phase: Phase 1 Sprint 12 Complete — Broker Trade Reconciliation → Realised P&L Ledger Entries
 
 ---
 
@@ -610,3 +610,65 @@ Critical rules (from DEVELOPMENT_RULES.md):
 - Subscription activation only via verified webhook
 - All amounts stored as bigint strings (no float)
 - Frontend payment success alone never activates subscription
+
+---
+
+## Sprint 12 — Broker Trade Reconciliation → Realised P&L Ledger Entries
+
+**Completed:** 2026-06-30
+
+### What was built
+
+**PART A — Sprint 11 Hardening**
+- Migration `1751100000000-AddPerfFeeAssessmentDuplicateGuard`: Two partial unique indexes on `performance_fee_assessments` enforce DB-level "one assessment per user/broker/period" rule, safely handling NULL `brokerConnectionId` via separate partial indexes.
+- `markAssessmentPaid` consolidation: Circular dependency documented — `WebhookProcessorService` (payments) imports `Invoice` and `PaymentTransaction`; pulling in the full `PerformanceFeeService` would require `PerformanceFeeService` (which imports payments entities) to also import back from payments — creating a circular dependency. The current `WebhookProcessorService.handlePerformanceFeePaymentSucceeded()` duplication is deliberate and safe.
+
+**PART B — Domain Entities** (entities created prior to sprint)
+- `BrokerTradeReconciliationRun` — audit record per reconciliation run, in `broker_reconciliation` schema
+- `BrokerReconciledTrade` — immutable record per closed trade; unique on `(userId, brokerConnectionId, brokerTradeId)`
+
+**PART C — Closed Trade Normalization**
+- `ClosedTradeNormalizerService` — converts `BrokerClosedTrade[]` → `NormalizedClosedTrade[]`
+- Maps `externalOrderId` → `brokerTradeId`; converts major-unit decimal strings to minor-unit bigint strings using string arithmetic (zero float risk)
+- `netRealisedPnl = grossRealisedPnl + commission + swap` (no double-subtraction)
+- Skips: missing `brokerTradeId`, future `closedAt`, null `closedAt` (open trades), invalid P&L
+
+**PART D + E — BrokerTradeReconciliationService + Fee Eligibility**
+- Validates time range (fromTime < toTime, ≤ 90 days, no future ranges)
+- Enforces LIVE-only broker connections; demo/paper/backtest connections rejected
+- Loads fee eligibility context per run (active subscription + performance fee policy)
+- Creates `BrokerReconciledTrade` + `PerformanceFeeLedgerEntry` atomically
+  - `netRealisedPnl > 0` → `REALISED_TRADE_PROFIT`; `< 0` → `REALISED_TRADE_LOSS`; `= 0` → no entry
+- Deduplication via unique constraint catch (code `23505`)
+- Tracks run stats; `COMPLETED_WITH_WARNINGS` on partial failure
+- Does NOT create performance-fee assessments or invoices
+
+**PART F — API Endpoints**
+- `POST /api/v1/broker-reconciliation/closed-trades/run` — ADMIN/SUPER_ADMIN only
+- `GET /api/v1/broker-reconciliation/runs` — admin sees all; user sees own only
+- `GET /api/v1/broker-reconciliation/reconciled-trades` — admin sees all; user sees own only
+
+**PART G — Audit Actions**
+- `BROKER_RECONCILIATION_STARTED`, `BROKER_RECONCILIATION_COMPLETED`, `BROKER_RECONCILIATION_FAILED`
+- `BROKER_TRADE_RECONCILED`, `BROKER_TRADE_RECONCILIATION_SKIPPED`
+- `PERFORMANCE_FEE_LEDGER_ENTRY_CREATED_FROM_BROKER_TRADE`
+
+**PART H — Tests**
+- 30+ test cases in `broker-trade-reconciliation.service.spec.ts`
+- 15+ test cases in `ClosedTradeNormalizerService` unit tests (same file)
+- Covers: winning/losing/zero P&L, duplicates, time range validation, DEMO rejection, adapter failure, partial failure, no subscription, no policy, cross-broker isolation, no secrets in audit, no auto-assessment/invoice
+
+**Migrations added**
+- `1751100000000-AddPerfFeeAssessmentDuplicateGuard` (PART A)
+- `1751200000000-CreateBrokerReconciliationSchema` (PART B)
+
+### Safety rules enforced
+- No live broker withdrawals at any point
+- No auto-charge of users
+- No automatic performance-fee assessments or invoices from reconciliation
+- Demo/paper/backtest/mock trades are never fee-eligible
+- Broker account balance is never used as fee basis
+- All money values stored as bigint minor-unit strings (no float)
+- Deduplication enforced at both app level (idempotent run) and DB level (unique index)
+- No secrets, credentials, or raw broker payloads in audit metadata
+- High-water mark only advances after confirmed fee payment (unchanged from Sprint 11)

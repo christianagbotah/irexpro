@@ -567,6 +567,66 @@ export class BrokerService {
   }
 
   /**
+   * Fetch closed trades for a broker connection using stored credentials.
+   *
+   * SECURITY:
+   * - Verifies connection belongs to userId.
+   * - Credentials decrypted in-memory only; zeroed out after the call.
+   * - Returns the raw BrokerClosedTrade array; caller is responsible for normalization.
+   *
+   * Note: Caller must enforce time-range validation (fromTime < toTime, max window).
+   */
+  async getClosedTradesForConnection(
+    connectionId: string,
+    userId: string,
+    from: Date,
+    to: Date,
+  ): Promise<{ connection: BrokerConnection; trades: import('./interfaces/broker-adapter.interface').BrokerClosedTrade[] }> {
+    const connection = await this.findConnectionById(connectionId, userId);
+
+    if (connection.status !== BrokerConnectionStatus.CONNECTED) {
+      throw new ForbiddenException(
+        `Broker connection ${connectionId} is not CONNECTED (status: ${connection.status})`,
+      );
+    }
+
+    const adapter = this.adapterRegistry.getAdapter(connection.brokerId);
+
+    if (
+      !connection.encryptedCredentials ||
+      !connection.credentialIv ||
+      !connection.credentialTag
+    ) {
+      throw new ForbiddenException('Broker connection credentials unavailable');
+    }
+
+    const credentials = this.encryptionService.decrypt({
+      ciphertext: connection.encryptedCredentials,
+      iv: connection.credentialIv,
+      tag: connection.credentialTag,
+      keyId: connection.encryptionKeyId ?? 'env-key-v1',
+    });
+
+    adapter.setMode(connection.accountType);
+
+    try {
+      await adapter.connect(credentials);
+      const trades = await adapter.getClosedTrades(from, to);
+      return { connection, trades };
+    } catch (err) {
+      this.logger.warn(
+        `getClosedTrades failed connection=${connectionId} from=${from.toISOString()} to=${to.toISOString()}: ` +
+          `${(err as Error).message}`,
+      );
+      throw err;
+    } finally {
+      Object.keys(credentials).forEach((k) => {
+        (credentials as unknown as Record<string, unknown>)[k] = null;
+      });
+    }
+  }
+
+  /**
    * Check whether a user has an active, connected broker account.
    * Used as the broker connection gate before AI trading can start.
    */

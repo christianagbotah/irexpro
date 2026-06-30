@@ -36,6 +36,7 @@ const health_module_1 = require("./health/health.module");
 const market_data_module_1 = require("./modules/market-data/market-data.module");
 const ai_engine_client_module_1 = require("./modules/ai-engine-client/ai-engine-client.module");
 const performance_fees_module_1 = require("./modules/performance-fees/performance-fees.module");
+const broker_reconciliation_module_1 = require("./modules/broker-reconciliation/broker-reconciliation.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -99,6 +100,7 @@ exports.AppModule = AppModule = __decorate([
             market_data_module_1.MarketDataModule,
             ai_engine_client_module_1.AiEngineClientModule,
             performance_fees_module_1.PerformanceFeesModule,
+            broker_reconciliation_module_1.BrokerReconciliationModule,
         ],
         providers: [
             { provide: core_1.APP_FILTER, useClass: all_exceptions_filter_1.AllExceptionsFilter },
