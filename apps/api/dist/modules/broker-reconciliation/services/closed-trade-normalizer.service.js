@@ -11,10 +11,13 @@ exports.ClosedTradeNormalizerService = void 0;
 exports.majorToMinorUnits = majorToMinorUnits;
 exports.isValidBigIntString = isValidBigIntString;
 const common_1 = require("@nestjs/common");
-function majorToMinorUnits(majorStr) {
-    if (!majorStr || majorStr === '' || majorStr === 'null')
-        return '0';
-    const trimmed = majorStr.trim();
+const currency_minor_units_1 = require("./currency-minor-units");
+function majorToMinorUnits(majorStr, digits = 2) {
+    if (majorStr === null || majorStr === undefined)
+        return null;
+    const trimmed = String(majorStr).trim();
+    if (trimmed === '' || trimmed.toLowerCase() === 'null')
+        return null;
     const negative = trimmed.startsWith('-');
     const abs = negative ? trimmed.slice(1) : trimmed;
     const dotIdx = abs.indexOf('.');
@@ -22,16 +25,21 @@ function majorToMinorUnits(majorStr) {
     let decPart;
     if (dotIdx === -1) {
         intPart = abs;
-        decPart = '00';
+        decPart = '';
     }
     else {
         intPart = abs.slice(0, dotIdx);
-        decPart = abs.slice(dotIdx + 1, dotIdx + 3).padEnd(2, '0');
+        decPart = abs.slice(dotIdx + 1);
     }
-    if (!/^\d*$/.test(intPart) || !/^\d{2}$/.test(decPart)) {
-        return '0';
-    }
-    const minor = BigInt(intPart === '' ? '0' : intPart) * 100n + BigInt(decPart);
+    if (intPart === '')
+        intPart = '0';
+    if (!/^\d+$/.test(intPart))
+        return null;
+    if (decPart !== '' && !/^\d+$/.test(decPart))
+        return null;
+    const frac = digits === 0 ? '' : decPart.slice(0, digits).padEnd(digits, '0');
+    const scale = 10n ** BigInt(digits);
+    const minor = BigInt(intPart) * scale + (digits > 0 ? BigInt(frac) : 0n);
     return negative ? (-minor).toString() : minor.toString();
 }
 function isValidBigIntString(value) {
@@ -41,11 +49,12 @@ let ClosedTradeNormalizerService = ClosedTradeNormalizerService_1 = class Closed
     constructor() {
         this.logger = new common_1.Logger(ClosedTradeNormalizerService_1.name);
     }
-    normalize(rawTrades, brokerProvider, now = new Date()) {
+    normalize(rawTrades, brokerProvider, currency, now = new Date()) {
         const valid = [];
         const skipped = [];
+        const digits = (0, currency_minor_units_1.getMinorUnitDigits)(currency);
         for (const raw of rawTrades) {
-            const result = this.normalizeOne(raw, brokerProvider, now);
+            const result = this.normalizeOne(raw, brokerProvider, currency, digits, now);
             if (result.kind === 'valid') {
                 valid.push(result.trade);
             }
@@ -56,7 +65,7 @@ let ClosedTradeNormalizerService = ClosedTradeNormalizerService_1 = class Closed
         }
         return { valid, skipped };
     }
-    normalizeOne(raw, brokerProvider, now) {
+    normalizeOne(raw, brokerProvider, currency, digits, now) {
         const brokerTradeId = raw.externalOrderId?.trim();
         if (!brokerTradeId) {
             return { kind: 'skipped', externalOrderId: null, reason: 'missing brokerTradeId (externalOrderId)' };
@@ -71,16 +80,16 @@ let ClosedTradeNormalizerService = ClosedTradeNormalizerService_1 = class Closed
                 reason: `future closedAt (${raw.closedAt.toISOString()})`,
             };
         }
-        const grossRealisedPnl = majorToMinorUnits(raw.realisedPnl ?? '0');
-        const commission = majorToMinorUnits(raw.commission ?? '0');
-        const swap = majorToMinorUnits(raw.swap ?? '0');
-        if (!isValidBigIntString(grossRealisedPnl)) {
+        const grossRealisedPnl = majorToMinorUnits(raw.realisedPnl ?? '0', digits);
+        const commission = majorToMinorUnits(raw.commission ?? '0', digits);
+        const swap = majorToMinorUnits(raw.swap ?? '0', digits);
+        if (grossRealisedPnl === null || !isValidBigIntString(grossRealisedPnl)) {
             return { kind: 'skipped', externalOrderId: brokerTradeId, reason: 'invalid grossRealisedPnl' };
         }
-        if (!isValidBigIntString(commission)) {
+        if (commission === null || !isValidBigIntString(commission)) {
             return { kind: 'skipped', externalOrderId: brokerTradeId, reason: 'invalid commission' };
         }
-        if (!isValidBigIntString(swap)) {
+        if (swap === null || !isValidBigIntString(swap)) {
             return { kind: 'skipped', externalOrderId: brokerTradeId, reason: 'invalid swap' };
         }
         const netRealisedPnl = (BigInt(grossRealisedPnl) + BigInt(commission) + BigInt(swap)).toString();
@@ -115,7 +124,7 @@ let ClosedTradeNormalizerService = ClosedTradeNormalizerService_1 = class Closed
                 commission,
                 swap,
                 netRealisedPnl,
-                currency: 'USD',
+                currency,
                 rawMetadataSummary,
             },
         };

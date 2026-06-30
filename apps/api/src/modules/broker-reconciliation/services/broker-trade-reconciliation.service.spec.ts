@@ -110,6 +110,7 @@ const mockTradeRepo = {
   save: jest.fn(),
   update: jest.fn(),
   find: jest.fn(),
+  findOne: jest.fn(),
 };
 const mockLedgerRepo = {
   create: jest.fn(),
@@ -149,6 +150,8 @@ describe('BrokerTradeReconciliationService', () => {
     mockTradeRepo.create.mockReturnValue(reconTrade);
     mockTradeRepo.save.mockResolvedValue(reconTrade);
     mockTradeRepo.update.mockResolvedValue(undefined);
+    // Default: no pre-existing trade row (backfill lookup returns null → treated as duplicate)
+    mockTradeRepo.findOne.mockResolvedValue(null);
 
     const ledger = { id: 'ledger-1' };
     mockLedgerRepo.create.mockReturnValue(ledger);
@@ -699,6 +702,142 @@ describe('BrokerTradeReconciliationService', () => {
       expect(mockLedgerRepo.save).toHaveBeenCalledTimes(1);
     });
   });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Currency minor-unit safety
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  describe('currency minor-unit safety', () => {
+    it('aborts (BadRequest) for a broker connection with an unsupported currency', async () => {
+      mockBrokerService.findConnectionById.mockResolvedValue(
+        makeLiveConnection({ accountCurrency: 'XYZ' }),
+      );
+      await expect(
+        service.runReconciliation('user-1', 'conn-1', FROM, TO, 'admin-1'),
+      ).rejects.toThrow(BadRequestException);
+      // No run should have been created or trades fetched
+      expect(mockBrokerService.getClosedTradesForConnection).not.toHaveBeenCalled();
+    });
+
+    it('uses JPY 0-decimal exponent — net P&L not inflated 100x', async () => {
+      mockBrokerService.findConnectionById.mockResolvedValue(
+        makeLiveConnection({ accountCurrency: 'JPY' }),
+      );
+      mockBrokerService.getClosedTradesForConnection.mockResolvedValue({
+        connection: makeLiveConnection({ accountCurrency: 'JPY' }),
+        trades: [makeClosedTrade({ realisedPnl: '1000', commission: '0', swap: '0' })],
+      });
+      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
+      mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
+
+      await service.runReconciliation('user-1', 'conn-1', FROM, TO, 'admin-1');
+
+      // ¥1000 → 1000 minor units (NOT 100000) and currency tagged JPY
+      expect(mockLedgerRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ amount: '1000', currency: 'JPY' }),
+      );
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Self-healing ledger backfill (partial-failure gap)
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  describe('self-healing ledger backfill', () => {
+    it('backfills a missing ledger entry when a prior run saved the trade but not the ledger', async () => {
+      mockBrokerService.findConnectionById.mockResolvedValue(makeLiveConnection());
+      mockBrokerService.getClosedTradesForConnection.mockResolvedValue({
+        connection: makeLiveConnection(),
+        trades: [makeClosedTrade({ realisedPnl: '100.00', commission: '-2.50', swap: '-0.50' })],
+      });
+      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
+      mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
+
+      // Simulate: trade row already exists (unique violation) ...
+      const dupError = new QueryFailedError('', [], new Error('unique violation'));
+      (dupError as unknown as { code: string }).code = '23505';
+      mockTradeRepo.save.mockRejectedValueOnce(dupError);
+
+      // ... and that existing row is fee-eligible, non-zero, with NO ledger entry yet
+      mockTradeRepo.findOne.mockResolvedValueOnce({
+        id: 'rtrade-existing',
+        userId: 'user-1',
+        brokerConnectionId: 'conn-1',
+        brokerTradeId: 'trade-001',
+        instrument: 'EURUSD',
+        direction: 'BUY',
+        netRealisedPnl: '9700',
+        closedAt: new Date(),
+        isFeeEligible: true,
+        ledgerEntryId: null,
+      });
+
+      await service.runReconciliation('user-1', 'conn-1', FROM, TO, 'admin-1');
+
+      // Backfill creates the missing ledger entry and links it
+      expect(mockLedgerRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          amount: '9700',
+          entryType: LedgerEntryType.REALISED_TRADE_PROFIT,
+        }),
+      );
+      expect(mockTradeRepo.update).toHaveBeenCalledWith(
+        'rtrade-existing',
+        { ledgerEntryId: 'ledger-1' },
+      );
+    });
+
+    it('does NOT backfill when the existing trade already has a ledger entry (genuine duplicate)', async () => {
+      mockBrokerService.findConnectionById.mockResolvedValue(makeLiveConnection());
+      mockBrokerService.getClosedTradesForConnection.mockResolvedValue({
+        connection: makeLiveConnection(),
+        trades: [makeClosedTrade({ realisedPnl: '100.00' })],
+      });
+      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
+      mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
+
+      const dupError = new QueryFailedError('', [], new Error('unique violation'));
+      (dupError as unknown as { code: string }).code = '23505';
+      mockTradeRepo.save.mockRejectedValueOnce(dupError);
+
+      mockTradeRepo.findOne.mockResolvedValueOnce({
+        id: 'rtrade-existing',
+        netRealisedPnl: '9700',
+        isFeeEligible: true,
+        ledgerEntryId: 'ledger-already-there', // already linked
+      });
+
+      await service.runReconciliation('user-1', 'conn-1', FROM, TO, 'admin-1');
+
+      // No new ledger entry created — treated as a duplicate
+      expect(mockLedgerRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('does NOT backfill a zero-P&L duplicate', async () => {
+      mockBrokerService.findConnectionById.mockResolvedValue(makeLiveConnection());
+      mockBrokerService.getClosedTradesForConnection.mockResolvedValue({
+        connection: makeLiveConnection(),
+        trades: [makeClosedTrade({ realisedPnl: '0.00', commission: '0', swap: '0' })],
+      });
+      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
+      mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
+
+      const dupError = new QueryFailedError('', [], new Error('unique violation'));
+      (dupError as unknown as { code: string }).code = '23505';
+      mockTradeRepo.save.mockRejectedValueOnce(dupError);
+
+      mockTradeRepo.findOne.mockResolvedValueOnce({
+        id: 'rtrade-existing',
+        netRealisedPnl: '0',
+        isFeeEligible: false,
+        ledgerEntryId: null,
+      });
+
+      await service.runReconciliation('user-1', 'conn-1', FROM, TO, 'admin-1');
+
+      expect(mockLedgerRepo.save).not.toHaveBeenCalled();
+    });
+  });
 });
 
 // ── ClosedTradeNormalizerService unit tests ────────────────────────────────────
@@ -713,12 +852,21 @@ describe('ClosedTradeNormalizerService', () => {
   });
 
   describe('majorToMinorUnits', () => {
-    it('converts 100.00 → 10000', () => expect(majorToMinorUnits('100.00')).toBe('10000'));
+    it('converts 100.00 → 10000 (2dp default)', () => expect(majorToMinorUnits('100.00')).toBe('10000'));
     it('converts -2.50 → -250', () => expect(majorToMinorUnits('-2.50')).toBe('-250'));
     it('converts 0.00 → 0', () => expect(majorToMinorUnits('0.00')).toBe('0'));
     it('converts 1000 → 100000 (no decimal)', () => expect(majorToMinorUnits('1000')).toBe('100000'));
     it('converts -0.01 → -1', () => expect(majorToMinorUnits('-0.01')).toBe('-1'));
-    it('converts empty string → 0', () => expect(majorToMinorUnits('')).toBe('0'));
+    it('returns null for empty string (invalid)', () => expect(majorToMinorUnits('')).toBeNull());
+    it('returns null for non-numeric input', () => expect(majorToMinorUnits('abc')).toBeNull());
+    it('truncates extra decimals toward zero', () => expect(majorToMinorUnits('1.119')).toBe('111'));
+
+    // Currency exponent handling
+    it('JPY (0 digits): 1000 → 1000', () => expect(majorToMinorUnits('1000', 0)).toBe('1000'));
+    it('JPY (0 digits): 1000.50 → 1000 (drops sub-unit)', () => expect(majorToMinorUnits('1000.50', 0)).toBe('1000'));
+    it('JPY (0 digits): -250 → -250', () => expect(majorToMinorUnits('-250', 0)).toBe('-250'));
+    it('KWD (3 digits): 1.234 → 1234', () => expect(majorToMinorUnits('1.234', 3)).toBe('1234'));
+    it('KWD (3 digits): 1.2 → 1200', () => expect(majorToMinorUnits('1.2', 3)).toBe('1200'));
   });
 
   describe('normalize — skip rules', () => {
@@ -728,6 +876,7 @@ describe('ClosedTradeNormalizerService', () => {
       const { valid, skipped } = svc.normalize(
         [{ ...makeClosedTrade(), externalOrderId: '' } as any],
         'mt5',
+        'USD',
         now,
       );
       expect(valid).toHaveLength(0);
@@ -739,6 +888,7 @@ describe('ClosedTradeNormalizerService', () => {
       const { valid, skipped } = svc.normalize(
         [{ ...makeClosedTrade(), closedAt: future } as any],
         'mt5',
+        'USD',
         now,
       );
       expect(valid).toHaveLength(0);
@@ -749,6 +899,7 @@ describe('ClosedTradeNormalizerService', () => {
       const { valid } = svc.normalize(
         [{ ...makeClosedTrade(), closedAt: null as unknown as Date } as any],
         'mt5',
+        'USD',
         now,
       );
       expect(valid).toHaveLength(0);
@@ -759,10 +910,12 @@ describe('ClosedTradeNormalizerService', () => {
       const { valid } = svc.normalize(
         [makeClosedTrade({ closedAt: past }) as any],
         'mt5',
+        'USD',
         now,
       );
       expect(valid).toHaveLength(1);
       expect(valid[0].brokerTradeId).toBe('trade-001');
+      expect(valid[0].currency).toBe('USD');
     });
 
     it('computes netRealisedPnl without double-subtracting commission/swap', () => {
@@ -770,6 +923,7 @@ describe('ClosedTradeNormalizerService', () => {
       const { valid } = svc.normalize(
         [makeClosedTrade({ closedAt: past, realisedPnl: '100.00', commission: '-2.50', swap: '-0.50' }) as any],
         'mt5',
+        'USD',
         now,
       );
       // gross=10000 + commission=-250 + swap=-50 = net=9700
@@ -777,11 +931,25 @@ describe('ClosedTradeNormalizerService', () => {
       expect(valid[0].grossRealisedPnl).toBe('10000');
     });
 
+    it('uses JPY 0-decimal exponent for a JPY account', () => {
+      const past = new Date(now.getTime() - 3600_000);
+      const { valid } = svc.normalize(
+        [makeClosedTrade({ closedAt: past, realisedPnl: '1000', commission: '0', swap: '0' }) as any],
+        'mt5',
+        'JPY',
+        now,
+      );
+      // JPY has no minor subunit: 1000 yen → 1000 minor units (NOT 100000)
+      expect(valid[0].netRealisedPnl).toBe('1000');
+      expect(valid[0].currency).toBe('JPY');
+    });
+
     it('does NOT include API keys or serverUrl in rawMetadataSummary', () => {
       const past = new Date(now.getTime() - 3600_000);
       const { valid } = svc.normalize(
         [makeClosedTrade({ closedAt: past }) as any],
         'mt5',
+        'USD',
         now,
       );
       const meta = JSON.stringify(valid[0].rawMetadataSummary);

@@ -17,6 +17,7 @@ exports.BrokerTradeReconciliationService = void 0;
 const common_1 = require("@nestjs/common");
 const typeorm_1 = require("@nestjs/typeorm");
 const typeorm_2 = require("typeorm");
+const currency_minor_units_1 = require("./currency-minor-units");
 const broker_trade_reconciliation_run_entity_1 = require("../entities/broker-trade-reconciliation-run.entity");
 const broker_reconciled_trade_entity_1 = require("../entities/broker-reconciled-trade.entity");
 const performance_fee_ledger_entry_entity_1 = require("../../performance-fees/entities/performance-fee-ledger-entry.entity");
@@ -28,7 +29,6 @@ const audit_service_1 = require("../../audit/audit.service");
 const audit_action_enum_1 = require("../../../common/enums/audit-action.enum");
 const audit_log_entity_1 = require("../../audit/entities/audit-log.entity");
 const closed_trade_normalizer_service_1 = require("./closed-trade-normalizer.service");
-const typeorm_3 = require("typeorm");
 const MAX_WINDOW_DAYS = 90;
 let BrokerTradeReconciliationService = BrokerTradeReconciliationService_1 = class BrokerTradeReconciliationService {
     constructor(runRepo, tradeRepo, ledgerRepo, policyRepo, subscriptionRepo, brokerService, normalizerService, auditService) {
@@ -69,6 +69,11 @@ let BrokerTradeReconciliationService = BrokerTradeReconciliationService_1 = clas
             throw new common_1.BadRequestException(`Broker connection ${brokerConnectionId} is not a LIVE account ` +
                 `(accountType=${connection.accountType}). ` +
                 `Demo, paper, and backtest accounts are never fee-eligible.`);
+        }
+        const currency = connection.accountCurrency ?? 'USD';
+        if (!(0, currency_minor_units_1.isSupportedCurrency)(currency)) {
+            throw new common_1.BadRequestException(`Unsupported account currency '${currency}' for minor-unit conversion. ` +
+                `Reconciliation aborted to avoid miscalculating the fee basis.`);
         }
         const run = await this.runRepo.save(this.runRepo.create({
             userId,
@@ -122,8 +127,7 @@ let BrokerTradeReconciliationService = BrokerTradeReconciliationService_1 = clas
             this.logger.error(`[Recon] Run ${run.id} FAILED — adapter error: ${errorMsg}`);
             return this.runRepo.findOne({ where: { id: run.id } });
         }
-        const currency = connection.accountCurrency ?? 'USD';
-        const { valid: normalised, skipped } = this.normalizerService.normalize(rawTrades, connection.brokerId);
+        const { valid: normalised, skipped } = this.normalizerService.normalize(rawTrades, connection.brokerId, currency);
         let newLedgerEntriesCreated = 0;
         let duplicateTradesSkipped = 0;
         let failedTrades = 0;
@@ -205,6 +209,10 @@ let BrokerTradeReconciliationService = BrokerTradeReconciliationService_1 = clas
         }
         catch (err) {
             if (err instanceof typeorm_2.QueryFailedError && err.code === '23505') {
+                const backfilled = await this.backfillMissingLedgerEntry(userId, brokerConnectionId, trade.brokerTradeId, currency, runId, actorId);
+                if (backfilled) {
+                    return { isDuplicate: false, ledgerEntryCreated: true };
+                }
                 await this.auditService.log({
                     actorUserId: actorId,
                     actorType: 'ADMIN',
@@ -286,6 +294,63 @@ let BrokerTradeReconciliationService = BrokerTradeReconciliationService_1 = clas
         });
         return { isDuplicate: false, ledgerEntryCreated: true };
     }
+    async backfillMissingLedgerEntry(userId, brokerConnectionId, brokerTradeId, currency, runId, actorId) {
+        const existing = await this.tradeRepo.findOne({
+            where: { userId, brokerConnectionId, brokerTradeId },
+        });
+        if (!existing)
+            return false;
+        if (!existing.isFeeEligible)
+            return false;
+        if (existing.ledgerEntryId)
+            return false;
+        const netPnl = BigInt(existing.netRealisedPnl);
+        if (netPnl === 0n)
+            return false;
+        const entryType = netPnl > 0n
+            ? performance_fee_ledger_entry_entity_1.LedgerEntryType.REALISED_TRADE_PROFIT
+            : performance_fee_ledger_entry_entity_1.LedgerEntryType.REALISED_TRADE_LOSS;
+        const ledgerEntry = await this.ledgerRepo.save(this.ledgerRepo.create({
+            userId,
+            assessmentId: null,
+            brokerConnectionId,
+            entryType,
+            currency,
+            amount: existing.netRealisedPnl,
+            sourceReference: existing.brokerTradeId,
+            occurredAt: existing.closedAt,
+            metadata: {
+                brokerTradeId: existing.brokerTradeId,
+                brokerReconciledTradeId: existing.id,
+                instrument: existing.instrument,
+                direction: existing.direction,
+                runId,
+                backfilled: true,
+            },
+        }));
+        await this.tradeRepo.update(existing.id, { ledgerEntryId: ledgerEntry.id });
+        await this.auditService.log({
+            actorUserId: actorId,
+            actorType: 'ADMIN',
+            action: audit_action_enum_1.AuditAction.PERFORMANCE_FEE_LEDGER_ENTRY_CREATED_FROM_BROKER_TRADE,
+            resourceType: 'PerformanceFeeLedgerEntry',
+            resourceId: ledgerEntry.id,
+            metadata: {
+                userId,
+                brokerConnectionId,
+                brokerTradeId: existing.brokerTradeId,
+                brokerReconciledTradeId: existing.id,
+                entryType,
+                amount: existing.netRealisedPnl,
+                currency,
+                backfilled: true,
+            },
+            severity: audit_log_entity_1.AuditSeverity.INFO,
+        });
+        this.logger.log(`[Recon] Backfilled missing ledger entry for reconciled trade ${existing.id} ` +
+            `(brokerTradeId=${brokerTradeId})`);
+        return true;
+    }
     isFeeEligible(trade, context) {
         if (!context.hasActiveSubscription)
             return false;
@@ -318,7 +383,7 @@ let BrokerTradeReconciliationService = BrokerTradeReconciliationService_1 = clas
                 return planPolicy;
         }
         const globalPolicy = await this.policyRepo.findOne({
-            where: { planId: (0, typeorm_3.IsNull)(), isActive: true },
+            where: { planId: (0, typeorm_2.IsNull)(), isActive: true },
         });
         return globalPolicy ?? null;
     }

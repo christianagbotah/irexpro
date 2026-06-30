@@ -473,8 +473,9 @@ All subscription, payment, and revenue events produce immutable audit log entrie
 IBrokerAdapter.getClosedTrades(from, to)
         ↓
 ClosedTradeNormalizerService
-  - Maps externalOrderId → brokerTradeId
-  - Converts major-unit decimal → minor-unit bigint strings
+  - Maps externalOrderId → brokerTradeId (MetaTrader: the deal ticket id, stable & unique per account)
+  - Converts major-unit decimal → minor-unit bigint strings using the account
+    currency's ISO 4217 exponent (USD/EUR=2, JPY=0, KWD=3) — never a fixed ×100
   - Validates: non-empty ID, past closedAt, valid P&L
   - Computes: netRealisedPnl = grossRealisedPnl + commission + swap
         ↓
@@ -509,3 +510,5 @@ A trade is fee-eligible only when ALL of:
 - High-water mark only advances after confirmed fee payment
 - Deduplication enforced at DB level (unique index on userId + brokerConnectionId + brokerTradeId)
 - No secrets, credentials, or raw broker payloads in any reconciliation record or audit log
+- Currency minor-unit conversion is currency-aware and **fails closed** (`BadRequestException`) for any account currency without a known exponent, rather than silently assuming 2 decimals
+- Reconciliation is self-healing on retry: if a prior run saved a `BrokerReconciledTrade` row but failed before writing its `PerformanceFeeLedgerEntry`, a later run detects the gap (fee-eligible + non-zero P&L + no linked ledger entry) and backfills the missing ledger entry — without double-counting fully-processed trades

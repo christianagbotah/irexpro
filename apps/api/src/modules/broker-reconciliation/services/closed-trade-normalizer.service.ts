@@ -1,22 +1,28 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { BrokerClosedTrade } from '../../broker/interfaces/broker-adapter.interface';
 import { NormalizedClosedTrade } from '../interfaces/normalized-closed-trade.interface';
+import { getMinorUnitDigits } from './currency-minor-units';
 
 /**
- * Convert a broker major-unit decimal string to a minor-unit bigint string.
+ * Convert a broker major-unit decimal string to a minor-unit bigint string,
+ * honouring the currency's ISO 4217 exponent (number of fractional digits).
  *
- * Example: "123.45"  → "12345"
- *          "-2.50"   → "-250"
- *          "0.00"    → "0"
- *          "1000"    → "100000"
+ * Examples (digits=2): "123.45" → "12345", "-2.50" → "-250", "1000" → "100000"
+ * Examples (digits=0): "1000"   → "1000",  "1000.50" → "1000" (yen has no subunit)
+ * Examples (digits=3): "1.234"  → "1234"
  *
- * Uses string arithmetic (no floating point) so it is safe for all values
- * representable by a 64-bit integer.
+ * Uses string + BigInt arithmetic only (no floating point), so it is exact for
+ * all values representable by a 64-bit integer. Excess fractional digits are
+ * truncated toward zero (consistent, never rounds up).
+ *
+ * Returns null when the input is not a parseable decimal, so callers can
+ * distinguish "invalid P&L" from a legitimate zero.
  */
-export function majorToMinorUnits(majorStr: string): string {
-  if (!majorStr || majorStr === '' || majorStr === 'null') return '0';
+export function majorToMinorUnits(majorStr: string, digits = 2): string | null {
+  if (majorStr === null || majorStr === undefined) return null;
+  const trimmed = String(majorStr).trim();
+  if (trimmed === '' || trimmed.toLowerCase() === 'null') return null;
 
-  const trimmed = majorStr.trim();
   const negative = trimmed.startsWith('-');
   const abs = negative ? trimmed.slice(1) : trimmed;
 
@@ -26,19 +32,23 @@ export function majorToMinorUnits(majorStr: string): string {
 
   if (dotIdx === -1) {
     intPart = abs;
-    decPart = '00';
+    decPart = '';
   } else {
     intPart = abs.slice(0, dotIdx);
-    // Take up to 2 decimal places, pad to exactly 2
-    decPart = abs.slice(dotIdx + 1, dotIdx + 3).padEnd(2, '0');
+    decPart = abs.slice(dotIdx + 1);
   }
 
-  // Validate numeric-only after sign strip
-  if (!/^\d*$/.test(intPart) || !/^\d{2}$/.test(decPart)) {
-    return '0';
-  }
+  if (intPart === '') intPart = '0';
 
-  const minor = BigInt(intPart === '' ? '0' : intPart) * 100n + BigInt(decPart);
+  // Validate numeric-only after sign/dot strip — reject anything non-numeric
+  if (!/^\d+$/.test(intPart)) return null;
+  if (decPart !== '' && !/^\d+$/.test(decPart)) return null;
+
+  // Truncate (or pad) the fractional part to exactly `digits` characters
+  const frac = digits === 0 ? '' : decPart.slice(0, digits).padEnd(digits, '0');
+
+  const scale = 10n ** BigInt(digits);
+  const minor = BigInt(intPart) * scale + (digits > 0 ? BigInt(frac) : 0n);
   return negative ? (-minor).toString() : minor.toString();
 }
 
@@ -84,13 +94,18 @@ export class ClosedTradeNormalizerService {
   normalize(
     rawTrades: BrokerClosedTrade[],
     brokerProvider: string,
+    currency: string,
     now: Date = new Date(),
   ): { valid: NormalizedClosedTrade[]; skipped: SkippedTrade[] } {
     const valid: NormalizedClosedTrade[] = [];
     const skipped: SkippedTrade[] = [];
 
+    // Resolve the currency exponent once. Throws for unmapped currencies — the
+    // reconciliation service validates support upfront, so this is defensive.
+    const digits = getMinorUnitDigits(currency);
+
     for (const raw of rawTrades) {
-      const result = this.normalizeOne(raw, brokerProvider, now);
+      const result = this.normalizeOne(raw, brokerProvider, currency, digits, now);
       if (result.kind === 'valid') {
         valid.push(result.trade);
       } else {
@@ -107,6 +122,8 @@ export class ClosedTradeNormalizerService {
   private normalizeOne(
     raw: BrokerClosedTrade,
     brokerProvider: string,
+    currency: string,
+    digits: number,
     now: Date,
   ): ({ kind: 'valid'; trade: NormalizedClosedTrade } | SkippedTrade) {
     // 1. brokerTradeId must be non-empty
@@ -127,18 +144,19 @@ export class ClosedTradeNormalizerService {
       };
     }
 
-    // 3. Convert money to minor units
-    const grossRealisedPnl = majorToMinorUnits(raw.realisedPnl ?? '0');
-    const commission = majorToMinorUnits(raw.commission ?? '0');
-    const swap = majorToMinorUnits(raw.swap ?? '0');
+    // 3. Convert money to minor units using the currency's exponent.
+    //    majorToMinorUnits returns null for non-numeric input → skip as invalid P&L.
+    const grossRealisedPnl = majorToMinorUnits(raw.realisedPnl ?? '0', digits);
+    const commission = majorToMinorUnits(raw.commission ?? '0', digits);
+    const swap = majorToMinorUnits(raw.swap ?? '0', digits);
 
-    if (!isValidBigIntString(grossRealisedPnl)) {
+    if (grossRealisedPnl === null || !isValidBigIntString(grossRealisedPnl)) {
       return { kind: 'skipped', externalOrderId: brokerTradeId, reason: 'invalid grossRealisedPnl' };
     }
-    if (!isValidBigIntString(commission)) {
+    if (commission === null || !isValidBigIntString(commission)) {
       return { kind: 'skipped', externalOrderId: brokerTradeId, reason: 'invalid commission' };
     }
-    if (!isValidBigIntString(swap)) {
+    if (swap === null || !isValidBigIntString(swap)) {
       return { kind: 'skipped', externalOrderId: brokerTradeId, reason: 'invalid swap' };
     }
 
@@ -185,7 +203,7 @@ export class ClosedTradeNormalizerService {
         commission,
         swap,
         netRealisedPnl,
-        currency: 'USD', // Currency is resolved from the BrokerConnection.accountCurrency at service layer
+        currency, // resolved from BrokerConnection.accountCurrency at the service layer
         rawMetadataSummary,
       },
     };

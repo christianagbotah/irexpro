@@ -22,6 +22,7 @@ export declare class BrokerTradeReconciliationService {
     getReconciledTrades(userId?: string, brokerConnectionId?: string): Promise<BrokerReconciledTrade[]>;
     runReconciliation(userId: string, brokerConnectionId: string, fromTime: Date, toTime: Date, actorId: string, ipAddress?: string): Promise<BrokerTradeReconciliationRun>;
     private processTrade;
+    private backfillMissingLedgerEntry;
     private isFeeEligible;
     private loadFeeEligibilityContext;
     private findApplicablePolicy;

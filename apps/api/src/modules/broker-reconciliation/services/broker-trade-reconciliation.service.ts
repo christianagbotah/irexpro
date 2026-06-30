@@ -1,11 +1,11 @@
 import {
   BadRequestException,
-  ForbiddenException,
   Injectable,
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { QueryFailedError, Repository } from 'typeorm';
+import { IsNull, QueryFailedError, Repository } from 'typeorm';
+import { isSupportedCurrency } from './currency-minor-units';
 import {
   BrokerTradeReconciliationRun,
   ReconciliationRunStatus,
@@ -27,7 +27,6 @@ import { AuditAction } from '../../../common/enums/audit-action.enum';
 import { AuditSeverity } from '../../audit/entities/audit-log.entity';
 import { ClosedTradeNormalizerService } from './closed-trade-normalizer.service';
 import { NormalizedClosedTrade } from '../interfaces/normalized-closed-trade.interface';
-import { IsNull } from 'typeorm';
 
 /** Maximum reconciliation window in days. */
 const MAX_WINDOW_DAYS = 90;
@@ -145,6 +144,17 @@ export class BrokerTradeReconciliationService {
       );
     }
 
+    // Fail closed for currencies with no known minor-unit exponent. A wrong
+    // exponent would silently corrupt the fee basis (e.g. JPY inflated 100×),
+    // so we abort rather than guess at 2 decimals.
+    const currency = connection.accountCurrency ?? 'USD';
+    if (!isSupportedCurrency(currency)) {
+      throw new BadRequestException(
+        `Unsupported account currency '${currency}' for minor-unit conversion. ` +
+          `Reconciliation aborted to avoid miscalculating the fee basis.`,
+      );
+    }
+
     // ── 3. Create PENDING run record ────────────────────────────────────────
     const run = await this.runRepo.save(
       this.runRepo.create({
@@ -215,11 +225,11 @@ export class BrokerTradeReconciliationService {
       return this.runRepo.findOne({ where: { id: run.id } }) as Promise<BrokerTradeReconciliationRun>;
     }
 
-    // ── 7. Normalize trades ─────────────────────────────────────────────────
-    const currency = connection.accountCurrency ?? 'USD';
+    // ── 7. Normalize trades (currency-aware minor-unit conversion) ──────────
     const { valid: normalised, skipped } = this.normalizerService.normalize(
       rawTrades,
       connection.brokerId,
+      currency,
     );
 
     // ── 8. Process each normalised trade ────────────────────────────────────
@@ -347,7 +357,25 @@ export class BrokerTradeReconciliationService {
       );
     } catch (err) {
       if (err instanceof QueryFailedError && (err as { code?: string }).code === '23505') {
-        // Duplicate trade — idempotent skip
+        // Duplicate trade — already reconciled by a prior run.
+        //
+        // Self-healing: if a previous run inserted the trade row but failed
+        // BEFORE creating its ledger entry (e.g. a transient DB error between
+        // the two writes), the realised P&L would be silently missing from the
+        // fee basis forever. Detect that exact gap and backfill the ledger
+        // entry now. Genuine, fully-processed duplicates are left untouched.
+        const backfilled = await this.backfillMissingLedgerEntry(
+          userId,
+          brokerConnectionId,
+          trade.brokerTradeId,
+          currency,
+          runId,
+          actorId,
+        );
+        if (backfilled) {
+          return { isDuplicate: false, ledgerEntryCreated: true };
+        }
+
         await this.auditService.log({
           actorUserId: actorId,
           actorType: 'ADMIN',
@@ -440,6 +468,88 @@ export class BrokerTradeReconciliationService {
     });
 
     return { isDuplicate: false, ledgerEntryCreated: true };
+  }
+
+  /**
+   * Backfill a missing ledger entry for an already-reconciled trade.
+   *
+   * Only acts on the precise "row saved, ledger missing" gap left by a partial
+   * failure: the existing reconciled trade must be fee-eligible, have non-zero
+   * net P&L, and have NO linked ledger entry. Any other state (zero P&L,
+   * not fee-eligible, or already linked) is a genuine duplicate and is skipped.
+   *
+   * Returns true if a ledger entry was created.
+   */
+  private async backfillMissingLedgerEntry(
+    userId: string,
+    brokerConnectionId: string,
+    brokerTradeId: string,
+    currency: string,
+    runId: string,
+    actorId: string,
+  ): Promise<boolean> {
+    const existing = await this.tradeRepo.findOne({
+      where: { userId, brokerConnectionId, brokerTradeId },
+    });
+
+    if (!existing) return false;
+    if (!existing.isFeeEligible) return false;
+    if (existing.ledgerEntryId) return false;
+
+    const netPnl = BigInt(existing.netRealisedPnl);
+    if (netPnl === 0n) return false;
+
+    const entryType = netPnl > 0n
+      ? LedgerEntryType.REALISED_TRADE_PROFIT
+      : LedgerEntryType.REALISED_TRADE_LOSS;
+
+    const ledgerEntry = await this.ledgerRepo.save(
+      this.ledgerRepo.create({
+        userId,
+        assessmentId: null,
+        brokerConnectionId,
+        entryType,
+        currency,
+        amount: existing.netRealisedPnl,
+        sourceReference: existing.brokerTradeId,
+        occurredAt: existing.closedAt,
+        metadata: {
+          brokerTradeId: existing.brokerTradeId,
+          brokerReconciledTradeId: existing.id,
+          instrument: existing.instrument,
+          direction: existing.direction,
+          runId,
+          backfilled: true,
+        },
+      }),
+    );
+
+    await this.tradeRepo.update(existing.id, { ledgerEntryId: ledgerEntry.id });
+
+    await this.auditService.log({
+      actorUserId: actorId,
+      actorType: 'ADMIN',
+      action: AuditAction.PERFORMANCE_FEE_LEDGER_ENTRY_CREATED_FROM_BROKER_TRADE,
+      resourceType: 'PerformanceFeeLedgerEntry',
+      resourceId: ledgerEntry.id,
+      metadata: {
+        userId,
+        brokerConnectionId,
+        brokerTradeId: existing.brokerTradeId,
+        brokerReconciledTradeId: existing.id,
+        entryType,
+        amount: existing.netRealisedPnl,
+        currency,
+        backfilled: true,
+      },
+      severity: AuditSeverity.INFO,
+    });
+
+    this.logger.log(
+      `[Recon] Backfilled missing ledger entry for reconciled trade ${existing.id} ` +
+        `(brokerTradeId=${brokerTradeId})`,
+    );
+    return true;
   }
 
   // ── Fee eligibility ─────────────────────────────────────────────────────────
