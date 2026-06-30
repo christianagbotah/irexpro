@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { QueryFailedError, Repository } from 'typeorm';
+import { IsNull, QueryFailedError, Repository } from 'typeorm';
 import { PaymentWebhookEvent } from '../entities/payment-webhook-event.entity';
 import { PaymentTransaction, PaymentPurpose, PaymentTransactionStatus } from '../entities/payment-transaction.entity';
 import { Invoice, InvoiceStatus } from '../entities/invoice.entity';
@@ -383,9 +383,14 @@ export class WebhookProcessorService {
       },
     });
 
-    // Update HWM and total fees in TradingAccountPerformance
+    // Update HWM and total fees in TradingAccountPerformance.
+    // Use IsNull() for the no-broker case — TypeORM strips `undefined`, which would
+    // otherwise match ANY of the user's broker performance rows.
     const performance = await this.performanceRepo.findOne({
-      where: { userId: transaction.userId, brokerConnectionId: assessment.brokerConnectionId ?? undefined },
+      where: {
+        userId: transaction.userId,
+        brokerConnectionId: assessment.brokerConnectionId === null ? IsNull() : assessment.brokerConnectionId,
+      },
     });
 
     if (performance) {

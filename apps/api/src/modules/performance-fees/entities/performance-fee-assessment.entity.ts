@@ -52,6 +52,7 @@ export class PerformanceFeeAssessment {
 
   /** Populated after invoiceAssessment() is called */
   @Column({ name: 'invoice_id', type: 'uuid', nullable: true })
+  @Index()
   invoiceId: string | null;
 
   @Column({ name: 'currency', type: 'varchar', length: 3 })

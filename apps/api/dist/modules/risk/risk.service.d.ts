@@ -1,0 +1,33 @@
+import { Repository } from 'typeorm';
+import { RiskProfile } from './entities/risk-profile.entity';
+import { RiskViolation } from './entities/risk-violation.entity';
+import { ProposedTrade, RiskDecision } from './interfaces/risk.interface';
+import { BrokerService } from '../broker/broker.service';
+import { AuditService } from '../audit/audit.service';
+import { UpdateRiskProfileDto } from './dto/update-risk-profile.dto';
+import { ExecutionService } from '../execution/execution.service';
+import { DomainEventBus } from '../events/event-bus.service';
+export declare class RiskService {
+    private profileRepo;
+    private violationRepo;
+    private brokerService;
+    private auditService;
+    private executionService;
+    private readonly eventBus;
+    private readonly logger;
+    constructor(profileRepo: Repository<RiskProfile>, violationRepo: Repository<RiskViolation>, brokerService: BrokerService, auditService: AuditService, executionService: ExecutionService, eventBus: DomainEventBus);
+    validateProposedTrade(userId: string, trade: ProposedTrade): Promise<RiskDecision>;
+    private runValidationPipeline;
+    isKillSwitchActive(userId: string): Promise<boolean>;
+    hasBrokerConnection(userId: string): Promise<boolean>;
+    hasDailyLossLimitBreached(userId: string): Promise<boolean>;
+    getOrCreateProfile(userId: string): Promise<RiskProfile>;
+    updateProfile(userId: string, dto: UpdateRiskProfileDto): Promise<RiskProfile>;
+    toggleKillSwitch(userId: string, active: boolean, reason?: string, ipAddress?: string): Promise<RiskProfile>;
+    getViolations(userId: string, limit?: number): Promise<RiskViolation[]>;
+    private checkStopLossDistance;
+    private checkTakeProfitDirection;
+    private computeRiskScore;
+    private buildRejection;
+    private rejectAndRecord;
+}

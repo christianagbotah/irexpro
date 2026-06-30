@@ -1,0 +1,40 @@
+import { Repository } from 'typeorm';
+import { PerformanceFeePolicy } from '../entities/performance-fee-policy.entity';
+import { TradingAccountPerformance } from '../entities/trading-account-performance.entity';
+import { PerformanceFeeAssessment } from '../entities/performance-fee-assessment.entity';
+import { PerformanceFeeLedgerEntry } from '../entities/performance-fee-ledger-entry.entity';
+import { Invoice } from '../../payments/entities/invoice.entity';
+import { PaymentTransaction } from '../../payments/entities/payment-transaction.entity';
+import { UserSubscription } from '../../subscriptions/entities/user-subscription.entity';
+import { AuditService } from '../../audit/audit.service';
+import { CreatePolicyDto } from '../dto/create-policy.dto';
+import { CreateLedgerEntryDto } from '../dto/create-ledger-entry.dto';
+export declare class PerformanceFeeService {
+    private readonly policyRepo;
+    private readonly performanceRepo;
+    private readonly assessmentRepo;
+    private readonly ledgerRepo;
+    private readonly invoiceRepo;
+    private readonly transactionRepo;
+    private readonly subscriptionRepo;
+    private readonly auditService;
+    private readonly logger;
+    constructor(policyRepo: Repository<PerformanceFeePolicy>, performanceRepo: Repository<TradingAccountPerformance>, assessmentRepo: Repository<PerformanceFeeAssessment>, ledgerRepo: Repository<PerformanceFeeLedgerEntry>, invoiceRepo: Repository<Invoice>, transactionRepo: Repository<PaymentTransaction>, subscriptionRepo: Repository<UserSubscription>, auditService: AuditService);
+    getPolicies(): Promise<PerformanceFeePolicy[]>;
+    createPolicy(dto: CreatePolicyDto, adminId: string, ipAddress?: string): Promise<PerformanceFeePolicy>;
+    getUserSummary(userId: string): Promise<{
+        performance: TradingAccountPerformance | null;
+        assessments: PerformanceFeeAssessment[];
+    }>;
+    getAssessments(userId?: string): Promise<PerformanceFeeAssessment[]>;
+    calculateAssessment(userId: string, brokerConnectionId: string | null, currency: string, periodStart: Date, periodEnd: Date, adminId: string, ipAddress?: string): Promise<PerformanceFeeAssessment>;
+    invoiceAssessment(assessmentId: string, adminId: string, ipAddress?: string): Promise<PerformanceFeeAssessment>;
+    markAssessmentPaid(invoiceId: string): Promise<void>;
+    recordLedgerEntry(dto: CreateLedgerEntryDto, adminId: string, ipAddress?: string): Promise<PerformanceFeeLedgerEntry>;
+    getCurrentHighWaterMark(userId: string, brokerConnectionId: string | null, currency: string): Promise<string>;
+    private getOrCreatePerformance;
+    private findApplicablePolicy;
+    private brokerScope;
+    private findExistingAssessment;
+    private findOutstandingAssessment;
+}

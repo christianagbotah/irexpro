@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, Repository } from 'typeorm';
+import { Between, FindOptionsWhere, In, IsNull, Repository } from 'typeorm';
 import { PerformanceFeePolicy } from '../entities/performance-fee-policy.entity';
 import { TradingAccountPerformance } from '../entities/trading-account-performance.entity';
 import { PerformanceFeeAssessment, AssessmentStatus } from '../entities/performance-fee-assessment.entity';
@@ -177,7 +177,7 @@ export class PerformanceFeeService {
       throw new BadRequestException('No active performance fee policy found for user subscription plan');
     }
 
-    // 3. Check for duplicate assessment
+    // 3. Check for duplicate assessment (same user/broker/period)
     const existing = await this.findExistingAssessment(userId, brokerConnectionId, periodStart, periodEnd);
     if (existing) {
       if (existing.status === AssessmentStatus.DRAFT) {
@@ -189,16 +189,32 @@ export class PerformanceFeeService {
       );
     }
 
+    // 3b. Prevent stacking unpaid assessments against a stale high-water mark.
+    //
+    // The HWM only advances after a fee is PAID, but `totalRealisedProfit` advances
+    // at calculation time. If a second assessment is calculated while a prior one is
+    // still ASSESSED or INVOICED (i.e. not yet PAID), both would be computed against
+    // the SAME starting HWM and would re-charge the same realised profit — a double
+    // charge. We therefore require each outstanding assessment to be resolved
+    // (PAID / WAIVED / CANCELLED) before a new period can be calculated.
+    const outstanding = await this.findOutstandingAssessment(userId, brokerConnectionId);
+    if (outstanding) {
+      throw new ConflictException(
+        `An outstanding ${outstanding.status} assessment (${outstanding.id}) must be resolved ` +
+          `(paid, waived, or cancelled) before calculating a new assessment for this account`,
+      );
+    }
+
     // 4. Load or create TradingAccountPerformance
     const performance = await this.getOrCreatePerformance(userId, brokerConnectionId, currency);
 
-    // 5. Load ledger entries for the period
+    // 5. Load ledger entries for the period (broker-scoped)
     const ledgerEntries = await this.ledgerRepo.find({
       where: {
         userId,
-        brokerConnectionId: brokerConnectionId ?? undefined,
+        brokerConnectionId: this.brokerScope(brokerConnectionId),
         occurredAt: Between(periodStart, periodEnd),
-      },
+      } as FindOptionsWhere<PerformanceFeeLedgerEntry>,
       order: { occurredAt: 'ASC' },
     });
 
@@ -461,7 +477,7 @@ export class PerformanceFeeService {
 
     // Update high-water mark to the new peak
     const performance = await this.performanceRepo.findOne({
-      where: { userId: assessment.userId, brokerConnectionId: assessment.brokerConnectionId ?? undefined },
+      where: { userId: assessment.userId, brokerConnectionId: this.brokerScope(assessment.brokerConnectionId) } as FindOptionsWhere<TradingAccountPerformance>,
     });
 
     if (performance) {
@@ -561,7 +577,7 @@ export class PerformanceFeeService {
 
   async getCurrentHighWaterMark(userId: string, brokerConnectionId: string | null, currency: string): Promise<string> {
     const performance = await this.performanceRepo.findOne({
-      where: { userId, brokerConnectionId: brokerConnectionId ?? undefined },
+      where: { userId, brokerConnectionId: this.brokerScope(brokerConnectionId) } as FindOptionsWhere<TradingAccountPerformance>,
     });
     return performance?.currentHighWaterMark ?? '0';
   }
@@ -572,7 +588,7 @@ export class PerformanceFeeService {
     currency: string,
   ): Promise<TradingAccountPerformance> {
     const existing = await this.performanceRepo.findOne({
-      where: { userId, brokerConnectionId: brokerConnectionId ?? undefined },
+      where: { userId, brokerConnectionId: this.brokerScope(brokerConnectionId) } as FindOptionsWhere<TradingAccountPerformance>,
     });
     if (existing) return existing;
 
@@ -588,11 +604,23 @@ export class PerformanceFeeService {
       });
       if (planPolicy) return planPolicy;
     }
-    // Fall back to a global (planId = null) policy
+    // Fall back to a TRUE global policy (plan_id IS NULL).
+    // NOTE: must use IsNull() — TypeORM strips `undefined` from the where clause,
+    // which would otherwise match ANY active policy (including another plan's policy).
     const globalPolicy = await this.policyRepo.findOne({
-      where: { planId: undefined, isActive: true },
+      where: { planId: IsNull(), isActive: true },
     });
     return globalPolicy ?? null;
+  }
+
+  /**
+   * Build a broker-scoped where filter.
+   * For a null brokerConnectionId we must use IsNull() so the query targets the
+   * exact (user, no-broker) row. TypeORM strips `undefined`, which would
+   * incorrectly match ANY of the user's broker accounts.
+   */
+  private brokerScope(brokerConnectionId: string | null): string | ReturnType<typeof IsNull> {
+    return brokerConnectionId === null ? IsNull() : brokerConnectionId;
   }
 
   private async findExistingAssessment(
@@ -604,10 +632,27 @@ export class PerformanceFeeService {
     return this.assessmentRepo.findOne({
       where: {
         userId,
-        brokerConnectionId: brokerConnectionId ?? undefined,
+        brokerConnectionId: this.brokerScope(brokerConnectionId),
         periodStart,
         periodEnd,
-      },
+      } as FindOptionsWhere<PerformanceFeeAssessment>,
+    });
+  }
+
+  /**
+   * Find any unresolved (ASSESSED or INVOICED) assessment for this user/broker.
+   * Used to prevent stacking unpaid assessments against a stale high-water mark.
+   */
+  private async findOutstandingAssessment(
+    userId: string,
+    brokerConnectionId: string | null,
+  ): Promise<PerformanceFeeAssessment | null> {
+    return this.assessmentRepo.findOne({
+      where: {
+        userId,
+        brokerConnectionId: this.brokerScope(brokerConnectionId),
+        status: In([AssessmentStatus.ASSESSED, AssessmentStatus.INVOICED]),
+      } as FindOptionsWhere<PerformanceFeeAssessment>,
     });
   }
 }

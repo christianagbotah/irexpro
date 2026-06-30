@@ -161,6 +161,10 @@ export class CreatePerformanceFeesSchema1751000000000 implements MigrationInterf
       CREATE INDEX IF NOT EXISTS idx_pfa_period
         ON performance_fees.performance_fee_assessments (period_start, period_end)
     `);
+    await queryRunner.query(`
+      CREATE INDEX IF NOT EXISTS idx_pfa_invoice_id
+        ON performance_fees.performance_fee_assessments (invoice_id)
+    `);
 
     // performance_fee_ledger_entries
     await queryRunner.query(`

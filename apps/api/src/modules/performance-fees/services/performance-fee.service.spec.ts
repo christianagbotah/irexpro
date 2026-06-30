@@ -346,6 +346,110 @@ describe('PerformanceFeeService', () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
+  // Double-charge prevention (audit fix) — outstanding unpaid assessment guard
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe('calculateAssessment — outstanding assessment guard (double-charge prevention)', () => {
+    it('rejects a new period when an unpaid ASSESSED assessment exists for the account', async () => {
+      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
+      mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
+      // 1st findOne = duplicate-period check (none); 2nd findOne = outstanding check (ASSESSED)
+      mockAssessmentRepo.findOne
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: 'prev-unpaid', status: AssessmentStatus.ASSESSED });
+
+      const { start, end } = makePeriod();
+      await expect(
+        service.calculateAssessment('user-1', null, 'USD', start, end, 'admin-1'),
+      ).rejects.toThrow(ConflictException);
+      // Must NOT proceed to load ledger / create a second assessment
+      expect(mockLedgerRepo.find).not.toHaveBeenCalled();
+    });
+
+    it('rejects a new period when an unpaid INVOICED assessment exists for the account', async () => {
+      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
+      mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
+      mockAssessmentRepo.findOne
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: 'prev-invoiced', status: AssessmentStatus.INVOICED });
+
+      const { start, end } = makePeriod();
+      await expect(
+        service.calculateAssessment('user-1', null, 'USD', start, end, 'admin-1'),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('allows a new period when no outstanding assessment exists (prior periods resolved)', async () => {
+      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
+      mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
+      // both duplicate and outstanding checks return null
+      mockAssessmentRepo.findOne.mockResolvedValue(null);
+      mockPerformanceRepo.findOne.mockResolvedValue({ id: 'perf-1', currentHighWaterMark: '700000', totalRealisedProfit: '700000' });
+      mockLedgerRepo.find.mockResolvedValue([{ entryType: LedgerEntryType.REALISED_TRADE_PROFIT, amount: '300000' }]);
+      const assessment = { id: 'next-period', feeAmount: '60000', status: AssessmentStatus.ASSESSED };
+      mockAssessmentRepo.create.mockReturnValue(assessment);
+      mockAssessmentRepo.save.mockResolvedValue(assessment);
+      mockPerformanceRepo.update.mockResolvedValue(undefined);
+
+      const { start, end } = makePeriod();
+      const result = await service.calculateAssessment('user-1', null, 'USD', start, end, 'admin-1');
+      expect(result.id).toBe('next-period');
+      expect(mockLedgerRepo.find).toHaveBeenCalled();
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Policy resolution (audit fix) — true global fallback, no wrong-plan leakage
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe('findApplicablePolicy — policy resolution', () => {
+    it('plan-specific policy takes precedence over global', async () => {
+      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription('plan-XYZ'));
+      const planPolicy = makePolicy({ id: 'plan-policy', planId: 'plan-XYZ' });
+      // First lookup (plan-specific) returns the plan policy → global lookup never runs
+      mockPolicyRepo.findOne.mockResolvedValueOnce(planPolicy);
+      mockAssessmentRepo.findOne.mockResolvedValue(null);
+      mockPerformanceRepo.findOne.mockResolvedValue({ id: 'perf-1', currentHighWaterMark: '0', totalRealisedProfit: '0' });
+      mockLedgerRepo.find.mockResolvedValue([]);
+      const assessment = { id: 'a', feeAmount: '0', status: AssessmentStatus.DRAFT };
+      mockAssessmentRepo.create.mockReturnValue(assessment);
+      mockAssessmentRepo.save.mockResolvedValue(assessment);
+      mockPerformanceRepo.update.mockResolvedValue(undefined);
+
+      const { start, end } = makePeriod();
+      await service.calculateAssessment('user-1', null, 'USD', start, end, 'admin-1');
+
+      // The plan-specific query must have used the concrete planId
+      expect(mockPolicyRepo.findOne).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ planId: 'plan-XYZ', isActive: true }) }),
+      );
+    });
+
+    it('global fallback queries plan_id IS NULL (not undefined) to avoid matching another plan', async () => {
+      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription('plan-NOPOLICY'));
+      const globalPolicy = makePolicy({ id: 'global-policy', planId: null });
+      // First lookup (plan-specific) returns null → second lookup (global IS NULL) returns global
+      mockPolicyRepo.findOne.mockResolvedValueOnce(null).mockResolvedValueOnce(globalPolicy);
+      mockAssessmentRepo.findOne.mockResolvedValue(null);
+      mockPerformanceRepo.findOne.mockResolvedValue({ id: 'perf-1', currentHighWaterMark: '0', totalRealisedProfit: '0' });
+      mockLedgerRepo.find.mockResolvedValue([]);
+      const assessment = { id: 'a', feeAmount: '0', status: AssessmentStatus.DRAFT };
+      mockAssessmentRepo.create.mockReturnValue(assessment);
+      mockAssessmentRepo.save.mockResolvedValue(assessment);
+      mockPerformanceRepo.update.mockResolvedValue(undefined);
+
+      const { start, end } = makePeriod();
+      await service.calculateAssessment('user-1', null, 'USD', start, end, 'admin-1');
+
+      // The global fallback must use IsNull() — assert the 2nd call's planId is a FindOperator, not undefined
+      const globalCallArgs = mockPolicyRepo.findOne.mock.calls[1][0];
+      expect(globalCallArgs.where.planId).toBeDefined();
+      expect(typeof globalCallArgs.where.planId).toBe('object'); // IsNull() returns a FindOperator object
+      expect(globalCallArgs.where.isActive).toBe(true);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
   // Invoice integration
   // ─────────────────────────────────────────────────────────────────────────
 
