@@ -6,13 +6,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { QueryFailedError, Repository } from 'typeorm';
+import { FindOptionsWhere, IsNull, QueryFailedError, Repository } from 'typeorm';
 import {
   PerformanceFeeBillingCycle,
   BillingCycleStatus,
   FINAL_BILLING_CYCLE_STATUSES,
 } from '../entities/performance-fee-billing-cycle.entity';
 import { BrokerTradeReconciliationService } from '../../broker-reconciliation/services/broker-trade-reconciliation.service';
+import { ReconciliationRunStatus } from '../../broker-reconciliation/entities/broker-trade-reconciliation-run.entity';
 import { PerformanceFeeService } from '../../performance-fees/services/performance-fee.service';
 import { AuditService } from '../../audit/audit.service';
 import { AuditAction } from '../../../common/enums/audit-action.enum';
@@ -227,11 +228,30 @@ export class PerformanceFeeBillingCycleService {
         return failed!;
       }
 
-      // Persist reconciliation run reference and ledger entry count
+      // Persist reconciliation run reference and ledger entry count regardless of
+      // outcome, so a failed run is still traceable from the cycle.
       await this.cycleRepo.update(cycleId, {
         reconciliationRunId: reconRun.id,
         totalLedgerEntriesCreated: reconRun.newLedgerEntriesCreated ?? 0,
       });
+
+      // CRITICAL: BrokerTradeReconciliationService catches adapter failures
+      // internally and RETURNS a run with status = FAILED (it does not throw).
+      // A failed reconciliation must NOT proceed to assessment/invoice — otherwise
+      // a stale or empty ledger could be billed as if reconciliation succeeded.
+      if (reconRun.status === ReconciliationRunStatus.FAILED) {
+        await this.failCycle(
+          cycleId,
+          this.safeErrorSummary(
+            new Error(
+              `Reconciliation run ${reconRun.id} failed: ${reconRun.errorSummary ?? 'unknown error'}`,
+            ),
+          ),
+          actorId,
+          ipAddress,
+        );
+        return this.cycleRepo.findOne({ where: { id: cycleId } }) as Promise<PerformanceFeeBillingCycle>;
+      }
 
       await this.auditService.log({
         actorUserId: actorId,
@@ -547,13 +567,17 @@ export class PerformanceFeeBillingCycleService {
     periodStart: Date,
     periodEnd: Date,
   ): Promise<PerformanceFeeBillingCycle | null> {
+    // For a null brokerConnectionId we MUST use IsNull() so the query targets the
+    // exact (user, no-broker) account-wide row. TypeORM strips `undefined` from the
+    // where clause, which would otherwise match ANY of the user's per-broker cycles
+    // for that period — a false-positive duplicate match.
     return this.cycleRepo.findOne({
       where: {
         userId,
-        brokerConnectionId: brokerConnectionId ?? undefined,
+        brokerConnectionId: brokerConnectionId === null ? IsNull() : brokerConnectionId,
         periodStart,
         periodEnd,
-      } as any,
+      } as FindOptionsWhere<PerformanceFeeBillingCycle>,
     });
   }
 }

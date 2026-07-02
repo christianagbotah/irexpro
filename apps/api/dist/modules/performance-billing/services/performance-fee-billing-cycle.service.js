@@ -19,6 +19,7 @@ const typeorm_1 = require("@nestjs/typeorm");
 const typeorm_2 = require("typeorm");
 const performance_fee_billing_cycle_entity_1 = require("../entities/performance-fee-billing-cycle.entity");
 const broker_trade_reconciliation_service_1 = require("../../broker-reconciliation/services/broker-trade-reconciliation.service");
+const broker_trade_reconciliation_run_entity_1 = require("../../broker-reconciliation/entities/broker-trade-reconciliation-run.entity");
 const performance_fee_service_1 = require("../../performance-fees/services/performance-fee.service");
 const audit_service_1 = require("../../audit/audit.service");
 const audit_action_enum_1 = require("../../../common/enums/audit-action.enum");
@@ -142,6 +143,10 @@ let PerformanceFeeBillingCycleService = PerformanceFeeBillingCycleService_1 = cl
                 reconciliationRunId: reconRun.id,
                 totalLedgerEntriesCreated: reconRun.newLedgerEntriesCreated ?? 0,
             });
+            if (reconRun.status === broker_trade_reconciliation_run_entity_1.ReconciliationRunStatus.FAILED) {
+                await this.failCycle(cycleId, this.safeErrorSummary(new Error(`Reconciliation run ${reconRun.id} failed: ${reconRun.errorSummary ?? 'unknown error'}`)), actorId, ipAddress);
+                return this.cycleRepo.findOne({ where: { id: cycleId } });
+            }
             await this.auditService.log({
                 actorUserId: actorId,
                 actorType: 'ADMIN',
@@ -341,7 +346,7 @@ let PerformanceFeeBillingCycleService = PerformanceFeeBillingCycleService_1 = cl
         return this.cycleRepo.findOne({
             where: {
                 userId,
-                brokerConnectionId: brokerConnectionId ?? undefined,
+                brokerConnectionId: brokerConnectionId === null ? (0, typeorm_2.IsNull)() : brokerConnectionId,
                 periodStart,
                 periodEnd,
             },

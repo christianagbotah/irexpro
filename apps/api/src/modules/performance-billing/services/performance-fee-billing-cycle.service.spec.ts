@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
-import { QueryFailedError } from 'typeorm';
+import { IsNull, QueryFailedError } from 'typeorm';
 import { PerformanceFeeBillingCycleService } from './performance-fee-billing-cycle.service';
 import {
   BillingCycleStatus,
@@ -59,7 +59,7 @@ function makeAssessmentWithInvoice() {
   return { ...makeAssessment(), status: AssessmentStatus.INVOICED, invoiceId: 'invoice-1' };
 }
 
-function makeReconRun() {
+function makeReconRun(overrides: Record<string, unknown> = {}) {
   return {
     id: 'run-1',
     totalBrokerTradesSeen: 5,
@@ -67,6 +67,8 @@ function makeReconRun() {
     duplicateTradesSkipped: 1,
     failedTrades: 0,
     status: 'COMPLETED',
+    errorSummary: null,
+    ...overrides,
   };
 }
 
@@ -229,7 +231,7 @@ describe('runBillingCycle — state machine', () => {
     await expect(service.runBillingCycle('cycle-1', ACTOR)).rejects.toThrow(BadRequestException);
   });
 
-  it('reconciliation failure transitions cycle to FAILED with safe errorSummary', async () => {
+  it('reconciliation failure (thrown) transitions cycle to FAILED with safe errorSummary', async () => {
     mockCycleRepo.findOne.mockResolvedValue(makeCycle({ status: BillingCycleStatus.DRAFT }));
     mockReconService.runReconciliation.mockRejectedValueOnce(new Error('Adapter timeout'));
     await service.runBillingCycle('cycle-1', ACTOR);
@@ -242,6 +244,42 @@ describe('runBillingCycle — state machine', () => {
     );
     // Invoice must not be created
     expect(mockPerfFeeService.invoiceAssessment).not.toHaveBeenCalled();
+  });
+
+  it('reconciliation run RETURNED with status=FAILED transitions cycle to FAILED (no throw)', async () => {
+    // BrokerTradeReconciliationService catches adapter errors internally and
+    // returns a FAILED run object rather than throwing. The billing cycle must
+    // detect this and NOT proceed to assessment/invoice.
+    mockCycleRepo.findOne.mockResolvedValue(makeCycle({ status: BillingCycleStatus.DRAFT }));
+    mockReconService.runReconciliation.mockResolvedValueOnce(
+      makeReconRun({ status: 'FAILED', newLedgerEntriesCreated: 0, errorSummary: 'Adapter down' }),
+    );
+
+    await service.runBillingCycle('cycle-1', ACTOR);
+
+    // Assessment and invoice must NOT be attempted on a failed reconciliation
+    expect(mockPerfFeeService.calculateAssessment).not.toHaveBeenCalled();
+    expect(mockPerfFeeService.invoiceAssessment).not.toHaveBeenCalled();
+    // Cycle transitions to FAILED
+    expect(mockCycleRepo.update).toHaveBeenCalledWith(
+      'cycle-1',
+      expect.objectContaining({ status: BillingCycleStatus.FAILED }),
+    );
+    // reconciliationRunId is still stored for traceability
+    expect(mockCycleRepo.update).toHaveBeenCalledWith(
+      'cycle-1',
+      expect.objectContaining({ reconciliationRunId: 'run-1' }),
+    );
+  });
+
+  it('reconciliation COMPLETED_WITH_WARNINGS still proceeds to assessment (safe, under-inclusive)', async () => {
+    mockCycleRepo.findOne.mockResolvedValue(makeCycle({ status: BillingCycleStatus.DRAFT }));
+    mockReconService.runReconciliation.mockResolvedValueOnce(
+      makeReconRun({ status: 'COMPLETED_WITH_WARNINGS', failedTrades: 1 }),
+    );
+    await service.runBillingCycle('cycle-1', ACTOR);
+    // Warnings are non-fatal — assessment proceeds
+    expect(mockPerfFeeService.calculateAssessment).toHaveBeenCalledTimes(1);
   });
 
   it('assessment failure transitions cycle to FAILED', async () => {
@@ -372,6 +410,31 @@ describe('runBillingCycleForUserPeriod', () => {
     await expect(
       service.runBillingCycleForUserPeriod('user-1', 'conn-1', FROM, TO, 'USD', ACTOR),
     ).rejects.toThrow(ConflictException);
+  });
+
+  it('uses IsNull() in duplicate lookup for account-wide (null broker) cycles', async () => {
+    mockCycleRepo.findOne
+      .mockResolvedValueOnce(null)                               // findExistingCycle
+      .mockResolvedValueOnce(makeCycle({ brokerConnectionId: null })) // after create
+      .mockResolvedValue(makeCycle({ status: BillingCycleStatus.DRAFT, brokerConnectionId: null }));
+
+    await service.runBillingCycleForUserPeriod('user-1', null, FROM, TO, 'USD', ACTOR);
+
+    // The very first findOne is findExistingCycle — assert its where used IsNull()
+    const firstCall = mockCycleRepo.findOne.mock.calls[0][0];
+    expect(firstCall.where.brokerConnectionId).toEqual(IsNull());
+  });
+
+  it('uses the concrete id in duplicate lookup for per-broker cycles', async () => {
+    mockCycleRepo.findOne
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(makeCycle())
+      .mockResolvedValue(makeCycle({ status: BillingCycleStatus.DRAFT }));
+
+    await service.runBillingCycleForUserPeriod('user-1', 'conn-1', FROM, TO, 'USD', ACTOR);
+
+    const firstCall = mockCycleRepo.findOne.mock.calls[0][0];
+    expect(firstCall.where.brokerConnectionId).toBe('conn-1');
   });
 });
 
