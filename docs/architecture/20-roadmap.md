@@ -142,7 +142,21 @@ Phase 5: Platform Expansion
 | BrokerReconciliationModule + Controller | ✅ |
 | 45+ tests covering all safety invariants | ✅ |
 
-### Sprint 13+: Execution Engine (3 weeks)
+### Sprint 13: Performance Fee Billing Cycle Orchestrator ✅ Complete
+
+| Task | Status |
+|---|---|
+| `PerformanceFeeBillingCycle` entity + `performance_billing` schema migration | ✅ |
+| `PerformanceFeeBillingCycleService` (reconcile → assess → invoice) | ✅ |
+| Explicit state machine (DRAFT/RECONCILING/RECONCILED/ASSESSING/ASSESSED/INVOICED/NO_FEE_DUE/FAILED/CANCELLED) | ✅ |
+| Integration with `BrokerTradeReconciliationService` and `PerformanceFeeService` | ✅ |
+| `PerformanceBillingModule` (no circular deps) | ✅ |
+| `PerformanceBillingController` with RBAC (admin-only write) | ✅ |
+| 8 new audit actions | ✅ |
+| 51 tests (service + controller) | ✅ |
+| No auto-charge, no HWM update, no duplicate invoice | ✅ |
+
+### Sprint 14+: Execution Engine (3 weeks)
 
 | Task | Priority |
 |---|---|
@@ -151,7 +165,7 @@ Phase 5: Platform Expansion
 | Trade lifecycle management | P0 |
 | Trade audit events | P0 |
 
-### Sprint 13-14: Trading Session and WebSocket (2 weeks)
+### Sprint 14-15: Trading Session and WebSocket (2 weeks)
 
 | Task | Priority |
 |---|---|

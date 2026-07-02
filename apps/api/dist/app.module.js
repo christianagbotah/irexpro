@@ -37,6 +37,7 @@ const market_data_module_1 = require("./modules/market-data/market-data.module")
 const ai_engine_client_module_1 = require("./modules/ai-engine-client/ai-engine-client.module");
 const performance_fees_module_1 = require("./modules/performance-fees/performance-fees.module");
 const broker_reconciliation_module_1 = require("./modules/broker-reconciliation/broker-reconciliation.module");
+const performance_billing_module_1 = require("./modules/performance-billing/performance-billing.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -101,6 +102,7 @@ exports.AppModule = AppModule = __decorate([
             ai_engine_client_module_1.AiEngineClientModule,
             performance_fees_module_1.PerformanceFeesModule,
             broker_reconciliation_module_1.BrokerReconciliationModule,
+            performance_billing_module_1.PerformanceBillingModule,
         ],
         providers: [
             { provide: core_1.APP_FILTER, useClass: all_exceptions_filter_1.AllExceptionsFilter },

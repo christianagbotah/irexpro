@@ -31,6 +31,7 @@ import { MarketDataModule } from './modules/market-data/market-data.module';
 import { AiEngineClientModule } from './modules/ai-engine-client/ai-engine-client.module';
 import { PerformanceFeesModule } from './modules/performance-fees/performance-fees.module';
 import { BrokerReconciliationModule } from './modules/broker-reconciliation/broker-reconciliation.module';
+import { PerformanceBillingModule } from './modules/performance-billing/performance-billing.module';
 
 @Module({
   imports: [
@@ -92,6 +93,7 @@ import { BrokerReconciliationModule } from './modules/broker-reconciliation/brok
     AiEngineClientModule,
     PerformanceFeesModule,
     BrokerReconciliationModule,
+    PerformanceBillingModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: AllExceptionsFilter },

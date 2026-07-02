@@ -512,3 +512,59 @@ A trade is fee-eligible only when ALL of:
 - No secrets, credentials, or raw broker payloads in any reconciliation record or audit log
 - Currency minor-unit conversion is currency-aware and **fails closed** (`BadRequestException`) for any account currency without a known exponent, rather than silently assuming 2 decimals
 - Reconciliation is self-healing on retry: if a prior run saved a `BrokerReconciledTrade` row but failed before writing its `PerformanceFeeLedgerEntry`, a later run detects the gap (fee-eligible + non-zero P&L + no linked ledger entry) and backfills the missing ledger entry — without double-counting fully-processed trades
+
+---
+
+## Performance Fee Billing Cycle (Sprint 13)
+
+`PerformanceFeeBillingCycle` orchestrates the end-to-end billing workflow for an admin-driven billing period. It is **not** automated — an admin must explicitly trigger each cycle.
+
+### Workflow
+
+```
+Admin triggers POST /api/v1/performance-billing/cycles/run
+        ↓
+PerformanceFeeBillingCycleService.runBillingCycleForUserPeriod()
+        ↓
+BrokerTradeReconciliationService.runReconciliation()   ← reconcile closed trades for period
+        ↓ (reconciliationRunId stored on cycle)
+PerformanceFeeService.calculateAssessment()            ← HWM engine calculates fee
+        ↓ (assessmentId stored; feeAmount copied to cycle)
+  feeAmount = 0  →  mark NO_FEE_DUE (no invoice)
+  feeAmount > 0  →  PerformanceFeeService.invoiceAssessment()  ← create Invoice + PaymentTransaction
+                    mark INVOICED (invoiceId stored)
+        ↓
+Payment received via webhook → markAssessmentPaid() → HWM advances
+```
+
+### State Machine
+
+```
+DRAFT ──────────────────────────────────────────────────→ CANCELLED
+  │
+  ↓ (runBillingCycle called)
+RECONCILING
+  │
+  ↓
+RECONCILED
+  │
+  ↓
+ASSESSING
+  │
+  ↓
+ASSESSED ──────────────────────────────────────────────→ NO_FEE_DUE (fee=0)
+  │
+  ↓
+INVOICED  ← final state (no rerun)
+
+Any non-final state → FAILED on error
+FAILED → RECONCILING (safe retry) or CANCELLED
+```
+
+### Safety invariants
+- **No auto-charge**: invoice is created but payment requires a verified provider webhook
+- **No HWM update**: HWM advances only after `markAssessmentPaid()` is called by the webhook handler
+- **No duplicate invoice**: INVOICED is a final state — rerun is rejected with `BadRequestException`
+- **Outstanding assessment blocks new cycle**: `PerformanceFeeService.calculateAssessment()` rejects if an unresolved ASSESSED/INVOICED assessment already exists for the user/broker pair
+- **RBAC**: only ADMIN/SUPER_ADMIN can create, run, or cancel cycles; normal users can only read their own
+- **No secrets**: `errorSummary` is truncated to 500 chars and contains only the thrown error message string — never stack traces, credentials, or provider secrets

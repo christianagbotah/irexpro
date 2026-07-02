@@ -625,3 +625,17 @@ Before approving any PR touching trading, risk, financial, payment, or regional 
 - [ ] netRealisedPnl = grossRealisedPnl + commission + swap — do not double-subtract
 - [ ] No raw broker payloads stored in BrokerReconciledTrade or audit logs
 - [ ] Reconciliation time window must be ≤ 90 days, fromTime < toTime, no future toTime
+
+## Billing Cycle Rules (Sprint 13)
+
+- [ ] Billing cycle workflow: reconcile → assess → invoice — do NOT skip steps
+- [ ] Only ADMIN/SUPER_ADMIN may create, run, or cancel billing cycles
+- [ ] `PerformanceFeeBillingCycleService` must not calculate fees directly — delegate to `PerformanceFeeService`
+- [ ] Billing cycle state machine: INVOICED / NO_FEE_DUE / CANCELLED are final — never rerun
+- [ ] FAILED billing cycles may be retried safely — retry must not duplicate reconciliation ledger entries
+- [ ] Never update HWM from billing cycle code — HWM updates only via `markAssessmentPaid()` in webhook handler
+- [ ] Never auto-charge users — invoice is created; payment is confirmed via verified webhook only
+- [ ] Do not create invoice when feeAmount = 0 — mark cycle NO_FEE_DUE instead
+- [ ] errorSummary must contain only a short message string (≤500 chars) — no stack trace, no credentials
+- [ ] Duplicate cycle for same user/broker/period must throw ConflictException (DB partial unique indexes enforce this)
+- [ ] Billing cycle `metadata` must never contain broker credentials, provider secrets, or raw payloads

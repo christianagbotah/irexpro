@@ -22,7 +22,7 @@ iRexPro supports users from multiple countries worldwide with regional payment p
 
 ## Current Status
 
-**Phase 1 Sprint 12 — Broker Trade Reconciliation: Complete**
+**Phase 1 Sprint 13 — Performance Fee Billing Cycle Orchestrator: Complete**
 
 - ✅ Sprint 1-2: Backend Foundation (NestJS, Auth, Users, Audit)
 - ✅ Sprint 3-4: Broker Integration (MetaTrader adapter, credentials, health checks)
@@ -31,6 +31,7 @@ iRexPro supports users from multiple countries worldwide with regional payment p
 - ✅ Sprint 9-10: Risk Engine (kill switch, risk profiles, position sizing)
 - ✅ Sprint 11: Performance Fee + High-Water Mark Engine
 - ✅ Sprint 12: Broker Trade Reconciliation → Realised P&L Ledger Entries
+- ✅ Sprint 13: Performance Fee Billing Cycle Orchestrator
 
 See [IMPLEMENTATION_ROADMAP.md](./IMPLEMENTATION_ROADMAP.md) for the next steps and Cursor prompts.
 

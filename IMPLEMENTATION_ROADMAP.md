@@ -1,6 +1,6 @@
 # iRexPro — Implementation Roadmap
 
-## Current Phase: Phase 1 Sprint 12 Complete — Broker Trade Reconciliation → Realised P&L Ledger Entries
+## Current Phase: Phase 1 Sprint 13 Complete — Performance Fee Billing Cycle Orchestrator
 
 ---
 
@@ -672,3 +672,44 @@ Critical rules (from DEVELOPMENT_RULES.md):
 - Deduplication enforced at both app level (idempotent run) and DB level (unique index)
 - No secrets, credentials, or raw broker payloads in audit metadata
 - High-water mark only advances after confirmed fee payment (unchanged from Sprint 11)
+
+---
+
+## Sprint 13 — Performance Fee Billing Cycle Orchestrator
+
+**Completed:** 2026-06-30
+
+### What was built
+
+**PART A — Domain Entity + Migration**
+- `PerformanceFeeBillingCycle` entity in `performance_billing` schema with 9 statuses (DRAFT → INVOICED / NO_FEE_DUE / CANCELLED)
+- Migration `1751300000000-CreatePerformanceBillingSchema`: schema, enum, table, 5 regular indexes, 2 partial unique indexes for NULL-safe duplicate prevention
+- Money columns (`totalRealisedProfit`, `feeAmount`) stored as BIGINT minor-unit strings
+
+**PART B/C/E — Service + Integration + State Machine**
+- `PerformanceFeeBillingCycleService` orchestrates: reconciliation → assessment → invoice
+- Explicit state machine with final-state guard (INVOICED / NO_FEE_DUE / CANCELLED cannot rerun)
+- FAILED cycles can retry safely
+- Delegates to `BrokerTradeReconciliationService` (reconciliation) and `PerformanceFeeService` (assessment + invoice)
+- No fee calculation logic duplicated — uses existing HWM engine
+- No circular dependencies: `PerformanceBillingModule` imports `BrokerReconciliationModule` + `PerformanceFeesModule`; neither imports back
+
+**PART D — API Endpoints**
+- `POST /api/v1/performance-billing/cycles` — create DRAFT (ADMIN/SUPER_ADMIN)
+- `POST /api/v1/performance-billing/cycles/run` — create + run direct (ADMIN/SUPER_ADMIN)
+- `POST /api/v1/performance-billing/cycles/:id/run` — run by id (ADMIN/SUPER_ADMIN)
+- `GET  /api/v1/performance-billing/cycles` — list (admin: all; user: own only)
+- `GET  /api/v1/performance-billing/cycles/:id` — get (admin: any; user: own only)
+- `POST /api/v1/performance-billing/cycles/:id/cancel` — cancel (ADMIN/SUPER_ADMIN)
+
+**PART F — Audit Actions**
+- 8 new audit events: `PERFORMANCE_BILLING_CYCLE_CREATED/STARTED/RECONCILED/ASSESSED/INVOICED/NO_FEE_DUE/FAILED/CANCELLED`
+
+### Safety invariants (enforced, never violated)
+- No live broker withdrawals
+- No auto-charge of users
+- No HWM update — HWM advances only after verified payment webhook
+- No duplicate assessment or invoice for the same user/broker/period
+- Cycle in a final state cannot be rerun
+- All money values remain bigint minor-unit strings
+- No secrets in errorSummary, metadata, or audit logs
