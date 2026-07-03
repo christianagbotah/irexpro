@@ -1,0 +1,90 @@
+import { ForbiddenException } from '@nestjs/common';
+import { PerformanceFeePaymentController } from './performance-fee-payment.controller';
+import { RoleName } from '../users/entities/role.entity';
+
+function normalUser() {
+  return { id: 'user-1', roles: [RoleName.USER] } as any;
+}
+function adminUser() {
+  return { id: 'admin-1', roles: [RoleName.ADMIN] } as any;
+}
+
+let svc: any;
+let controller: PerformanceFeePaymentController;
+
+beforeEach(() => {
+  svc = {
+    listUserPerformanceFeeInvoices: jest.fn(async () => []),
+    getInvoiceView: jest.fn(async () => ({})),
+    initiatePerformanceFeeCheckout: jest.fn(async () => ({})),
+    getPerformanceFeePaymentStatus: jest.fn(async () => ({})),
+  };
+  controller = new PerformanceFeePaymentController(svc);
+});
+
+describe('listInvoices', () => {
+  it('normal user with no userId query is scoped to own id', async () => {
+    await controller.listInvoices(normalUser(), undefined, undefined, undefined);
+    expect(svc.listUserPerformanceFeeInvoices).toHaveBeenCalledWith('user-1', expect.anything());
+  });
+
+  it('normal user cannot list another user invoices (403)', () => {
+    // The guard throws synchronously before any promise is returned.
+    expect(() =>
+      controller.listInvoices(normalUser(), 'other-user', undefined, undefined),
+    ).toThrow(ForbiddenException);
+  });
+
+  it('admin can list any user invoices', async () => {
+    await controller.listInvoices(adminUser(), 'target-user', undefined, undefined);
+    expect(svc.listUserPerformanceFeeInvoices).toHaveBeenCalledWith('target-user', expect.anything());
+  });
+
+  it('admin with no userId defaults to own id', async () => {
+    await controller.listInvoices(adminUser(), undefined, undefined, undefined);
+    expect(svc.listUserPerformanceFeeInvoices).toHaveBeenCalledWith('admin-1', expect.anything());
+  });
+});
+
+describe('getInvoice', () => {
+  it('delegates with isAdmin=false for normal user', async () => {
+    await controller.getInvoice('invoice-1', normalUser());
+    expect(svc.getInvoiceView).toHaveBeenCalledWith('invoice-1', 'user-1', false);
+  });
+
+  it('delegates with isAdmin=true for admin', async () => {
+    await controller.getInvoice('invoice-1', adminUser());
+    expect(svc.getInvoiceView).toHaveBeenCalledWith('invoice-1', 'admin-1', true);
+  });
+});
+
+describe('initiateCheckout', () => {
+  it('delegates checkout with requesting user + isAdmin flag', async () => {
+    await controller.initiateCheckout(
+      'invoice-1',
+      { provider: 'stripe', countryCode: 'US', currency: 'USD' },
+      normalUser(),
+      { ip: '1.2.3.4' },
+    );
+    expect(svc.initiatePerformanceFeeCheckout).toHaveBeenCalledWith(
+      expect.objectContaining({
+        invoiceId: 'invoice-1',
+        requestingUserId: 'user-1',
+        isAdmin: false,
+        ipAddress: '1.2.3.4',
+      }),
+    );
+  });
+});
+
+describe('getPaymentStatus', () => {
+  it('delegates status lookup with isAdmin flag', async () => {
+    await controller.getPaymentStatus('invoice-1', adminUser(), { ip: '9.9.9.9' });
+    expect(svc.getPerformanceFeePaymentStatus).toHaveBeenCalledWith(
+      'invoice-1',
+      'admin-1',
+      true,
+      '9.9.9.9',
+    );
+  });
+});

@@ -22,7 +22,9 @@ const wise_provider_1 = require("./providers/wise.provider");
 const payment_provider_registry_1 = require("./registry/payment-provider.registry");
 const payment_routing_service_1 = require("./services/payment-routing.service");
 const webhook_processor_service_1 = require("./services/webhook-processor.service");
+const performance_fee_payment_service_1 = require("./services/performance-fee-payment.service");
 const payments_controller_1 = require("./payments.controller");
+const performance_fee_payment_controller_1 = require("./performance-fee-payment.controller");
 const payment_transaction_entity_1 = require("./entities/payment-transaction.entity");
 const invoice_entity_1 = require("./entities/invoice.entity");
 const payment_webhook_event_entity_1 = require("./entities/payment-webhook-event.entity");
@@ -31,6 +33,7 @@ const audit_module_1 = require("../audit/audit.module");
 const performance_fee_assessment_entity_1 = require("../performance-fees/entities/performance-fee-assessment.entity");
 const performance_fee_ledger_entry_entity_1 = require("../performance-fees/entities/performance-fee-ledger-entry.entity");
 const trading_account_performance_entity_1 = require("../performance-fees/entities/trading-account-performance.entity");
+const user_entity_1 = require("../users/entities/user.entity");
 let PaymentsModule = class PaymentsModule {
     constructor(registry, manual, stripe, paystack, flutterwave, hubtel, paypal, wise) {
         this.registry = registry;
@@ -64,10 +67,11 @@ exports.PaymentsModule = PaymentsModule = __decorate([
                 performance_fee_assessment_entity_1.PerformanceFeeAssessment,
                 performance_fee_ledger_entry_entity_1.PerformanceFeeLedgerEntry,
                 trading_account_performance_entity_1.TradingAccountPerformance,
+                user_entity_1.User,
             ]),
             audit_module_1.AuditModule,
         ],
-        controllers: [payments_controller_1.PaymentsController],
+        controllers: [payments_controller_1.PaymentsController, performance_fee_payment_controller_1.PerformanceFeePaymentController],
         providers: [
             payment_provider_registry_1.PaymentProviderRegistry,
             manual_provider_1.ManualPaymentProvider,
@@ -79,11 +83,13 @@ exports.PaymentsModule = PaymentsModule = __decorate([
             wise_provider_1.WisePayoutProvider,
             payment_routing_service_1.PaymentRoutingService,
             webhook_processor_service_1.WebhookProcessorService,
+            performance_fee_payment_service_1.PerformanceFeePaymentService,
         ],
         exports: [
             payment_provider_registry_1.PaymentProviderRegistry,
             payment_routing_service_1.PaymentRoutingService,
             webhook_processor_service_1.WebhookProcessorService,
+            performance_fee_payment_service_1.PerformanceFeePaymentService,
             manual_provider_1.ManualPaymentProvider,
             stripe_provider_1.StripePaymentProvider,
             paystack_provider_1.PaystackPaymentProvider,

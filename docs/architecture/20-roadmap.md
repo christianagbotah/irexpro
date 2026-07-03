@@ -156,7 +156,20 @@ Phase 5: Platform Expansion
 | 51 tests (service + controller) | ✅ |
 | No auto-charge, no HWM update, no duplicate invoice | ✅ |
 
-### Sprint 14+: Execution Engine (3 weeks)
+### Sprint 14: Performance Fee Invoice Payment Flow ✅ Complete
+
+| Task | Status |
+|---|---|
+| `PerformanceFeePaymentService` (checkout / status / list) | ✅ |
+| Provider checkout assignment via `PaymentRoutingService` (excludes `manual`) | ✅ |
+| Reuse pending performance-fee transaction — no duplicate payable transaction | ✅ |
+| Endpoints under `/api/v1/performance-fees/invoices` with RBAC + user scoping | ✅ |
+| 3 new audit actions (`CHECKOUT_INITIATED` / `CHECKOUT_FAILED` / `PAYMENT_STATUS_VIEWED`) | ✅ |
+| Checkout never marks paid / never updates HWM — webhook remains the only paid path | ✅ |
+| Fail closed on unconfigured providers; no secrets exposed | ✅ |
+| 35 new tests (service + controller) | ✅ |
+
+### Sprint 15+: Execution Engine (3 weeks)
 
 | Task | Priority |
 |---|---|

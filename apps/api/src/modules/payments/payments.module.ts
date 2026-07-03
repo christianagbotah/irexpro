@@ -10,7 +10,9 @@ import { WisePayoutProvider } from './providers/wise.provider';
 import { PaymentProviderRegistry } from './registry/payment-provider.registry';
 import { PaymentRoutingService } from './services/payment-routing.service';
 import { WebhookProcessorService } from './services/webhook-processor.service';
+import { PerformanceFeePaymentService } from './services/performance-fee-payment.service';
 import { PaymentsController } from './payments.controller';
+import { PerformanceFeePaymentController } from './performance-fee-payment.controller';
 import { PaymentTransaction } from './entities/payment-transaction.entity';
 import { Invoice } from './entities/invoice.entity';
 import { PaymentWebhookEvent } from './entities/payment-webhook-event.entity';
@@ -19,6 +21,7 @@ import { AuditModule } from '../audit/audit.module';
 import { PerformanceFeeAssessment } from '../performance-fees/entities/performance-fee-assessment.entity';
 import { PerformanceFeeLedgerEntry } from '../performance-fees/entities/performance-fee-ledger-entry.entity';
 import { TradingAccountPerformance } from '../performance-fees/entities/trading-account-performance.entity';
+import { User } from '../users/entities/user.entity';
 
 @Module({
   imports: [
@@ -30,10 +33,11 @@ import { TradingAccountPerformance } from '../performance-fees/entities/trading-
       PerformanceFeeAssessment,
       PerformanceFeeLedgerEntry,
       TradingAccountPerformance,
+      User,
     ]),
     AuditModule,
   ],
-  controllers: [PaymentsController],
+  controllers: [PaymentsController, PerformanceFeePaymentController],
   providers: [
     PaymentProviderRegistry,
     ManualPaymentProvider,
@@ -45,11 +49,13 @@ import { TradingAccountPerformance } from '../performance-fees/entities/trading-
     WisePayoutProvider,
     PaymentRoutingService,
     WebhookProcessorService,
+    PerformanceFeePaymentService,
   ],
   exports: [
     PaymentProviderRegistry,
     PaymentRoutingService,
     WebhookProcessorService,
+    PerformanceFeePaymentService,
     ManualPaymentProvider,
     StripePaymentProvider,
     PaystackPaymentProvider,

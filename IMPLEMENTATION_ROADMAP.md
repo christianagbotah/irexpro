@@ -1,6 +1,6 @@
 # iRexPro — Implementation Roadmap
 
-## Current Phase: Phase 1 Sprint 13 Complete — Performance Fee Billing Cycle Orchestrator
+## Current Phase: Phase 1 Sprint 14 Complete — Performance Fee Invoice Payment Flow
 
 ---
 
@@ -713,3 +713,37 @@ Critical rules (from DEVELOPMENT_RULES.md):
 - Cycle in a final state cannot be rerun
 - All money values remain bigint minor-unit strings
 - No secrets in errorSummary, metadata, or audit logs
+
+## Sprint 14 — Performance Fee Invoice Payment Flow + Provider Checkout Assignment
+
+**Completed:** 2026-07-02
+
+### What was built
+
+**PART B/C — Service + Provider Routing**
+- `PerformanceFeePaymentService` (payments module): `initiatePerformanceFeeCheckout`, `getPerformanceFeePaymentStatus`, `getInvoiceView`, `listUserPerformanceFeeInvoices`
+- Assigns a routed provider (via `PaymentRoutingService.routeForCheckout`, which excludes `manual` and fails closed) to the PENDING performance-fee transaction created at invoicing — no duplicate payable transaction
+- Reuses an in-progress non-`manual` session idempotently; rejects already-`SUCCEEDED` transactions
+- Placed inside the payments module (reuses `Invoice`/`PaymentTransaction`/`PerformanceFeeAssessment` repos + `PaymentRoutingService`) to avoid any new circular dependency
+
+**PART D — API Endpoints (`/api/v1/performance-fees/invoices`)**
+- `GET  /invoices` — list (user: own; admin: any via `userId`)
+- `GET  /invoices/:invoiceId` — view (user: own; admin: any)
+- `POST /invoices/:invoiceId/checkout` — initiate provider checkout
+- `GET  /invoices/:invoiceId/payment-status` — payment status
+- RBAC: non-admin cross-user access → 403
+
+**PART E — Manual/admin settlement:** intentionally **skipped** — any manual "settle" path risks bypassing the webhook-only paid/HWM invariant. Documented as deferred.
+
+**PART F — Webhook regression:** unchanged and green — verified-success marks paid + FEE_PAID (once) + HWM (once); duplicate/failed/invalid-signature never mark paid.
+
+**PART G — Audit Actions**
+- 3 new: `PERFORMANCE_FEE_CHECKOUT_INITIATED`, `PERFORMANCE_FEE_CHECKOUT_FAILED`, `PERFORMANCE_FEE_PAYMENT_STATUS_VIEWED`
+
+### Safety invariants (enforced, never violated)
+- Checkout NEVER marks invoice/assessment PAID, never creates FEE_PAID ledger, never updates HWM
+- Verified provider webhook remains the ONLY paid/HWM path; frontend success is never trusted
+- `manual` provider is never a public checkout provider; providers fail closed when unconfigured
+- No duplicate payable transaction/invoice; money values remain bigint minor-unit strings
+- No secrets in responses, `providerPayloadSummary`, or audit metadata
+- No new migrations (reuses existing `payments` schema)

@@ -464,9 +464,63 @@ class ManualPaymentProvider implements IPaymentProvider {
 - Live HTTP integration for any provider (Stripe SDK, Paystack API, etc.)
 - Real webhook signature verification (requires live provider credentials)
 - Subscription renewal scheduling
-- Performance fee collection flow
 - Refund management UI
 - Invoice PDF generation
+
+---
+
+## 15. Performance Fee Invoice Payment Flow (Sprint 14)
+
+`PerformanceFeePaymentService` (in the payments module) lets an authenticated user
+— or an admin on their behalf — pay an existing **performance-fee** invoice through
+the same `PaymentRoutingService` used for subscriptions. It assigns a routed provider
+to the pending transaction created at invoicing time and returns a checkout session.
+
+### Endpoints (all require JWT; ownership enforced)
+
+| Endpoint | Access |
+|---|---|
+| `GET /api/v1/performance-fees/invoices` | User: own only. Admin: any (via `userId`). |
+| `GET /api/v1/performance-fees/invoices/:invoiceId` | User: own only. Admin: any. |
+| `POST /api/v1/performance-fees/invoices/:invoiceId/checkout` | User: own only. Admin: any. |
+| `GET /api/v1/performance-fees/invoices/:invoiceId/payment-status` | User: own only. Admin: any. |
+
+### Checkout flow
+
+1. Load invoice; enforce ownership (non-admin cross-user → `403`).
+2. Require `invoice.metadata.type === 'PERFORMANCE_FEE'`.
+3. Require invoice status `ISSUED` or `OVERDUE` (reject `PAID`/`VOID`/`CANCELLED`/`DRAFT`).
+4. Require a linked assessment in status `INVOICED`.
+5. Reuse the **existing** `PERFORMANCE_FEE` `PaymentTransaction` (created at invoicing) —
+   never create a duplicate payable transaction.
+   - `SUCCEEDED` → reject (already paid).
+   - `PROCESSING` on a real (non-`manual`) provider with a reference → return the
+     existing session (idempotent; no duplicate provider charge).
+   - `PENDING`/`manual` default → assign the routed provider.
+6. Route via `PaymentRoutingService.routeForCheckout()` (excludes `manual`, fails
+   closed on unsupported country/currency/provider).
+7. Call `provider.createCheckoutSession()`. On failure: transaction stays `PENDING`,
+   invoice stays unpaid, assessment stays `INVOICED`; emit `PERFORMANCE_FEE_CHECKOUT_FAILED`.
+8. On success: update transaction → `PROCESSING` with provider + reference + safe
+   `providerPayloadSummary`; emit `PERFORMANCE_FEE_CHECKOUT_INITIATED`.
+
+### Safety invariants
+
+- **Checkout never marks paid.** It never sets the invoice `PAID`, never sets the
+  assessment `PAID`, never creates a `FEE_PAID` ledger entry, and never updates the
+  high-water mark. The service has no dependency on the performance/ledger repos.
+- **Verified webhook is the only paid/HWM path.** Frontend success is never trusted.
+- **Manual provider is dev/test only** and can never be selected for public checkout.
+- **No duplicate transactions/invoices** — the pending transaction is reused.
+- **Fail closed** — unconfigured provider placeholders throw `NotImplementedException`,
+  surfaced as a sanitised `400`; the invoice remains payable for retry.
+- **No secrets** in responses, `providerPayloadSummary`, or audit metadata.
+
+### Deferred (future sprints)
+
+- Live provider SDK/API calls and real signature verification (credentials required).
+- Admin/dev manual settlement endpoint — intentionally **not** implemented in Sprint 14
+  to avoid any path that could bypass the webhook-only paid/HWM invariant.
 
 ---
 

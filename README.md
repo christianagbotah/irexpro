@@ -22,7 +22,7 @@ iRexPro supports users from multiple countries worldwide with regional payment p
 
 ## Current Status
 
-**Phase 1 Sprint 13 — Performance Fee Billing Cycle Orchestrator: Complete**
+**Phase 1 Sprint 14 — Performance Fee Invoice Payment Flow: Complete**
 
 - ✅ Sprint 1-2: Backend Foundation (NestJS, Auth, Users, Audit)
 - ✅ Sprint 3-4: Broker Integration (MetaTrader adapter, credentials, health checks)
@@ -32,6 +32,7 @@ iRexPro supports users from multiple countries worldwide with regional payment p
 - ✅ Sprint 11: Performance Fee + High-Water Mark Engine
 - ✅ Sprint 12: Broker Trade Reconciliation → Realised P&L Ledger Entries
 - ✅ Sprint 13: Performance Fee Billing Cycle Orchestrator
+- ✅ Sprint 14: Performance Fee Invoice Payment Flow + Provider Checkout Assignment
 
 See [IMPLEMENTATION_ROADMAP.md](./IMPLEMENTATION_ROADMAP.md) for the next steps and Cursor prompts.
 

@@ -639,3 +639,16 @@ Before approving any PR touching trading, risk, financial, payment, or regional 
 - [ ] errorSummary must contain only a short message string (≤500 chars) — no stack trace, no credentials
 - [ ] Duplicate cycle for same user/broker/period must throw ConflictException (DB partial unique indexes enforce this)
 - [ ] Billing cycle `metadata` must never contain broker credentials, provider secrets, or raw payloads
+
+## Performance Fee Payment Rules (Sprint 14)
+
+- [ ] Checkout initiation must NEVER mark an invoice PAID, an assessment PAID, create a FEE_PAID ledger entry, or update HWM
+- [ ] A verified provider webhook is the ONLY path to paid state / HWM update — never trust frontend success
+- [ ] Reuse the existing PENDING performance-fee `PaymentTransaction` — never create a duplicate payable transaction for the same invoice
+- [ ] An already-`SUCCEEDED` transaction must reject re-checkout; an in-progress non-`manual` session must be reused idempotently
+- [ ] Only `ISSUED`/`OVERDUE` performance-fee invoices with an `INVOICED` assessment are payable
+- [ ] Route via `PaymentRoutingService` only — the `manual` provider is DEV/TEST and must never be a public checkout provider
+- [ ] Provider placeholders must fail closed (unconfigured → `NotImplementedException` → sanitised 400); invoice stays payable for retry
+- [ ] Normal users may list/view/pay only their own performance-fee invoices; cross-user access → 403; admins may act on any
+- [ ] Checkout responses, `providerPayloadSummary`, and audit metadata must contain no secrets, tokens, raw payloads, card data, or PINs
+- [ ] All persisted money values remain bigint minor-unit strings

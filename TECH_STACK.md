@@ -276,6 +276,18 @@ All providers implement `IPaymentProvider`. No direct SDK calls in business logi
 
 **Reconciliation P&L arithmetic:** `netRealisedPnl = grossRealisedPnl + commission + swap` (all in minor currency units as bigint strings). Major-unit decimal strings from broker adapters are converted using string arithmetic — no float risk.
 
+### Performance Fee Invoice Payment Flow (Sprint 14)
+
+| Component | Location | Status |
+|---|---|---|
+| `PerformanceFeePaymentService` | `payments/services/` | ✅ Sprint 14 |
+| `PerformanceFeePaymentController` (`/api/v1/performance-fees/invoices`) | `payments/` | ✅ Sprint 14 |
+| `InitiatePerformanceFeeCheckoutDto` | `payments/dto/` | ✅ Sprint 14 |
+| Audit actions `PERFORMANCE_FEE_CHECKOUT_INITIATED/CHECKOUT_FAILED/PAYMENT_STATUS_VIEWED` | `common/enums/` | ✅ Sprint 14 |
+| Migrations | — | None (reuses `payments` schema) |
+
+**Payment safety:** checkout only assigns a routed provider + creates a provider session; it never marks paid and never updates the high-water mark. A verified provider webhook remains the sole path to paid/HWM state. The `manual` provider is excluded from public checkout and providers fail closed when unconfigured.
+
 ---
 
 ## Decimal Arithmetic Policy

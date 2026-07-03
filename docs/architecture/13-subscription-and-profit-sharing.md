@@ -570,3 +570,14 @@ FAILED → RECONCILING (safe retry) or CANCELLED
 - **No secrets**: `errorSummary` is truncated to 500 chars and contains only the thrown error message string — never stack traces, credentials, or provider secrets
 - **Failed reconciliation stops billing** (Sprint 13 audit fix): `BrokerTradeReconciliationService.runReconciliation()` catches adapter failures internally and *returns* a run with `status = FAILED` instead of throwing. The billing cycle inspects `reconRun.status` and transitions to `FAILED` (skipping assessment/invoice) when the run failed, so a stale/empty ledger is never billed as if reconciliation succeeded. `COMPLETED_WITH_WARNINGS` is treated as non-fatal (under-inclusive at worst; the HWM engine self-corrects on the next paid cycle) and proceeds to assessment.
 - **Account-wide (null broker) duplicate guard is `IsNull`-safe** (Sprint 13 audit fix): `findExistingCycle()` uses `IsNull()` for a null `brokerConnectionId` rather than relying on `undefined` (which TypeORM strips from the where clause), so an account-wide cycle can never false-positive match one of the user's per-broker cycles for the same period. The DB partial unique indexes remain the ultimate backstop.
+
+## Performance Fee Invoice Payment (Sprint 14)
+
+Once the billing cycle has produced an `INVOICED` assessment (invoice `ISSUED`, a
+PENDING `PERFORMANCE_FEE` `PaymentTransaction`), a user (or admin) can pay it via
+`PerformanceFeePaymentService`. The service assigns a routed provider to that pending
+transaction and returns a provider checkout session. It **never** marks the invoice or
+assessment paid and **never** updates the high-water mark — a verified provider webhook
+remains the only path to paid state / HWM advance. Full details, endpoints, and safety
+invariants are documented in
+[`21-payment-provider-architecture.md` §15](./21-payment-provider-architecture.md).
