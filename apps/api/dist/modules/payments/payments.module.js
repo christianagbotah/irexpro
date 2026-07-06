@@ -34,6 +34,7 @@ const performance_fee_assessment_entity_1 = require("../performance-fees/entitie
 const performance_fee_ledger_entry_entity_1 = require("../performance-fees/entities/performance-fee-ledger-entry.entity");
 const trading_account_performance_entity_1 = require("../performance-fees/entities/trading-account-performance.entity");
 const user_entity_1 = require("../users/entities/user.entity");
+const subscriptions_module_1 = require("../subscriptions/subscriptions.module");
 let PaymentsModule = class PaymentsModule {
     constructor(registry, manual, stripe, paystack, flutterwave, hubtel, paypal, wise) {
         this.registry = registry;
@@ -70,6 +71,7 @@ exports.PaymentsModule = PaymentsModule = __decorate([
                 user_entity_1.User,
             ]),
             audit_module_1.AuditModule,
+            (0, common_1.forwardRef)(() => subscriptions_module_1.SubscriptionsModule),
         ],
         controllers: [payments_controller_1.PaymentsController, performance_fee_payment_controller_1.PerformanceFeePaymentController],
         providers: [

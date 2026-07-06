@@ -1,4 +1,4 @@
-import { Module, OnModuleInit } from '@nestjs/common';
+import { forwardRef, Module, OnModuleInit } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ManualPaymentProvider } from './providers/manual.provider';
 import { StripePaymentProvider } from './providers/stripe.provider';
@@ -22,6 +22,7 @@ import { PerformanceFeeAssessment } from '../performance-fees/entities/performan
 import { PerformanceFeeLedgerEntry } from '../performance-fees/entities/performance-fee-ledger-entry.entity';
 import { TradingAccountPerformance } from '../performance-fees/entities/trading-account-performance.entity';
 import { User } from '../users/entities/user.entity';
+import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 
 @Module({
   imports: [
@@ -36,6 +37,8 @@ import { User } from '../users/entities/user.entity';
       User,
     ]),
     AuditModule,
+    // Bidirectional dependency with SubscriptionsModule — resolved via forwardRef.
+    forwardRef(() => SubscriptionsModule),
   ],
   controllers: [PaymentsController, PerformanceFeePaymentController],
   providers: [

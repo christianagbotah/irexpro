@@ -75,6 +75,23 @@ describe('initiateCheckout', () => {
       }),
     );
   });
+
+  it('delegates checkout for an admin with isAdmin=true (admin-initiated checkout on behalf of a user)', async () => {
+    await controller.initiateCheckout(
+      'invoice-1',
+      { provider: 'stripe', countryCode: 'US', currency: 'USD' },
+      adminUser(),
+      { ip: '5.6.7.8' },
+    );
+    expect(svc.initiatePerformanceFeeCheckout).toHaveBeenCalledWith(
+      expect.objectContaining({
+        invoiceId: 'invoice-1',
+        requestingUserId: 'admin-1',
+        isAdmin: true,
+        ipAddress: '5.6.7.8',
+      }),
+    );
+  });
 });
 
 describe('getPaymentStatus', () => {
@@ -85,6 +102,16 @@ describe('getPaymentStatus', () => {
       'admin-1',
       true,
       '9.9.9.9',
+    );
+  });
+
+  it('delegates status lookup with isAdmin=false for a normal user', async () => {
+    await controller.getPaymentStatus('invoice-1', normalUser(), { ip: '1.1.1.1' });
+    expect(svc.getPerformanceFeePaymentStatus).toHaveBeenCalledWith(
+      'invoice-1',
+      'user-1',
+      false,
+      '1.1.1.1',
     );
   });
 });

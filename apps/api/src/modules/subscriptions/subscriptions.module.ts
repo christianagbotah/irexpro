@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { SubscriptionPlan } from './entities/subscription-plan.entity';
 import { PlanPricing } from './entities/plan-pricing.entity';
@@ -14,7 +14,8 @@ import { PaymentsModule } from '../payments/payments.module';
   imports: [
     TypeOrmModule.forFeature([SubscriptionPlan, PlanPricing, UserSubscription, Invoice, PaymentTransaction]),
     AuditModule,
-    PaymentsModule,
+    // Bidirectional dependency with PaymentsModule — resolved via forwardRef.
+    forwardRef(() => PaymentsModule),
   ],
   controllers: [SubscriptionsController],
   providers: [SubscriptionsService],

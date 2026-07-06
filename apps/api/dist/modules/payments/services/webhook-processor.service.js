@@ -350,6 +350,7 @@ let WebhookProcessorService = WebhookProcessorService_1 = class WebhookProcessor
 exports.WebhookProcessorService = WebhookProcessorService;
 exports.WebhookProcessorService = WebhookProcessorService = WebhookProcessorService_1 = __decorate([
     (0, common_1.Injectable)(),
+    __param(1, (0, common_1.Inject)((0, common_1.forwardRef)(() => subscriptions_service_1.SubscriptionsService))),
     __param(3, (0, typeorm_1.InjectRepository)(payment_webhook_event_entity_1.PaymentWebhookEvent)),
     __param(4, (0, typeorm_1.InjectRepository)(payment_transaction_entity_1.PaymentTransaction)),
     __param(5, (0, typeorm_1.InjectRepository)(invoice_entity_1.Invoice)),

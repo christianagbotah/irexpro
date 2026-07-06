@@ -79,7 +79,7 @@ beforeEach(() => {
   };
   transactionRepo = {
     findOne: jest.fn(async () => makeTransaction()),
-    update: jest.fn(async () => undefined),
+    update: jest.fn(async () => ({ affected: 1 })),
   };
   assessmentRepo = {
     findOne: jest.fn(async () => makeAssessment()),
@@ -238,6 +238,69 @@ describe('initiatePerformanceFeeCheckout', () => {
     );
   });
 
+  it('provider failure releases the claimed transaction back to PENDING so a retry is possible', async () => {
+    mockProvider.createCheckoutSession.mockRejectedValueOnce(new Error('gateway down'));
+    await expect(service.initiatePerformanceFeeCheckout(base)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(transactionRepo.update).toHaveBeenCalledWith(
+      'tx-1',
+      expect.objectContaining({ status: PaymentTransactionStatus.PENDING }),
+    );
+  });
+
+  it('concurrent checkout race: second request detects the first request already claimed the transaction and safely reuses its session instead of creating a duplicate provider session', async () => {
+    // Simulate: request A already atomically claimed tx-1 (PENDING/FAILED -> PROCESSING)
+    // and obtained a provider session, right before request B's own claim attempt runs.
+    transactionRepo.update.mockResolvedValueOnce({ affected: 0 });
+    transactionRepo.findOne
+      .mockResolvedValueOnce(makeTransaction()) // initial lookup (still PENDING from B's view)
+      .mockResolvedValueOnce(
+        makeTransaction({
+          status: PaymentTransactionStatus.PROCESSING,
+          provider: 'stripe',
+          providerTransactionReference: 'pi_winner',
+          providerPayloadSummary: {
+            sessionId: 'sess_winner',
+            checkoutUrl: 'https://pay.stripe.test/sess_winner',
+          },
+        }),
+      );
+
+    const result = await service.initiatePerformanceFeeCheckout(base);
+
+    expect(result.reusedExistingSession).toBe(true);
+    expect(result.providerReference).toBe('pi_winner');
+    // Request B must never call the provider itself — that would create a second session.
+    expect(mockProvider.createCheckoutSession).not.toHaveBeenCalled();
+    expect(routingService.routeForCheckout).not.toHaveBeenCalled();
+  });
+
+  it('concurrent checkout race: claim lost while the winner has not yet obtained a provider session returns a safe conflict instead of duplicating', async () => {
+    transactionRepo.update.mockResolvedValueOnce({ affected: 0 });
+    transactionRepo.findOne
+      .mockResolvedValueOnce(makeTransaction())
+      .mockResolvedValueOnce(makeTransaction({ status: PaymentTransactionStatus.PROCESSING }));
+
+    await expect(service.initiatePerformanceFeeCheckout(base)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(mockProvider.createCheckoutSession).not.toHaveBeenCalled();
+    expect(routingService.routeForCheckout).not.toHaveBeenCalled();
+  });
+
+  it('concurrent checkout race: claim lost after the invoice was already paid by the winner rejects with Conflict', async () => {
+    transactionRepo.update.mockResolvedValueOnce({ affected: 0 });
+    transactionRepo.findOne
+      .mockResolvedValueOnce(makeTransaction())
+      .mockResolvedValueOnce(makeTransaction({ status: PaymentTransactionStatus.SUCCEEDED }));
+
+    await expect(service.initiatePerformanceFeeCheckout(base)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(mockProvider.createCheckoutSession).not.toHaveBeenCalled();
+  });
+
   it('propagates routing failure (unsupported provider/country)', async () => {
     routingService.routeForCheckout.mockRejectedValueOnce(new BadRequestException('no provider'));
     await expect(service.initiatePerformanceFeeCheckout(base)).rejects.toBeInstanceOf(
@@ -256,6 +319,26 @@ describe('initiatePerformanceFeeCheckout', () => {
     userRepo.findOne.mockResolvedValueOnce(makeOwner({ countryCode: null }));
     await expect(service.initiatePerformanceFeeCheckout(base)).rejects.toBeInstanceOf(
       BadRequestException,
+    );
+  });
+
+  it('rejects an invoice amount that overflows the provider interface number conversion, without calling the provider or marking paid', async () => {
+    // Number.MAX_SAFE_INTEGER = 9007199254740991 (minor units) — one above that must be rejected.
+    invoiceRepo.findOne.mockResolvedValueOnce(
+      makeInvoice({ totalAmount: '9007199254740992' }),
+    );
+    await expect(service.initiatePerformanceFeeCheckout(base)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(mockProvider.createCheckoutSession).not.toHaveBeenCalled();
+    expect(invoiceRepo.update).not.toHaveBeenCalled();
+  });
+
+  it('passes the provider request amount exactly matching the invoice totalAmount (no rounding/fees applied)', async () => {
+    invoiceRepo.findOne.mockResolvedValueOnce(makeInvoice({ totalAmount: '123456' }));
+    await service.initiatePerformanceFeeCheckout(base);
+    expect(mockProvider.createCheckoutSession).toHaveBeenCalledWith(
+      expect.objectContaining({ amountMinor: 123456, currency: 'USD' }),
     );
   });
 

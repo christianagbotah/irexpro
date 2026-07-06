@@ -49,127 +49,143 @@ let PerformanceFeePaymentService = PerformanceFeePaymentService_1 = class Perfor
         if (transaction.status === payment_transaction_entity_1.PaymentTransactionStatus.SUCCEEDED) {
             throw new common_1.ConflictException('This performance-fee invoice has already been paid');
         }
-        if (transaction.status === payment_transaction_entity_1.PaymentTransactionStatus.PROCESSING &&
-            transaction.provider !== 'manual' &&
-            transaction.providerTransactionReference) {
-            const summary = transaction.providerPayloadSummary ?? {};
+        const existingReuse = this.buildReuseResult(transaction);
+        if (existingReuse) {
             this.logger.log(`[PerfFeePay] Reusing in-progress ${transaction.provider} session for invoice ${invoice.id}`);
-            return {
-                invoiceId: invoice.id,
-                invoiceNumber: invoice.invoiceNumber,
-                transactionId: transaction.id,
-                provider: transaction.provider,
-                paymentStatus: transaction.status,
-                checkoutUrl: summary['checkoutUrl'] ?? undefined,
-                sessionId: summary['sessionId'] ?? undefined,
-                providerReference: transaction.providerTransactionReference,
-                reusedExistingSession: true,
-            };
+            return { ...existingReuse, invoiceNumber: invoice.invoiceNumber };
         }
-        const currency = (options?.currency ?? invoice.currency).toUpperCase();
-        if (currency !== invoice.currency.toUpperCase()) {
-            throw new common_1.BadRequestException(`Requested currency ${currency} does not match invoice currency ${invoice.currency}`);
+        const claim = await this.transactionRepo.update({
+            id: transaction.id,
+            status: (0, typeorm_2.In)([payment_transaction_entity_1.PaymentTransactionStatus.PENDING, payment_transaction_entity_1.PaymentTransactionStatus.FAILED]),
+        }, { status: payment_transaction_entity_1.PaymentTransactionStatus.PROCESSING });
+        if (!claim.affected) {
+            const current = await this.transactionRepo.findOne({ where: { id: transaction.id } });
+            if (current?.status === payment_transaction_entity_1.PaymentTransactionStatus.SUCCEEDED) {
+                throw new common_1.ConflictException('This performance-fee invoice has already been paid');
+            }
+            const reuse = current ? this.buildReuseResult(current) : null;
+            if (reuse) {
+                return { ...reuse, invoiceNumber: invoice.invoiceNumber };
+            }
+            throw new common_1.ConflictException('A checkout session is already being created for this invoice — please retry shortly');
         }
-        const owner = await this.userRepo.findOne({ where: { id: invoice.userId } });
-        if (!owner) {
-            throw new common_1.NotFoundException('Invoice owner not found');
-        }
-        const countryCode = (options?.countryCode ?? owner.countryCode ?? '').toUpperCase();
-        if (!countryCode) {
-            throw new common_1.BadRequestException('A country code is required to route a payment provider for this invoice');
-        }
-        const { provider, reason: routingReason } = await this.routingService.routeForCheckout(countryCode, currency, options?.provider);
-        let sessionResult;
         try {
-            sessionResult = await provider.createCheckoutSession({
-                userId: invoice.userId,
-                email: owner.email,
-                planId: `perf-fee:${assessment.id}`,
-                currency,
-                amountMinor: this.toAmountMinor(invoice.totalAmount),
-                countryCode,
-                invoiceId: invoice.id,
-                metadata: {
-                    type: 'PERFORMANCE_FEE',
-                    assessmentId: assessment.id,
+            const currency = (options?.currency ?? invoice.currency).toUpperCase();
+            if (currency !== invoice.currency.toUpperCase()) {
+                throw new common_1.BadRequestException(`Requested currency ${currency} does not match invoice currency ${invoice.currency}`);
+            }
+            const owner = await this.userRepo.findOne({ where: { id: invoice.userId } });
+            if (!owner) {
+                throw new common_1.NotFoundException('Invoice owner not found');
+            }
+            const countryCode = (options?.countryCode ?? owner.countryCode ?? '').toUpperCase();
+            if (!countryCode) {
+                throw new common_1.BadRequestException('A country code is required to route a payment provider for this invoice');
+            }
+            const { provider, reason: routingReason } = await this.routingService.routeForCheckout(countryCode, currency, options?.provider);
+            let sessionResult;
+            try {
+                sessionResult = await provider.createCheckoutSession({
+                    userId: invoice.userId,
+                    email: owner.email,
+                    planId: `perf-fee:${assessment.id}`,
+                    currency,
+                    amountMinor: this.toAmountMinor(invoice.totalAmount),
+                    countryCode,
                     invoiceId: invoice.id,
-                },
-            });
-        }
-        catch (err) {
-            const message = err instanceof Error ? err.message : 'Checkout unavailable';
+                    metadata: {
+                        type: 'PERFORMANCE_FEE',
+                        assessmentId: assessment.id,
+                        invoiceId: invoice.id,
+                    },
+                });
+            }
+            catch (err) {
+                const message = err instanceof Error ? err.message : 'Checkout unavailable';
+                await this.transactionRepo.update(transaction.id, {
+                    provider: provider.providerId,
+                    status: payment_transaction_entity_1.PaymentTransactionStatus.PENDING,
+                    failureMessage: this.safeMessage(message),
+                });
+                await this.auditService.log({
+                    actorUserId: requestingUserId,
+                    actorType: isAdmin ? 'ADMIN' : 'USER',
+                    action: audit_action_enum_1.AuditAction.PERFORMANCE_FEE_CHECKOUT_FAILED,
+                    resourceType: 'PaymentTransaction',
+                    resourceId: transaction.id,
+                    ipAddress,
+                    metadata: {
+                        invoiceId: invoice.id,
+                        assessmentId: assessment.id,
+                        provider: provider.providerId,
+                        currency,
+                        countryCode,
+                    },
+                    severity: audit_log_entity_1.AuditSeverity.WARNING,
+                });
+                throw new common_1.BadRequestException(`Payment checkout failed: ${this.safeMessage(message)}`);
+            }
+            const providerReference = sessionResult.providerTransactionReference ?? sessionResult.sessionId;
             await this.transactionRepo.update(transaction.id, {
                 provider: provider.providerId,
-                failureMessage: this.safeMessage(message),
+                providerTransactionReference: providerReference,
+                status: payment_transaction_entity_1.PaymentTransactionStatus.PROCESSING,
+                countryCode,
+                failureCode: null,
+                failureMessage: null,
+                providerPayloadSummary: {
+                    assessmentId: assessment.id,
+                    invoiceId: invoice.id,
+                    type: 'PERFORMANCE_FEE',
+                    provider: provider.providerId,
+                    sessionId: sessionResult.sessionId,
+                    checkoutUrl: sessionResult.checkoutUrl,
+                    routingReason,
+                },
             });
             await this.auditService.log({
                 actorUserId: requestingUserId,
                 actorType: isAdmin ? 'ADMIN' : 'USER',
-                action: audit_action_enum_1.AuditAction.PERFORMANCE_FEE_CHECKOUT_FAILED,
+                action: audit_action_enum_1.AuditAction.PERFORMANCE_FEE_CHECKOUT_INITIATED,
                 resourceType: 'PaymentTransaction',
                 resourceId: transaction.id,
                 ipAddress,
                 metadata: {
                     invoiceId: invoice.id,
+                    invoiceNumber: invoice.invoiceNumber,
                     assessmentId: assessment.id,
                     provider: provider.providerId,
+                    amountMinor: invoice.totalAmount,
                     currency,
                     countryCode,
+                    routingReason,
                 },
-                severity: audit_log_entity_1.AuditSeverity.WARNING,
+                severity: audit_log_entity_1.AuditSeverity.INFO,
             });
-            throw new common_1.BadRequestException(`Payment checkout failed: ${this.safeMessage(message)}`);
-        }
-        const providerReference = sessionResult.providerTransactionReference ?? sessionResult.sessionId;
-        await this.transactionRepo.update(transaction.id, {
-            provider: provider.providerId,
-            providerTransactionReference: providerReference,
-            status: payment_transaction_entity_1.PaymentTransactionStatus.PROCESSING,
-            countryCode,
-            failureCode: null,
-            failureMessage: null,
-            providerPayloadSummary: {
-                assessmentId: assessment.id,
-                invoiceId: invoice.id,
-                type: 'PERFORMANCE_FEE',
-                provider: provider.providerId,
-                sessionId: sessionResult.sessionId,
-                checkoutUrl: sessionResult.checkoutUrl,
-                routingReason,
-            },
-        });
-        await this.auditService.log({
-            actorUserId: requestingUserId,
-            actorType: isAdmin ? 'ADMIN' : 'USER',
-            action: audit_action_enum_1.AuditAction.PERFORMANCE_FEE_CHECKOUT_INITIATED,
-            resourceType: 'PaymentTransaction',
-            resourceId: transaction.id,
-            ipAddress,
-            metadata: {
+            this.logger.log(`[PerfFeePay] Checkout initiated: invoice=${invoice.id}, tx=${transaction.id}, ` +
+                `provider=${provider.providerId}`);
+            return {
                 invoiceId: invoice.id,
                 invoiceNumber: invoice.invoiceNumber,
-                assessmentId: assessment.id,
+                transactionId: transaction.id,
                 provider: provider.providerId,
-                amountMinor: invoice.totalAmount,
-                currency,
-                countryCode,
-                routingReason,
-            },
-            severity: audit_log_entity_1.AuditSeverity.INFO,
-        });
-        this.logger.log(`[PerfFeePay] Checkout initiated: invoice=${invoice.id}, tx=${transaction.id}, ` +
-            `provider=${provider.providerId}`);
-        return {
-            invoiceId: invoice.id,
-            invoiceNumber: invoice.invoiceNumber,
-            transactionId: transaction.id,
-            provider: provider.providerId,
-            paymentStatus: payment_transaction_entity_1.PaymentTransactionStatus.PROCESSING,
-            checkoutUrl: sessionResult.checkoutUrl,
-            sessionId: sessionResult.sessionId,
-            providerReference,
-            reusedExistingSession: false,
-        };
+                paymentStatus: payment_transaction_entity_1.PaymentTransactionStatus.PROCESSING,
+                checkoutUrl: sessionResult.checkoutUrl,
+                sessionId: sessionResult.sessionId,
+                providerReference,
+                reusedExistingSession: false,
+            };
+        }
+        catch (err) {
+            const current = await this.transactionRepo.findOne({ where: { id: transaction.id } });
+            if (current?.status === payment_transaction_entity_1.PaymentTransactionStatus.PROCESSING &&
+                !current.providerTransactionReference) {
+                await this.transactionRepo.update(transaction.id, {
+                    status: payment_transaction_entity_1.PaymentTransactionStatus.PENDING,
+                });
+            }
+            throw err;
+        }
     }
     async getInvoiceView(invoiceId, requestingUserId, isAdmin) {
         const invoice = await this.invoiceRepo.findOne({ where: { id: invoiceId } });
@@ -248,6 +264,24 @@ let PerformanceFeePaymentService = PerformanceFeePaymentService_1 = class Perfor
         if (type !== 'PERFORMANCE_FEE') {
             throw new common_1.BadRequestException('Invoice is not a performance-fee invoice');
         }
+    }
+    buildReuseResult(transaction) {
+        if (transaction.status === payment_transaction_entity_1.PaymentTransactionStatus.PROCESSING &&
+            transaction.provider !== 'manual' &&
+            transaction.providerTransactionReference) {
+            const summary = transaction.providerPayloadSummary ?? {};
+            return {
+                invoiceId: transaction.invoiceId ?? '',
+                transactionId: transaction.id,
+                provider: transaction.provider,
+                paymentStatus: transaction.status,
+                checkoutUrl: summary['checkoutUrl'] ?? undefined,
+                sessionId: summary['sessionId'] ?? undefined,
+                providerReference: transaction.providerTransactionReference,
+                reusedExistingSession: true,
+            };
+        }
+        return null;
     }
     async findPerformanceFeeTransaction(invoiceId) {
         return this.transactionRepo.findOne({

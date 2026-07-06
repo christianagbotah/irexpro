@@ -63,6 +63,7 @@ export declare class PerformanceFeePaymentService {
     private loadPayableContext;
     private assertOwnership;
     private assertPerformanceFeeInvoice;
+    private buildReuseResult;
     private findPerformanceFeeTransaction;
     private toInvoiceView;
     private toAmountMinor;

@@ -26,7 +26,7 @@ exports.SubscriptionsModule = SubscriptionsModule = __decorate([
         imports: [
             typeorm_1.TypeOrmModule.forFeature([subscription_plan_entity_1.SubscriptionPlan, plan_pricing_entity_1.PlanPricing, user_subscription_entity_1.UserSubscription, invoice_entity_1.Invoice, payment_transaction_entity_1.PaymentTransaction]),
             audit_module_1.AuditModule,
-            payments_module_1.PaymentsModule,
+            (0, common_1.forwardRef)(() => payments_module_1.PaymentsModule),
         ],
         controllers: [subscriptions_controller_1.SubscriptionsController],
         providers: [subscriptions_service_1.SubscriptionsService],

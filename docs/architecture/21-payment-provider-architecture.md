@@ -522,6 +522,38 @@ to the pending transaction created at invoicing time and returns a checkout sess
 - Admin/dev manual settlement endpoint — intentionally **not** implemented in Sprint 14
   to avoid any path that could bypass the webhook-only paid/HWM invariant.
 
+### Sprint 14 payment/security audit — fixes applied
+
+1. **Module wiring: `PaymentsModule` ↔ `SubscriptionsModule` circular dependency.**
+   `WebhookProcessorService` (in `PaymentsModule`) injects `SubscriptionsService`
+   (in `SubscriptionsModule`), while `SubscriptionsService` injects
+   `PaymentRoutingService` (in `PaymentsModule`) — a genuine bidirectional module
+   dependency. Without `forwardRef()` on **both** `@Module({ imports: [...] })`
+   declarations, Nest could not resolve `WebhookProcessorService`'s dependencies
+   at bootstrap (`Nest can't resolve dependencies of the WebhookProcessorService
+   ... SubscriptionsService at index [1] is available in the PaymentsModule
+   context`), which would have crashed the app on startup. Fixed with
+   `forwardRef(() => SubscriptionsModule)` / `forwardRef(() => PaymentsModule)` on
+   both module imports, plus `@Inject(forwardRef(() => SubscriptionsService))` on
+   the `WebhookProcessorService` constructor parameter. Verified with a new
+   `payments.module.spec.ts` integration-style test that boots the real module
+   graph (repositories stubbed, no live DB) and resolves `WebhookProcessorService`
+   and `SubscriptionsService` end-to-end; reproduced the original failure by
+   temporarily reverting the fix to confirm the test fails without it.
+2. **Concurrent-checkout race in provider assignment.** Two simultaneous checkout
+   requests for the same invoice could both pass the "reuse existing session"
+   check while the transaction was still `PENDING`/`manual`, both call
+   `provider.createCheckoutSession()`, and race to overwrite
+   `providerTransactionReference` — silently orphaning whichever provider session
+   lost the race (a customer paying that session would never be matched by the
+   webhook, since the DB would hold the other session's reference). Fixed by
+   atomically claiming the transaction (`PENDING`/`FAILED` → `PROCESSING`, gated
+   on an `UPDATE ... WHERE status IN (...)` affected-row check) before calling any
+   provider. A lost claim safely returns the winner's session (if it has one
+   already) or a `409 Conflict` asking the caller to retry shortly — it never
+   calls the provider a second time. Provider/validation failures release the
+   claim back to `PENDING` so the invoice remains retryable.
+
 ---
 
 ## 14. Failure Cases

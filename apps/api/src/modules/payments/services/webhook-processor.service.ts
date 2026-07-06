@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, forwardRef, Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, QueryFailedError, Repository } from 'typeorm';
 import { PaymentWebhookEvent } from '../entities/payment-webhook-event.entity';
@@ -64,6 +64,11 @@ export class WebhookProcessorService {
 
   constructor(
     private readonly registry: PaymentProviderRegistry,
+    // PaymentsModule <-> SubscriptionsModule form a legitimate bidirectional
+    // dependency (WebhookProcessorService needs SubscriptionsService to activate
+    // subscriptions on payment; SubscriptionsService needs PaymentRoutingService).
+    // forwardRef resolves the cycle at bootstrap.
+    @Inject(forwardRef(() => SubscriptionsService))
     private readonly subscriptionsService: SubscriptionsService,
     private readonly auditService: AuditService,
     @InjectRepository(PaymentWebhookEvent)
