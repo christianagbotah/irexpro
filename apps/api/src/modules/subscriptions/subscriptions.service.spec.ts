@@ -612,6 +612,45 @@ describe('SubscriptionsService', () => {
         expect(mockProvider.createCheckoutSession).not.toHaveBeenCalled();
       });
 
+      it('23505 race where the winning invoice exists but its transaction has not committed yet fails safely (never leaks the raw DB error)', async () => {
+        // Audit fix: previously, if findReusableCheckout's re-read after a 23505 returned
+        // 'supersede' or 'none' (e.g. the winner's invoice insert committed but its
+        // transaction insert had not yet, since they are two separate non-atomic writes),
+        // the code fell through to `throw err`, re-throwing the raw QueryFailedError.
+        mockPlanRepo.findOne.mockResolvedValue({ id: 'plan-id', name: 'Pro', isActive: true });
+        mockPricingRepo.getOne.mockResolvedValue({ amountCents: '2900' });
+        mockRoutingService.routeForCheckout.mockResolvedValue({ provider: mockProvider, reason: 'preferred' });
+
+        mockInvoiceQueryBuilder.getOne.mockResolvedValueOnce(null);
+
+        const uniqueViolation = new QueryFailedError('INSERT', [], new Error('duplicate key value') as never);
+        (uniqueViolation as unknown as { code: string }).code = '23505';
+        mockInvoiceRepo.create.mockReturnValue({ id: 'inv-attempt', metadata: {} });
+        mockInvoiceRepo.save.mockRejectedValueOnce(uniqueViolation);
+
+        // Re-read after losing the race: the winner's invoice exists (DRAFT) but its
+        // transaction row has not committed yet — findReusableCheckout's "data
+        // inconsistency safety net" classifies this as 'supersede', not 'reuse'.
+        mockInvoiceQueryBuilder.getOne.mockResolvedValueOnce({
+          id: 'inv-winner-not-yet-ready',
+          status: InvoiceStatus.DRAFT,
+          currency: 'USD',
+          totalAmount: '2900',
+          metadata: { type: 'SUBSCRIPTION', planId: 'plan-id', countryCode: 'US' },
+        });
+        mockTransactionRepo.findOne.mockResolvedValueOnce(null);
+
+        let caught: unknown;
+        try {
+          await service.initiateCheckout(baseRequest);
+        } catch (err) {
+          caught = err;
+        }
+        expect(caught).toBeInstanceOf(ConflictException);
+        // Never the raw TypeORM/Postgres error type reaching the caller.
+        expect(caught).not.toBeInstanceOf(QueryFailedError);
+      });
+
       it('claim lost and no active session yet — fails safely with a retry-shortly message', async () => {
         mockFreshCheckoutHappyPath();
         mockTransactionRepo.update.mockResolvedValueOnce({ affected: 0 });
@@ -669,7 +708,17 @@ describe('SubscriptionsService', () => {
         mockPricingRepo.getOne.mockResolvedValueOnce({ amountCents: '2900' });
 
         const expectedFingerprint = createHash('sha256')
-          .update(JSON.stringify({ userId: 'user-id', planId: 'plan-id', currency: 'USD', countryCode: 'US', provider: null }))
+          .update(
+            JSON.stringify({
+              userId: 'user-id',
+              planId: 'plan-id',
+              currency: 'USD',
+              countryCode: 'US',
+              paymentPurpose: PaymentPurpose.SUBSCRIPTION_INITIAL,
+              amountMinor: '2900',
+              provider: null,
+            }),
+          )
           .digest('hex');
         const keyHash = createHash('sha256').update('idem-key-1').digest('hex');
 
@@ -720,6 +769,60 @@ describe('SubscriptionsService', () => {
         const createCallArg = mockInvoiceRepo.create.mock.calls[0][0];
         expect(JSON.stringify(createCallArg.metadata)).not.toContain('raw-secret-key-value');
         expect(createCallArg.metadata.idempotencyKeyHash).toBeDefined();
+      });
+
+      it('same key + same params but a price change since the original request fails safely (409), never replays a stale-priced session', async () => {
+        // Audit fix: the fingerprint now includes amountMinor, so a mid-flight price
+        // change is correctly treated as "different parameters" for idempotency purposes.
+        mockPlanRepo.findOne.mockResolvedValueOnce({ id: 'plan-id', name: 'Pro', isActive: true });
+        mockPricingRepo.getOne.mockResolvedValueOnce({ amountCents: '3500' }); // price increased since original request
+
+        const originalFingerprint = createHash('sha256')
+          .update(
+            JSON.stringify({
+              userId: 'user-id',
+              planId: 'plan-id',
+              currency: 'USD',
+              countryCode: 'US',
+              paymentPurpose: PaymentPurpose.SUBSCRIPTION_INITIAL,
+              amountMinor: '2900', // original (now stale) price
+              provider: null,
+            }),
+          )
+          .digest('hex');
+        const keyHash = createHash('sha256').update('idem-key-price-change').digest('hex');
+
+        mockInvoiceQueryBuilder.getOne.mockResolvedValueOnce({
+          id: 'inv-idem-stale-price',
+          metadata: { idempotencyKeyHash: keyHash, idempotencyFingerprint: originalFingerprint },
+        });
+
+        await expect(
+          service.initiateCheckout({ ...baseRequest, idempotencyKey: 'idem-key-price-change' }),
+        ).rejects.toThrow(ConflictException);
+        expect(mockInvoiceRepo.save).not.toHaveBeenCalled();
+        expect(mockProvider.createCheckoutSession).not.toHaveBeenCalled();
+      });
+
+      it('the same idempotency key value used by a different user never matches this user\'s invoice (scoped by userId)', async () => {
+        mockFreshCheckoutHappyPath();
+        mockProvider.createCheckoutSession.mockResolvedValue({ sessionId: 'sess_cross_user', provider: 'stripe' });
+
+        // The repo mock is scoped per-call via the query builder chain; since the real
+        // query filters `i.user_id = :userId`, a lookup for THIS user must return null
+        // even though another user may hold an invoice with the same key hash. We
+        // simulate that by returning null (as the real scoped SQL would for this user)
+        // and asserting a brand-new checkout is created rather than any cross-user reuse.
+        mockInvoiceQueryBuilder.getOne.mockResolvedValueOnce(null);
+
+        const result = await service.initiateCheckout({
+          ...baseRequest,
+          idempotencyKey: 'shared-key-used-by-another-user',
+        });
+
+        expect(mockInvoiceQueryBuilder.where).toHaveBeenCalledWith('i.user_id = :userId', { userId: 'user-id' });
+        expect(result.reused).toBe(false);
+        expect(result.invoiceId).toBe('inv-id');
       });
     });
 

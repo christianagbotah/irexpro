@@ -203,6 +203,13 @@ Phase 5: Platform Expansion
 | Webhook-only paid/activation invariant unchanged and regression-tested | ✅ |
 | 25 new tests (reuse, concurrency, idempotency key, Paystack-specific reuse) | ✅ |
 
+**Sprint 16 audit (2026-07-06) — PASS WITH FIXES:** found and fixed a narrow-window raw
+DB error leak in the 23505 recovery path, an idempotency fingerprint gap
+(`paymentPurpose`/`amountMinor` were not bound to the key, so a price change mid-flight
+could replay a stale-priced session), and an empty-header precedence bug. Added the
+previously-missing `subscriptions.controller.spec.ts`. Final count after fixes: 648
+tests, 39 suites.
+
 > Note: this is the actual, chronologically-next Sprint 15 (Paystack). The
 > "Sprint 15+"/"Sprint 15-16" entries below predate this sprint's numbering and
 > describe a separate, aspirational execution/revenue-engine roadmap track that

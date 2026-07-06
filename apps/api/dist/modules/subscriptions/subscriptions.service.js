@@ -127,6 +127,8 @@ let SubscriptionsService = SubscriptionsService_1 = class SubscriptionsService {
                 planId,
                 currency,
                 countryCode,
+                paymentPurpose,
+                amountMinor: pricing.amountCents,
                 preferredProvider,
                 idempotencyKey,
                 ipAddress,
@@ -506,6 +508,8 @@ let SubscriptionsService = SubscriptionsService_1 = class SubscriptionsService {
                 planId,
                 currency,
                 countryCode,
+                paymentPurpose,
+                amountMinor: pricing.amountCents,
                 provider: preferredProvider ?? null,
             });
         }
@@ -535,6 +539,9 @@ let SubscriptionsService = SubscriptionsService_1 = class SubscriptionsService {
                 if (winner.kind === 'blocked') {
                     throw new common_1.ConflictException(winner.reason);
                 }
+                this.logger.warn(`[Checkout] Duplicate-invoice race resolved but winner not yet reusable (kind=${winner.kind}) ` +
+                    `for user ${userId}/plan ${planId} — asking caller to retry`);
+                throw new common_1.ConflictException('A checkout session is already being created for this plan — please retry shortly');
             }
             throw err;
         }
@@ -569,7 +576,7 @@ let SubscriptionsService = SubscriptionsService_1 = class SubscriptionsService {
         return { invoice: savedInvoice, transaction: savedTx, isNewPair: true };
     }
     async handleIdempotencyKeyReplay(params) {
-        const { userId, planId, currency, countryCode, preferredProvider, idempotencyKey, ipAddress } = params;
+        const { userId, planId, currency, countryCode, paymentPurpose, amountMinor, preferredProvider, idempotencyKey, ipAddress, } = params;
         const keyHash = this.hashIdempotencyKey(idempotencyKey);
         const existing = await this.invoiceRepo
             .createQueryBuilder('i')
@@ -584,6 +591,8 @@ let SubscriptionsService = SubscriptionsService_1 = class SubscriptionsService {
             planId,
             currency,
             countryCode,
+            paymentPurpose,
+            amountMinor,
             provider: preferredProvider ?? null,
         });
         const storedFingerprint = existing.metadata?.['idempotencyFingerprint'];
@@ -641,6 +650,8 @@ let SubscriptionsService = SubscriptionsService_1 = class SubscriptionsService {
             planId: params.planId,
             currency: params.currency,
             countryCode: params.countryCode,
+            paymentPurpose: params.paymentPurpose,
+            amountMinor: params.amountMinor,
             provider: params.provider ?? null,
         });
         return (0, crypto_1.createHash)('sha256').update(payload).digest('hex');

@@ -689,3 +689,9 @@ Before approving any PR touching trading, risk, financial, payment, or regional 
 - [ ] Checkout responses, `providerPayloadSummary`, and audit metadata for reuse/replay paths must contain no provider secrets, authorization headers, raw provider responses, card data, mobile money PINs, or tokens — identical requirement to net-new checkout.
 - [ ] Checkout MUST still never activate a subscription, mark an invoice `PAID`, or mark a transaction `SUCCEEDED` — a verified webhook remains the only path, unchanged by this sprint.
 - [ ] This reuse/idempotency behaviour lives entirely in `SubscriptionsService` (provider-agnostic via `IPaymentProvider`) and applies identically to every provider — no provider-specific changes are permitted to implement it.
+
+## Sprint 16 Payment/Idempotency/Security Audit Fixes (2026-07-06)
+
+- [ ] `SubscriptionsService.createInvoiceAndTransaction()`'s 23505-unique-violation recovery MUST NEVER re-throw the raw `QueryFailedError` to the caller. If the re-read after losing the race returns `'supersede'` or `'none'` (e.g. the winning invoice insert committed but its transaction insert — a separate, non-atomic write — has not committed yet), the caller must receive a safe `ConflictException` asking them to retry shortly, never a raw database error.
+- [ ] The idempotency-key fingerprint MUST include every parameter that affects what gets charged or which session is returned: `userId`, `planId`, `currency`, `countryCode`, `paymentPurpose`, `amountMinor`, and the explicitly requested `provider`. Omitting `paymentPurpose`/`amountMinor` would let a mid-flight price change silently replay a stale-priced session under the same idempotency key instead of failing safely.
+- [ ] The `Idempotency-Key` header takes precedence over the `idempotencyKey` body field only when the header is present AND non-empty after trimming — an empty/whitespace-only header must fall back to the body field, never silently discard it.

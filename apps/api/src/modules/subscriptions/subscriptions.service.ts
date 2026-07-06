@@ -226,6 +226,8 @@ export class SubscriptionsService {
         planId,
         currency,
         countryCode,
+        paymentPurpose,
+        amountMinor: pricing.amountCents,
         preferredProvider,
         idempotencyKey,
         ipAddress,
@@ -792,6 +794,8 @@ export class SubscriptionsService {
         planId,
         currency,
         countryCode,
+        paymentPurpose,
+        amountMinor: pricing.amountCents,
         provider: preferredProvider ?? null,
       });
     }
@@ -828,6 +832,18 @@ export class SubscriptionsService {
         if (winner.kind === 'blocked') {
           throw new ConflictException(winner.reason);
         }
+        // 'supersede' or 'none': the winning row satisfied the unique index but is not
+        // yet reusable — e.g. the winner's invoice insert committed but its transaction
+        // insert (a separate, non-atomic write) has not committed yet, or it was already
+        // superseded/completed by the time we re-read. Never leak the raw 23505 error to
+        // the caller — ask them to retry shortly instead (Sprint 16 audit fix).
+        this.logger.warn(
+          `[Checkout] Duplicate-invoice race resolved but winner not yet reusable (kind=${winner.kind}) ` +
+            `for user ${userId}/plan ${planId} — asking caller to retry`,
+        );
+        throw new ConflictException(
+          'A checkout session is already being created for this plan — please retry shortly',
+        );
       }
       throw err;
     }
@@ -878,11 +894,23 @@ export class SubscriptionsService {
     planId: string;
     currency: string;
     countryCode: string;
+    paymentPurpose: PaymentPurpose;
+    amountMinor: string;
     preferredProvider?: string;
     idempotencyKey: string;
     ipAddress?: string;
   }): Promise<CheckoutResult | null> {
-    const { userId, planId, currency, countryCode, preferredProvider, idempotencyKey, ipAddress } = params;
+    const {
+      userId,
+      planId,
+      currency,
+      countryCode,
+      paymentPurpose,
+      amountMinor,
+      preferredProvider,
+      idempotencyKey,
+      ipAddress,
+    } = params;
     const keyHash = this.hashIdempotencyKey(idempotencyKey);
 
     const existing = await this.invoiceRepo
@@ -894,11 +922,19 @@ export class SubscriptionsService {
 
     if (!existing) return null;
 
+    // The fingerprint binds the idempotency key to every parameter that affects what
+    // gets charged or which session is returned — plan, currency, country, purpose,
+    // amount (so a mid-flight price change is treated as "different parameters" and
+    // fails safely instead of silently replaying a stale-priced session), and the
+    // explicitly requested provider (Sprint 16 audit fix — amount/paymentPurpose were
+    // previously omitted).
     const expectedFingerprint = this.hashIdempotencyFingerprint({
       userId,
       planId,
       currency,
       countryCode,
+      paymentPurpose,
+      amountMinor,
       provider: preferredProvider ?? null,
     });
     const storedFingerprint = existing.metadata?.['idempotencyFingerprint'];
@@ -971,6 +1007,8 @@ export class SubscriptionsService {
     planId: string;
     currency: string;
     countryCode: string;
+    paymentPurpose: PaymentPurpose;
+    amountMinor: string;
     provider: string | null;
   }): string {
     const payload = JSON.stringify({
@@ -978,6 +1016,8 @@ export class SubscriptionsService {
       planId: params.planId,
       currency: params.currency,
       countryCode: params.countryCode,
+      paymentPurpose: params.paymentPurpose,
+      amountMinor: params.amountMinor,
       provider: params.provider ?? null,
     });
     return createHash('sha256').update(payload).digest('hex');

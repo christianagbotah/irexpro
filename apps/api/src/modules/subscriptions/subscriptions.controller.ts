@@ -83,7 +83,10 @@ export class SubscriptionsController {
       countryCode: dto.countryCode ?? 'US',
       provider: dto.provider,
       ipAddress: req.ip,
-      idempotencyKey: idempotencyKeyHeader ?? dto.idempotencyKey,
+      // Header takes precedence when present and non-empty; an empty/whitespace-only
+      // header (e.g. a proxy forwarding an unset header as '') must not silently
+      // shadow a valid body field (Sprint 16 audit fix).
+      idempotencyKey: idempotencyKeyHeader?.trim() || dto.idempotencyKey,
     });
   }
 

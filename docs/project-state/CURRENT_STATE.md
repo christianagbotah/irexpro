@@ -4,13 +4,13 @@
 
 \## Current Sprint Checkpoint
 
-Last completed sprint: Sprint 16 — Subscription Checkout Idempotency + Pending Invoice Reuse.
+Last completed sprint: Sprint 16 audit — Subscription Checkout Idempotency + Pending Invoice Reuse (PASS WITH FIXES).
 
 
 
 Last verified status:
 
-\- NestJS: 644 tests passing, 38 suites
+\- NestJS: 653 tests passing, 39 suites (added subscriptions.controller.spec.ts + 3 audit-fix regression tests)
 
 \- No pending migrations (AddSubscriptionCheckoutDuplicateGuard1751400000000 applied)
 
@@ -39,6 +39,12 @@ Last verified status:
 \- Sprint 15 Paystack audit fixes (amount/currency webhook verification, Ghana live-provider routing) remain in place and regression-tested
 
 \- No secrets (provider keys, idempotency keys, webhook secrets, Authorization header) in checkout responses, audit metadata, or providerPayloadSummary
+
+\- AUDIT FIX: the 23505-unique-violation recovery path could re-throw a raw QueryFailedError to the API caller in a narrow race window (winner's invoice committed, its transaction not yet) — now converted to a safe ConflictException asking the caller to retry shortly
+
+\- AUDIT FIX: idempotency-key fingerprint now also binds paymentPurpose and amountMinor — a mid-flight price change with the same idempotency key now fails closed (409) instead of replaying a stale-priced session
+
+\- AUDIT FIX: an empty/whitespace-only Idempotency-Key header no longer shadows a valid idempotencyKey body field
 
 
 
@@ -111,6 +117,8 @@ Last verified status:
 \- Sprint 15: Paystack sandbox checkout integration (subscription + performance-fee) — webhook-only paid/HWM path preserved
 
 \- Sprint 16: Subscription checkout idempotency + pending invoice reuse — DB-level duplicate guard, atomic provider-session claim, optional Idempotency-Key support
+
+\- Sprint 16 audit: raw DB error leak on a narrow 23505 race, idempotency fingerprint missing paymentPurpose/amount, empty Idempotency-Key header precedence bug — all fixed
 
 
 

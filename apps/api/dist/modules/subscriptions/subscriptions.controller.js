@@ -43,7 +43,7 @@ let SubscriptionsController = class SubscriptionsController {
             countryCode: dto.countryCode ?? 'US',
             provider: dto.provider,
             ipAddress: req.ip,
-            idempotencyKey: idempotencyKeyHeader ?? dto.idempotencyKey,
+            idempotencyKey: idempotencyKeyHeader?.trim() || dto.idempotencyKey,
         });
     }
     async cancelSubscription(dto, user, req) {

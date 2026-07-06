@@ -838,3 +838,32 @@ Critical rules (from DEVELOPMENT_RULES.md):
 - No secrets in checkout responses, audit metadata, or `providerPayloadSummary`
 - No Stripe/Flutterwave/Hubtel/PayPal/Wise/Braintree implementation work, no live broker withdrawals, no frontend/mobile work
 - One new migration (`AddSubscriptionCheckoutDuplicateGuard`), applied and verified
+
+## Sprint 16 Audit — Payment/Idempotency/Security Audit (PASS WITH FIXES)
+
+**Completed:** 2026-07-06
+
+A dedicated audit of the Sprint 16 checkout idempotency/reuse implementation found and
+fixed three real, narrow-scope bugs before Sprint 17 began:
+
+1. **Raw DB error leak on a narrow concurrency race** in `createInvoiceAndTransaction()`'s
+   23505 handler — a `'supersede'`/`'none'` outcome after losing the unique-index race
+   (invoice committed, its transaction not yet — two non-atomic inserts) fell through to
+   `throw err`, re-throwing the raw `QueryFailedError`. Fixed to always throw a safe
+   `ConflictException` instead.
+2. **Idempotency fingerprint missing `paymentPurpose`/`amountMinor`** — a mid-flight price
+   change combined with the same `Idempotency-Key` would have replayed a stale-priced
+   session instead of failing safely. Fixed by binding the fingerprint to `paymentPurpose`
+   and `amountMinor` in addition to the existing fields.
+3. **Empty `Idempotency-Key` header could shadow a valid body field** — `header ??
+   dto.idempotencyKey` let an empty-string header win. Fixed to trim and only prefer the
+   header when non-empty.
+
+Also added a previously-missing `subscriptions.controller.spec.ts` (header/body
+Idempotency-Key precedence was untested), plus new service-level tests for the
+price-change-with-idempotency-key and 23505-not-yet-reusable-winner scenarios, and a
+migration comment documenting PostgreSQL's NULL-uniqueness semantics for the partial
+index (informational — unreachable today since all identity fields are always
+non-null in the current checkout flow). See
+[docs/architecture/21-payment-provider-architecture.md §17.7](./docs/architecture/21-payment-provider-architecture.md)
+for full details. Final count: 648 tests, 39 suites, all passing.

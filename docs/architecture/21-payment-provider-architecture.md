@@ -784,7 +784,38 @@ actions are unchanged and still emitted for genuinely new invoices/sessions. All
 metadata on every audit entry excludes provider secrets, authorization headers, raw
 provider responses, card data, mobile money PINs, and tokens — unchanged invariant.
 
-### 17.7 What is unchanged (webhook-only activation)
+### 17.7 Sprint 16 audit fixes (2026-07-06)
+
+A post-implementation audit found and fixed three issues before Sprint 17 began:
+
+1. **Raw DB error leak on a narrow concurrency race** — `createInvoiceAndTransaction()`'s
+   23505-unique-violation handler re-read the winning invoice via `findReusableCheckout()`
+   and returned it, but only handled the `'reuse'` and `'blocked'` outcomes. Because the
+   invoice and its transaction are two separate, non-atomic inserts, a very narrow timing
+   window exists where the winner's invoice has committed but its transaction has not —
+   `findReusableCheckout()` then classifies it as `'supersede'` (its "data inconsistency
+   safety net"), which fell through to `throw err`, re-throwing the raw
+   `QueryFailedError` to the API layer. Fixed: `'supersede'`/`'none'` outcomes after a
+   23505 now throw a safe `ConflictException` ("please retry shortly") — the raw DB
+   error is never surfaced to a caller.
+2. **Idempotency fingerprint missing `paymentPurpose`/`amountMinor`** — the fingerprint
+   originally hashed only `userId`, `planId`, `currency`, `countryCode`, and `provider`.
+   A price change between the original request and a retry with the same idempotency
+   key would have silently replayed the stale-priced session instead of being treated
+   as "different parameters." Fixed: the fingerprint now also includes `paymentPurpose`
+   and `amountMinor`, so a mid-flight price change correctly fails closed with `409
+   Conflict` on replay instead of returning a stale-priced checkout.
+3. **Empty `Idempotency-Key` header could shadow a valid body field** — the controller
+   used `idempotencyKeyHeader ?? dto.idempotencyKey`, so an empty-string header (e.g.
+   from a proxy that always sets the header) would win over a real body-supplied key.
+   Fixed: the header is trimmed and only takes precedence when non-empty.
+
+None of these fixes change any externally-observable behavior for the success paths
+already covered by the Part I test suite — they only close narrow edge cases. New
+regression tests were added for all three (`subscriptions.service.spec.ts`,
+`subscriptions.controller.spec.ts`).
+
+### 17.8 What is unchanged (webhook-only activation)
 
 This sprint touches **only** checkout-time invoice/transaction creation. It does not
 change:

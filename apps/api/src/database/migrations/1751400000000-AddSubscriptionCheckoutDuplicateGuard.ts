@@ -36,6 +36,19 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * Safe for existing data: IF NOT EXISTS is idempotent, and the predicate only
  * matches rows created by the Sprint 16+ subscription checkout flow (which
  * always sets metadata.type = 'SUBSCRIPTION').
+ *
+ * Sprint 16 audit note — PostgreSQL NULL semantics: a multi-column unique index
+ * treats NULL as distinct from every other value (including another NULL), so
+ * this index would NOT catch two concurrent inserts that both had a NULL for
+ * one of the identity expressions (e.g. metadata->>'countryCode'). This is safe
+ * today because SubscriptionsService.initiateCheckout() always resolves and
+ * persists a non-null user_id, currency, planId, countryCode (defaults to 'US'
+ * at the controller), and paymentPurpose before creating an invoice — so none
+ * of the indexed expressions can be NULL for a subscription-checkout row in
+ * practice. If a future change ever allows one of these fields to be
+ * genuinely optional, this index alone would no longer be sufficient and the
+ * app-level `findReusableCheckout` + atomic-claim guards would become the
+ * sole protection for that field being NULL.
  */
 export class AddSubscriptionCheckoutDuplicateGuard1751400000000 implements MigrationInterface {
   name = 'AddSubscriptionCheckoutDuplicateGuard1751400000000';
