@@ -3,7 +3,7 @@ import { SubscriptionPlan } from './entities/subscription-plan.entity';
 import { PlanPricing } from './entities/plan-pricing.entity';
 import { UserSubscription } from './entities/user-subscription.entity';
 import { Invoice } from '../payments/entities/invoice.entity';
-import { PaymentTransaction } from '../payments/entities/payment-transaction.entity';
+import { PaymentTransaction, PaymentTransactionStatus } from '../payments/entities/payment-transaction.entity';
 import { AuditService } from '../audit/audit.service';
 import { PaymentRoutingService } from '../payments/services/payment-routing.service';
 export interface CheckoutRequest {
@@ -14,14 +14,25 @@ export interface CheckoutRequest {
     countryCode: string;
     provider?: string;
     ipAddress?: string;
+    idempotencyKey?: string;
+}
+export declare enum CheckoutReason {
+    NEW_CHECKOUT = "NEW_CHECKOUT",
+    REUSED_PENDING_CHECKOUT = "REUSED_PENDING_CHECKOUT",
+    PROVIDER_SESSION_REUSED = "PROVIDER_SESSION_REUSED",
+    IDEMPOTENCY_KEY_REPLAY = "IDEMPOTENCY_KEY_REPLAY"
 }
 export interface CheckoutResult {
     invoiceId: string;
     transactionId: string;
     provider: string;
+    providerTransactionReference?: string;
     checkoutUrl?: string;
     sessionId?: string;
     requiresRedirect: boolean;
+    status: PaymentTransactionStatus;
+    reused: boolean;
+    reason: CheckoutReason;
 }
 export declare class SubscriptionsService {
     private planRepo;
@@ -41,4 +52,15 @@ export declare class SubscriptionsService {
     cancelSubscription(userId: string, reason?: string, ipAddress?: string): Promise<UserSubscription>;
     manualActivate(userId: string, planId: string, activatedByAdminId: string, ipAddress?: string): Promise<UserSubscription>;
     activateSubscriptionFromPayment(userId: string, planId: string | null, provider: string, providerSubscriptionReference: string | null, periodStart: Date, periodEnd: Date): Promise<UserSubscription>;
+    private isSubscriptionCurrentlyValid;
+    private determinePaymentPurpose;
+    private hasActiveProviderSession;
+    private findReusableCheckout;
+    private supersedeInvoice;
+    private createInvoiceAndTransaction;
+    private handleIdempotencyKeyReplay;
+    private toCheckoutResult;
+    private isUniqueViolation;
+    private hashIdempotencyKey;
+    private hashIdempotencyFingerprint;
 }

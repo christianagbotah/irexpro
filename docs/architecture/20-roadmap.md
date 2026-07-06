@@ -185,6 +185,24 @@ Phase 5: Platform Expansion
 | No secrets in logs, responses, errors, or audit metadata | ✅ |
 | 60 new tests (provider, HTTP client, webhook, subscription + performance-fee checkout, routing) | ✅ |
 
+### Sprint 16: Subscription Checkout Idempotency + Pending Invoice Reuse ✅ Complete
+
+| Task | Status |
+|---|---|
+| `initiateCheckout` reuses an existing DRAFT/ISSUED invoice + PENDING/PROCESSING transaction for the same (userId, planId, currency, countryCode, paymentPurpose) instead of creating a duplicate | ✅ |
+| Active provider session (PROCESSING + providerTransactionReference) is returned as-is — no second provider session created | ✅ |
+| Active ACTIVE/TRIAL subscription, PAID invoice, or SUCCEEDED transaction blocks a new checkout | ✅ |
+| FAILED/CANCELLED/REFUNDED transactions supersede the stale invoice and allow a fresh checkout | ✅ |
+| Amount/currency/plan mismatch never reuses — a fresh invoice/transaction pair is created instead | ✅ |
+| DB-level partial unique index (`AddSubscriptionCheckoutDuplicateGuard` migration) backstops concurrent double-clicks; Postgres `23505` handled by re-fetching and reusing the winner | ✅ |
+| Atomic conditional claim (`PENDING`/`FAILED` → `PROCESSING`) before any provider call — prevents duplicate provider sessions on true concurrency | ✅ |
+| Optional `Idempotency-Key` header / `idempotencyKey` DTO field — SHA-256 hash of key + parameter fingerprint stored in existing `Invoice.metadata` (no schema change) | ✅ |
+| New audit actions `PAYMENT_CHECKOUT_REUSED` / `PAYMENT_CHECKOUT_PROVIDER_SESSION_REUSED` | ✅ |
+| Checkout response reports `reused`/`reason` — no secrets exposed | ✅ |
+| Applies uniformly to all providers (Stripe/Paystack/Flutterwave/Hubtel/PayPal/Wise) — no provider-specific changes needed | ✅ |
+| Webhook-only paid/activation invariant unchanged and regression-tested | ✅ |
+| 25 new tests (reuse, concurrency, idempotency key, Paystack-specific reuse) | ✅ |
+
 > Note: this is the actual, chronologically-next Sprint 15 (Paystack). The
 > "Sprint 15+"/"Sprint 15-16" entries below predate this sprint's numbering and
 > describe a separate, aspirational execution/revenue-engine roadmap track that

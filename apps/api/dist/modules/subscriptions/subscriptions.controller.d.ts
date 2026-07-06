@@ -8,7 +8,7 @@ export declare class SubscriptionsController {
     constructor(subscriptionsService: SubscriptionsService);
     getPlans(): Promise<import("./entities/subscription-plan.entity").SubscriptionPlan[]>;
     getMySubscription(user: User): Promise<import("./entities/user-subscription.entity").UserSubscription | null>;
-    checkout(dto: CheckoutDto, user: User, req: Request): Promise<import("./subscriptions.service").CheckoutResult>;
+    checkout(dto: CheckoutDto, user: User, req: Request, idempotencyKeyHeader?: string): Promise<import("./subscriptions.service").CheckoutResult>;
     cancelSubscription(dto: CancelSubscriptionDto, user: User, req: Request): Promise<import("./entities/user-subscription.entity").UserSubscription>;
     manualActivate(dto: ManualActivateDto, admin: User, req: Request): Promise<import("./entities/user-subscription.entity").UserSubscription>;
 }

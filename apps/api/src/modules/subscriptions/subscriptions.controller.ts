@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Post,
@@ -58,16 +59,21 @@ export class SubscriptionsController {
     summary: 'Initiate subscription checkout',
     description:
       'Creates a pending invoice and payment transaction, then returns a checkout URL or session ' +
-      'reference. Subscription is activated ONLY after verified provider webhook — never on ' +
-      'frontend callback alone.',
+      'reference. If an identical checkout is already pending, the existing invoice/transaction/ ' +
+      'session is safely reused instead of creating a duplicate. Subscription is activated ONLY ' +
+      'after verified provider webhook — never on frontend callback alone. Optionally accepts an ' +
+      '`Idempotency-Key` header (or `idempotencyKey` body field) so repeated requests with the ' +
+      'same key and parameters return the same result.',
   })
-  @ApiResponse({ status: 201, description: 'Checkout session created' })
+  @ApiResponse({ status: 201, description: 'Checkout session created or safely reused' })
   @ApiResponse({ status: 400, description: 'Invalid plan, pricing, or provider' })
   @ApiResponse({ status: 404, description: 'Plan not found' })
+  @ApiResponse({ status: 409, description: 'Active subscription/paid invoice/idempotency conflict' })
   async checkout(
     @Body() dto: CheckoutDto,
     @CurrentUser() user: User,
     @Req() req: Request,
+    @Headers('idempotency-key') idempotencyKeyHeader?: string,
   ) {
     return this.subscriptionsService.initiateCheckout({
       userId: user.id,
@@ -77,6 +83,7 @@ export class SubscriptionsController {
       countryCode: dto.countryCode ?? 'US',
       provider: dto.provider,
       ipAddress: req.ip,
+      idempotencyKey: idempotencyKeyHeader ?? dto.idempotencyKey,
     });
   }
 

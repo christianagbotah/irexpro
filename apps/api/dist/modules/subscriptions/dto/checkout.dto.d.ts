@@ -3,6 +3,7 @@ export declare class CheckoutDto {
     currency: string;
     provider?: string;
     countryCode?: string;
+    idempotencyKey?: string;
 }
 export declare class CancelSubscriptionDto {
     reason?: string;

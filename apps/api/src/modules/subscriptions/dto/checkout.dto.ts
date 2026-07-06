@@ -23,6 +23,17 @@ export class CheckoutDto {
   @IsString()
   @Length(2, 2)
   countryCode?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Optional client idempotency key. Reusing the same key with the same user and checkout ' +
+      'parameters returns the original checkout instead of creating a new one. Prefer the ' +
+      '`Idempotency-Key` request header instead of this field when possible.',
+  })
+  @IsOptional()
+  @IsString()
+  @Length(1, 200)
+  idempotencyKey?: string;
 }
 
 export class CancelSubscriptionDto {

@@ -1,6 +1,6 @@
 # iRexPro — Implementation Roadmap
 
-## Current Phase: Phase 1 Sprint 15 Complete — Paystack Sandbox Checkout Integration
+## Current Phase: Phase 1 Sprint 16 Complete — Subscription Checkout Idempotency + Pending Invoice Reuse
 
 ---
 
@@ -793,3 +793,48 @@ Critical rules (from DEVELOPMENT_RULES.md):
 - Provider fails closed when disabled or unconfigured; `manual` provider still never reachable via public checkout/webhook
 - No live broker withdrawals, no auto-charge, no Stripe/Flutterwave/Hubtel changes, no frontend/mobile work
 - No new migrations (reuses existing `payments` schema)
+
+## Sprint 16 — Subscription Checkout Idempotency + Pending Invoice Reuse
+
+**Completed:** 2026-07-06
+
+### What was built
+
+**PART B — Checkout reuse rules**
+- `SubscriptionsService.initiateCheckout()` rewritten: looks up an existing `DRAFT`/`ISSUED` invoice + `PENDING`/`PROCESSING` transaction for the same `(userId, planId, currency, countryCode, paymentPurpose)` identity and reuses it instead of creating a new pair
+- An `ACTIVE`/`TRIAL` subscription still within its current period blocks checkout (`409`) before any invoice/transaction is touched
+- A `PAID` invoice/`SUCCEEDED` transaction blocks checkout; an amount/currency/plan mismatch never reuses (fresh invoice/transaction created instead)
+- `FAILED`/`CANCELLED`/`REFUNDED` transactions supersede (cancel) the stale invoice and allow a fresh checkout attempt
+- A provider mismatch with an existing real `providerTransactionReference` is rejected safely (`409`); provider switching is only allowed when no session reference exists yet
+
+**PART C — Optional idempotency key**
+- Optional `Idempotency-Key` header (or `idempotencyKey` in `CheckoutDto`) — no schema change: a SHA-256 hash of the key plus a SHA-256 fingerprint of the checkout parameters are stored in the existing `Invoice.metadata` JSONB column
+- Same key + same parameters replays the exact same result; same key + different parameters fails with `409 Conflict`
+
+**PART D — Atomicity / race safety**
+- New migration `AddSubscriptionCheckoutDuplicateGuard` (`1751400000000`): partial unique index on `payments.invoices` covering `user_id`, `currency`, `metadata->>'planId'`, `metadata->>'countryCode'`, `metadata->>'paymentPurpose'`, scoped to `status IN ('DRAFT','ISSUED')` and `metadata->>'type' = 'SUBSCRIPTION'`
+- Postgres `23505 unique_violation` on invoice creation is caught and resolved by re-fetching and reusing the winning invoice/transaction
+- Atomic conditional claim (`UPDATE ... WHERE status IN ('PENDING','FAILED') SET status = 'PROCESSING'`) immediately before any provider call — prevents two concurrent requests from both creating a provider session for the same transaction; a lost claim returns the winner's session or a safe retry response
+
+**PART E — Provider session reuse**
+- An existing `PROCESSING` transaction with an active `providerTransactionReference` + `checkoutUrl`/`sessionId` is returned as-is — `provider.createCheckoutSession()` is never called twice for the same transaction
+- Provider call failure reverts the transaction to `PENDING` (not `FAILED`) so it is retryable without creating a duplicate invoice; never activates a subscription
+
+**PART G — API response**
+- `CheckoutResult` now includes `reused: boolean` and `reason: 'NEW_CHECKOUT' | 'REUSED_PENDING_CHECKOUT' | 'PROVIDER_SESSION_REUSED' | 'IDEMPOTENCY_KEY_REPLAY'` alongside the existing safe fields — no secrets added
+
+**PART H — Audit actions**
+- New: `PAYMENT_CHECKOUT_REUSED`, `PAYMENT_CHECKOUT_PROVIDER_SESSION_REUSED`
+- All audit metadata (existing and new) remains free of provider secrets, authorization headers, raw provider responses, card data, PINs, and tokens
+
+**PART I — Tests**
+- Rewrote `subscriptions.service.spec.ts` and `subscriptions.service.paystack.spec.ts` with full `createQueryBuilder`-aware repository mocks
+- New coverage: reuse (new/existing/active-session/failed-superseded/mismatches), concurrency (`23505` handling, atomic-claim races), idempotency key replay + parameter-mismatch rejection, provider-mismatch rejection, and Paystack-specific reuse (no duplicate HTTP calls to Paystack)
+
+### Safety invariants (enforced, never violated)
+- Checkout NEVER activates a subscription, marks an invoice `PAID`, or marks a transaction `SUCCEEDED` — only a verified webhook does (unchanged, regression-tested)
+- Frontend checkout success is never trusted; no auto-charge
+- Reuse/idempotency logic lives entirely in `SubscriptionsService` (provider-agnostic) — no provider-specific code changes; applies identically to Stripe/Paystack/Flutterwave/Hubtel/PayPal/Wise
+- No secrets in checkout responses, audit metadata, or `providerPayloadSummary`
+- No Stripe/Flutterwave/Hubtel/PayPal/Wise/Braintree implementation work, no live broker withdrawals, no frontend/mobile work
+- One new migration (`AddSubscriptionCheckoutDuplicateGuard`), applied and verified

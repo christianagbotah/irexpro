@@ -34,7 +34,7 @@ let SubscriptionsController = class SubscriptionsController {
     async getMySubscription(user) {
         return this.subscriptionsService.findUserSubscription(user.id);
     }
-    async checkout(dto, user, req) {
+    async checkout(dto, user, req, idempotencyKeyHeader) {
         return this.subscriptionsService.initiateCheckout({
             userId: user.id,
             email: user.email,
@@ -43,6 +43,7 @@ let SubscriptionsController = class SubscriptionsController {
             countryCode: dto.countryCode ?? 'US',
             provider: dto.provider,
             ipAddress: req.ip,
+            idempotencyKey: idempotencyKeyHeader ?? dto.idempotencyKey,
         });
     }
     async cancelSubscription(dto, user, req) {
@@ -74,18 +75,23 @@ __decorate([
     (0, swagger_1.ApiOperation)({
         summary: 'Initiate subscription checkout',
         description: 'Creates a pending invoice and payment transaction, then returns a checkout URL or session ' +
-            'reference. Subscription is activated ONLY after verified provider webhook — never on ' +
-            'frontend callback alone.',
+            'reference. If an identical checkout is already pending, the existing invoice/transaction/ ' +
+            'session is safely reused instead of creating a duplicate. Subscription is activated ONLY ' +
+            'after verified provider webhook — never on frontend callback alone. Optionally accepts an ' +
+            '`Idempotency-Key` header (or `idempotencyKey` body field) so repeated requests with the ' +
+            'same key and parameters return the same result.',
     }),
-    (0, swagger_1.ApiResponse)({ status: 201, description: 'Checkout session created' }),
+    (0, swagger_1.ApiResponse)({ status: 201, description: 'Checkout session created or safely reused' }),
     (0, swagger_1.ApiResponse)({ status: 400, description: 'Invalid plan, pricing, or provider' }),
     (0, swagger_1.ApiResponse)({ status: 404, description: 'Plan not found' }),
+    (0, swagger_1.ApiResponse)({ status: 409, description: 'Active subscription/paid invoice/idempotency conflict' }),
     __param(0, (0, common_1.Body)()),
     __param(1, (0, current_user_decorator_1.CurrentUser)()),
     __param(2, (0, common_1.Req)()),
+    __param(3, (0, common_1.Headers)('idempotency-key')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [checkout_dto_1.CheckoutDto,
-        user_entity_1.User, Object]),
+        user_entity_1.User, Object, String]),
     __metadata("design:returntype", Promise)
 ], SubscriptionsController.prototype, "checkout", null);
 __decorate([

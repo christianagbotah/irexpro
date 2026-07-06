@@ -310,6 +310,25 @@ no business-logic changes were required in either service. See
 [docs/architecture/21-payment-provider-architecture.md](./docs/architecture/21-payment-provider-architecture.md)
 for the full design and safety invariants.
 
+### Subscription Checkout Idempotency + Pending Invoice Reuse (Sprint 16)
+
+| Component | Location | Status |
+|---|---|---|
+| `initiateCheckout` reuse/idempotency rewrite | `subscriptions/subscriptions.service.ts` | ✅ Sprint 16 |
+| `idempotencyKey` DTO field + `Idempotency-Key` header support | `subscriptions/dto/checkout.dto.ts`, `subscriptions.controller.ts` | ✅ Sprint 16 |
+| Audit actions `PAYMENT_CHECKOUT_REUSED`/`PAYMENT_CHECKOUT_PROVIDER_SESSION_REUSED` | `common/enums/audit-action.enum.ts` | ✅ Sprint 16 |
+| Migration `1751400000000-AddSubscriptionCheckoutDuplicateGuard` (partial unique index on `payments.invoices`) | `database/migrations/` | ✅ Sprint 16 |
+
+A repeated checkout for the same `(userId, planId, currency, countryCode,
+paymentPurpose)` now reuses the existing pending invoice/transaction (or active
+provider session) instead of creating a duplicate. A DB-level partial unique index
+backstops true concurrency, with app-level `23505` handling and an atomic
+conditional claim (`PENDING`/`FAILED` → `PROCESSING`) before any provider call.
+Applies identically to every provider — no provider-specific changes. Checkout still
+never activates a subscription or marks anything paid; only a verified webhook does.
+See [docs/architecture/21-payment-provider-architecture.md §17](./docs/architecture/21-payment-provider-architecture.md)
+for the full design.
+
 ---
 
 ## Decimal Arithmetic Policy

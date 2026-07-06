@@ -13,10 +13,11 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 };
 var SubscriptionsService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SubscriptionsService = void 0;
+exports.SubscriptionsService = exports.CheckoutReason = void 0;
 const common_1 = require("@nestjs/common");
 const typeorm_1 = require("@nestjs/typeorm");
 const typeorm_2 = require("typeorm");
+const crypto_1 = require("crypto");
 const subscription_plan_entity_1 = require("./entities/subscription-plan.entity");
 const plan_pricing_entity_1 = require("./entities/plan-pricing.entity");
 const user_subscription_entity_1 = require("./entities/user-subscription.entity");
@@ -26,6 +27,26 @@ const audit_service_1 = require("../audit/audit.service");
 const audit_action_enum_1 = require("../../common/enums/audit-action.enum");
 const audit_log_entity_1 = require("../audit/entities/audit-log.entity");
 const payment_routing_service_1 = require("../payments/services/payment-routing.service");
+var CheckoutReason;
+(function (CheckoutReason) {
+    CheckoutReason["NEW_CHECKOUT"] = "NEW_CHECKOUT";
+    CheckoutReason["REUSED_PENDING_CHECKOUT"] = "REUSED_PENDING_CHECKOUT";
+    CheckoutReason["PROVIDER_SESSION_REUSED"] = "PROVIDER_SESSION_REUSED";
+    CheckoutReason["IDEMPOTENCY_KEY_REPLAY"] = "IDEMPOTENCY_KEY_REPLAY";
+})(CheckoutReason || (exports.CheckoutReason = CheckoutReason = {}));
+const PENDING_INVOICE_STATUSES = new Set([
+    invoice_entity_1.InvoiceStatus.DRAFT,
+    invoice_entity_1.InvoiceStatus.ISSUED,
+]);
+const REUSABLE_TRANSACTION_STATUSES = new Set([
+    payment_transaction_entity_1.PaymentTransactionStatus.PENDING,
+    payment_transaction_entity_1.PaymentTransactionStatus.PROCESSING,
+]);
+const SUPERSEDABLE_TRANSACTION_STATUSES = new Set([
+    payment_transaction_entity_1.PaymentTransactionStatus.FAILED,
+    payment_transaction_entity_1.PaymentTransactionStatus.CANCELLED,
+    payment_transaction_entity_1.PaymentTransactionStatus.REFUNDED,
+]);
 let SubscriptionsService = SubscriptionsService_1 = class SubscriptionsService {
     constructor(planRepo, pricingRepo, subscriptionRepo, invoiceRepo, transactionRepo, auditService, paymentRoutingService) {
         this.planRepo = planRepo;
@@ -74,7 +95,9 @@ let SubscriptionsService = SubscriptionsService_1 = class SubscriptionsService {
         return false;
     }
     async initiateCheckout(request) {
-        const { userId, email, planId, currency, countryCode, provider: preferredProvider, ipAddress } = request;
+        const { userId, email, planId, provider: preferredProvider, ipAddress, idempotencyKey } = request;
+        const currency = request.currency.toUpperCase();
+        const countryCode = request.countryCode.toUpperCase();
         const plan = await this.planRepo.findOne({ where: { id: planId, isActive: true } });
         if (!plan)
             throw new common_1.NotFoundException('Subscription plan not found or not active');
@@ -89,50 +112,117 @@ let SubscriptionsService = SubscriptionsService_1 = class SubscriptionsService {
         if (!pricing) {
             throw new common_1.BadRequestException(`No pricing available for plan ${planId} with currency ${currency} in ${countryCode}`);
         }
-        const { provider, reason: routingReason } = await this.paymentRoutingService.routeForCheckout(countryCode, currency, preferredProvider);
-        this.logger.log(`[Checkout] User ${userId}: plan=${planId}, provider=${provider.providerId}, reason=${routingReason}`);
-        const invoiceNumber = `INV-${Date.now()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
-        const invoice = this.invoiceRepo.create({
-            userId,
-            subscriptionId: null,
-            invoiceNumber,
-            status: invoice_entity_1.InvoiceStatus.DRAFT,
-            currency,
-            subtotalAmount: pricing.amountCents,
-            taxAmount: '0',
-            totalAmount: pricing.amountCents,
-            dueDate: null,
-            metadata: { planId, planName: plan.name, countryCode, routingReason },
+        const existingSubscription = await this.subscriptionRepo.findOne({
+            where: { userId },
+            order: { createdAt: 'DESC' },
         });
-        const savedInvoice = await this.invoiceRepo.save(invoice);
-        await this.auditService.log({
-            actorUserId: userId,
-            actorType: 'USER',
-            action: audit_action_enum_1.AuditAction.INVOICE_CREATED,
-            resourceType: 'Invoice',
-            resourceId: savedInvoice.id,
-            ipAddress,
-            metadata: {
+        if (existingSubscription?.subscriptionPlanId === planId &&
+            this.isSubscriptionCurrentlyValid(existingSubscription)) {
+            throw new common_1.ConflictException('You already have an active subscription for this plan — no new checkout is needed');
+        }
+        const paymentPurpose = this.determinePaymentPurpose(existingSubscription);
+        if (idempotencyKey) {
+            const replay = await this.handleIdempotencyKeyReplay({
+                userId,
                 planId,
                 currency,
                 countryCode,
-                invoiceNumber,
-                totalAmount: pricing.amountCents,
-            },
-            severity: audit_log_entity_1.AuditSeverity.INFO,
-        });
-        const transaction = this.transactionRepo.create({
-            userId,
-            subscriptionId: null,
-            invoiceId: savedInvoice.id,
-            provider: provider.providerId,
-            paymentPurpose: payment_transaction_entity_1.PaymentPurpose.SUBSCRIPTION_INITIAL,
-            status: payment_transaction_entity_1.PaymentTransactionStatus.PENDING,
-            currency,
-            amountMinor: pricing.amountCents,
-            countryCode,
-        });
-        const savedTx = await this.transactionRepo.save(transaction);
+                preferredProvider,
+                idempotencyKey,
+                ipAddress,
+            });
+            if (replay)
+                return replay;
+        }
+        let lookup = await this.findReusableCheckout(userId, planId, currency, countryCode, paymentPurpose);
+        if (lookup.kind === 'blocked') {
+            throw new common_1.ConflictException(lookup.reason);
+        }
+        if (lookup.kind === 'reuse' && lookup.invoice.totalAmount !== pricing.amountCents) {
+            this.logger.warn(`[Checkout] Pending invoice ${lookup.invoice.id} amount ${lookup.invoice.totalAmount} no longer ` +
+                `matches current price ${pricing.amountCents} — not reusing, creating a fresh checkout`);
+            lookup = { kind: 'none' };
+        }
+        if (lookup.kind === 'reuse' && this.hasActiveProviderSession(lookup.transaction)) {
+            if (preferredProvider && preferredProvider !== lookup.transaction.provider) {
+                throw new common_1.ConflictException(`A checkout session is already in progress with ${lookup.transaction.provider}; ` +
+                    `cannot switch to ${preferredProvider} while it is active`);
+            }
+            await this.auditService.log({
+                actorUserId: userId,
+                actorType: 'USER',
+                action: audit_action_enum_1.AuditAction.PAYMENT_CHECKOUT_PROVIDER_SESSION_REUSED,
+                resourceType: 'PaymentTransaction',
+                resourceId: lookup.transaction.id,
+                ipAddress,
+                metadata: {
+                    planId,
+                    currency,
+                    countryCode,
+                    provider: lookup.transaction.provider,
+                    invoiceId: lookup.invoice.id,
+                },
+                severity: audit_log_entity_1.AuditSeverity.INFO,
+            });
+            this.logger.log(`[Checkout] Reusing active ${lookup.transaction.provider} session: tx=${lookup.transaction.id}`);
+            return this.toCheckoutResult(lookup.invoice, lookup.transaction, true, CheckoutReason.PROVIDER_SESSION_REUSED);
+        }
+        if (lookup.kind === 'reuse' &&
+            preferredProvider &&
+            lookup.transaction.provider !== 'manual' &&
+            lookup.transaction.provider !== preferredProvider &&
+            lookup.transaction.providerTransactionReference) {
+            throw new common_1.ConflictException(`A checkout is already in progress with ${lookup.transaction.provider}; cannot switch provider ` +
+                'while a provider session reference exists');
+        }
+        const providerHint = preferredProvider ??
+            (lookup.kind === 'reuse' && lookup.transaction.provider !== 'manual'
+                ? lookup.transaction.provider
+                : undefined);
+        const { provider, reason: routingReason } = await this.paymentRoutingService.routeForCheckout(countryCode, currency, providerHint);
+        this.logger.log(`[Checkout] User ${userId}: plan=${planId}, provider=${provider.providerId}, reason=${routingReason}`);
+        let invoice;
+        let transaction;
+        let isNewPair;
+        if (lookup.kind === 'reuse') {
+            invoice = lookup.invoice;
+            transaction = lookup.transaction;
+            isNewPair = false;
+        }
+        else {
+            if (lookup.kind === 'supersede') {
+                await this.supersedeInvoice(lookup.invoice, ipAddress);
+            }
+            const created = await this.createInvoiceAndTransaction({
+                userId,
+                planId,
+                plan,
+                pricing,
+                currency,
+                countryCode,
+                paymentPurpose,
+                provider: provider.providerId,
+                ipAddress,
+                idempotencyKey,
+                preferredProvider,
+            });
+            invoice = created.invoice;
+            transaction = created.transaction;
+            isNewPair = created.isNewPair;
+        }
+        const claim = await this.transactionRepo.update({
+            id: transaction.id,
+            status: (0, typeorm_2.In)([payment_transaction_entity_1.PaymentTransactionStatus.PENDING, payment_transaction_entity_1.PaymentTransactionStatus.FAILED]),
+        }, { status: payment_transaction_entity_1.PaymentTransactionStatus.PROCESSING, provider: provider.providerId });
+        if (!claim.affected) {
+            const current = await this.transactionRepo.findOne({ where: { id: transaction.id } });
+            if (current && this.hasActiveProviderSession(current)) {
+                return this.toCheckoutResult(invoice, current, true, CheckoutReason.PROVIDER_SESSION_REUSED);
+            }
+            throw new common_1.ConflictException('A checkout session is already being created for this plan — please retry shortly');
+        }
+        transaction.status = payment_transaction_entity_1.PaymentTransactionStatus.PROCESSING;
+        transaction.provider = provider.providerId;
         const sessionRequest = {
             userId,
             email,
@@ -140,10 +230,10 @@ let SubscriptionsService = SubscriptionsService_1 = class SubscriptionsService {
             currency,
             amountMinor: Number(pricing.amountCents),
             countryCode,
-            invoiceId: savedInvoice.id,
+            invoiceId: invoice.id,
             metadata: {
-                transactionId: savedTx.id,
-                invoiceId: savedInvoice.id,
+                transactionId: transaction.id,
+                invoiceId: invoice.id,
                 planId,
             },
         };
@@ -152,8 +242,8 @@ let SubscriptionsService = SubscriptionsService_1 = class SubscriptionsService {
             sessionResult = await provider.createCheckoutSession(sessionRequest);
         }
         catch (err) {
-            await this.transactionRepo.update(savedTx.id, {
-                status: payment_transaction_entity_1.PaymentTransactionStatus.FAILED,
+            await this.transactionRepo.update(transaction.id, {
+                status: payment_transaction_entity_1.PaymentTransactionStatus.PENDING,
                 failureMessage: 'Checkout session creation failed',
             });
             await this.auditService.log({
@@ -161,7 +251,7 @@ let SubscriptionsService = SubscriptionsService_1 = class SubscriptionsService {
                 actorType: 'USER',
                 action: audit_action_enum_1.AuditAction.PAYMENT_CHECKOUT_FAILED,
                 resourceType: 'PaymentTransaction',
-                resourceId: savedTx.id,
+                resourceId: transaction.id,
                 ipAddress,
                 metadata: { planId, currency, countryCode, provider: provider.providerId },
                 severity: audit_log_entity_1.AuditSeverity.WARNING,
@@ -169,16 +259,16 @@ let SubscriptionsService = SubscriptionsService_1 = class SubscriptionsService {
             const message = err instanceof Error ? err.message : 'Checkout unavailable';
             throw new common_1.BadRequestException(`Payment checkout failed: ${message}`);
         }
-        await this.transactionRepo.update(savedTx.id, {
+        await this.transactionRepo.update(transaction.id, {
             providerTransactionReference: sessionResult.providerTransactionReference ?? sessionResult.sessionId,
-            providerPayloadSummary: { sessionId: sessionResult.sessionId, provider: provider.providerId, planId },
+            providerPayloadSummary: { sessionId: sessionResult.sessionId, checkoutUrl: sessionResult.checkoutUrl, provider: provider.providerId, planId },
         });
         await this.auditService.log({
             actorUserId: userId,
             actorType: 'USER',
-            action: audit_action_enum_1.AuditAction.PAYMENT_CHECKOUT_INITIATED,
+            action: isNewPair ? audit_action_enum_1.AuditAction.PAYMENT_CHECKOUT_INITIATED : audit_action_enum_1.AuditAction.PAYMENT_CHECKOUT_REUSED,
             resourceType: 'PaymentTransaction',
-            resourceId: savedTx.id,
+            resourceId: transaction.id,
             ipAddress,
             metadata: {
                 planId,
@@ -186,20 +276,25 @@ let SubscriptionsService = SubscriptionsService_1 = class SubscriptionsService {
                 currency,
                 countryCode,
                 provider: provider.providerId,
-                invoiceId: savedInvoice.id,
+                invoiceId: invoice.id,
                 amountMinor: pricing.amountCents,
                 routingReason,
+                reused: !isNewPair,
             },
             severity: audit_log_entity_1.AuditSeverity.INFO,
         });
-        this.logger.log(`[Checkout] Session created: tx=${savedTx.id}, invoice=${savedInvoice.id}, provider=${provider.providerId}`);
+        this.logger.log(`[Checkout] Session created: tx=${transaction.id}, invoice=${invoice.id}, provider=${provider.providerId}, reused=${!isNewPair}`);
         return {
-            invoiceId: savedInvoice.id,
-            transactionId: savedTx.id,
+            invoiceId: invoice.id,
+            transactionId: transaction.id,
             provider: provider.providerId,
+            providerTransactionReference: sessionResult.providerTransactionReference ?? sessionResult.sessionId,
             checkoutUrl: sessionResult.checkoutUrl,
             sessionId: sessionResult.sessionId,
             requiresRedirect: !!sessionResult.checkoutUrl,
+            status: payment_transaction_entity_1.PaymentTransactionStatus.PROCESSING,
+            reused: !isNewPair,
+            reason: isNewPair ? CheckoutReason.NEW_CHECKOUT : CheckoutReason.REUSED_PENDING_CHECKOUT,
         };
     }
     async cancelSubscription(userId, reason, ipAddress) {
@@ -323,6 +418,232 @@ let SubscriptionsService = SubscriptionsService_1 = class SubscriptionsService {
             });
         }
         return this.subscriptionRepo.save(subscription);
+    }
+    isSubscriptionCurrentlyValid(subscription) {
+        const now = new Date();
+        if (subscription.status === user_subscription_entity_1.SubscriptionStatus.ACTIVE) {
+            return subscription.currentPeriodEnd != null && now < subscription.currentPeriodEnd;
+        }
+        if (subscription.status === user_subscription_entity_1.SubscriptionStatus.TRIAL) {
+            return subscription.trialEndsAt != null && now < subscription.trialEndsAt;
+        }
+        return false;
+    }
+    determinePaymentPurpose(existingSubscription) {
+        if (!existingSubscription || existingSubscription.status === user_subscription_entity_1.SubscriptionStatus.TRIAL) {
+            return payment_transaction_entity_1.PaymentPurpose.SUBSCRIPTION_INITIAL;
+        }
+        return payment_transaction_entity_1.PaymentPurpose.SUBSCRIPTION_RENEWAL;
+    }
+    hasActiveProviderSession(transaction) {
+        return (transaction.status === payment_transaction_entity_1.PaymentTransactionStatus.PROCESSING &&
+            transaction.provider !== 'manual' &&
+            !!transaction.providerTransactionReference);
+    }
+    async findReusableCheckout(userId, planId, currency, countryCode, paymentPurpose) {
+        const invoice = await this.invoiceRepo
+            .createQueryBuilder('i')
+            .where('i.user_id = :userId', { userId })
+            .andWhere('i.currency = :currency', { currency })
+            .andWhere("i.metadata->>'planId' = :planId", { planId })
+            .andWhere("i.metadata->>'countryCode' = :countryCode", { countryCode })
+            .andWhere("i.metadata->>'type' = :type", { type: 'SUBSCRIPTION' })
+            .andWhere("i.metadata->>'paymentPurpose' = :paymentPurpose", { paymentPurpose })
+            .orderBy('i.created_at', 'DESC')
+            .getOne();
+        if (!invoice)
+            return { kind: 'none' };
+        if (invoice.status === invoice_entity_1.InvoiceStatus.PAID) {
+            return { kind: 'blocked', reason: 'This subscription checkout has already been paid' };
+        }
+        if (!PENDING_INVOICE_STATUSES.has(invoice.status)) {
+            return { kind: 'none' };
+        }
+        const transaction = await this.transactionRepo.findOne({
+            where: { invoiceId: invoice.id },
+            order: { createdAt: 'DESC' },
+        });
+        if (!transaction) {
+            return { kind: 'supersede', invoice };
+        }
+        if (transaction.status === payment_transaction_entity_1.PaymentTransactionStatus.SUCCEEDED) {
+            return { kind: 'blocked', reason: 'This subscription checkout has already been paid' };
+        }
+        if (REUSABLE_TRANSACTION_STATUSES.has(transaction.status)) {
+            return { kind: 'reuse', invoice, transaction };
+        }
+        if (SUPERSEDABLE_TRANSACTION_STATUSES.has(transaction.status)) {
+            return { kind: 'supersede', invoice };
+        }
+        return { kind: 'none' };
+    }
+    async supersedeInvoice(invoice, ipAddress) {
+        await this.invoiceRepo.update(invoice.id, {
+            status: invoice_entity_1.InvoiceStatus.CANCELLED,
+            metadata: {
+                ...(invoice.metadata ?? {}),
+                supersededAt: new Date().toISOString(),
+                supersededReason: 'Previous payment attempt failed/cancelled — replaced by a new checkout',
+            },
+        });
+        this.logger.log(`[Checkout] Superseded stale invoice ${invoice.id} (previous attempt did not complete)`);
+        void ipAddress;
+    }
+    async createInvoiceAndTransaction(params) {
+        const { userId, planId, plan, pricing, currency, countryCode, paymentPurpose, provider, ipAddress, idempotencyKey, preferredProvider, } = params;
+        const invoiceNumber = `INV-${Date.now()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+        const metadata = {
+            type: 'SUBSCRIPTION',
+            planId,
+            planName: plan.name,
+            countryCode,
+            paymentPurpose,
+        };
+        if (idempotencyKey) {
+            metadata.idempotencyKeyHash = this.hashIdempotencyKey(idempotencyKey);
+            metadata.idempotencyFingerprint = this.hashIdempotencyFingerprint({
+                userId,
+                planId,
+                currency,
+                countryCode,
+                provider: preferredProvider ?? null,
+            });
+        }
+        const invoiceEntity = this.invoiceRepo.create({
+            userId,
+            subscriptionId: null,
+            invoiceNumber,
+            status: invoice_entity_1.InvoiceStatus.DRAFT,
+            currency,
+            subtotalAmount: pricing.amountCents,
+            taxAmount: '0',
+            totalAmount: pricing.amountCents,
+            dueDate: null,
+            metadata,
+        });
+        let savedInvoice;
+        try {
+            savedInvoice = await this.invoiceRepo.save(invoiceEntity);
+        }
+        catch (err) {
+            if (this.isUniqueViolation(err)) {
+                this.logger.log(`[Checkout] Lost duplicate-invoice race for user ${userId}/plan ${planId} — reusing winner`);
+                const winner = await this.findReusableCheckout(userId, planId, currency, countryCode, paymentPurpose);
+                if (winner.kind === 'reuse') {
+                    return { invoice: winner.invoice, transaction: winner.transaction, isNewPair: false };
+                }
+                if (winner.kind === 'blocked') {
+                    throw new common_1.ConflictException(winner.reason);
+                }
+            }
+            throw err;
+        }
+        await this.auditService.log({
+            actorUserId: userId,
+            actorType: 'USER',
+            action: audit_action_enum_1.AuditAction.INVOICE_CREATED,
+            resourceType: 'Invoice',
+            resourceId: savedInvoice.id,
+            ipAddress,
+            metadata: {
+                planId,
+                currency,
+                countryCode,
+                invoiceNumber,
+                totalAmount: pricing.amountCents,
+            },
+            severity: audit_log_entity_1.AuditSeverity.INFO,
+        });
+        const transactionEntity = this.transactionRepo.create({
+            userId,
+            subscriptionId: null,
+            invoiceId: savedInvoice.id,
+            provider,
+            paymentPurpose,
+            status: payment_transaction_entity_1.PaymentTransactionStatus.PENDING,
+            currency,
+            amountMinor: pricing.amountCents,
+            countryCode,
+        });
+        const savedTx = await this.transactionRepo.save(transactionEntity);
+        return { invoice: savedInvoice, transaction: savedTx, isNewPair: true };
+    }
+    async handleIdempotencyKeyReplay(params) {
+        const { userId, planId, currency, countryCode, preferredProvider, idempotencyKey, ipAddress } = params;
+        const keyHash = this.hashIdempotencyKey(idempotencyKey);
+        const existing = await this.invoiceRepo
+            .createQueryBuilder('i')
+            .where('i.user_id = :userId', { userId })
+            .andWhere("i.metadata->>'idempotencyKeyHash' = :keyHash", { keyHash })
+            .orderBy('i.created_at', 'DESC')
+            .getOne();
+        if (!existing)
+            return null;
+        const expectedFingerprint = this.hashIdempotencyFingerprint({
+            userId,
+            planId,
+            currency,
+            countryCode,
+            provider: preferredProvider ?? null,
+        });
+        const storedFingerprint = existing.metadata?.['idempotencyFingerprint'];
+        if (storedFingerprint !== expectedFingerprint) {
+            throw new common_1.ConflictException('This Idempotency-Key was already used with different checkout parameters');
+        }
+        const transaction = await this.transactionRepo.findOne({
+            where: { invoiceId: existing.id },
+            order: { createdAt: 'DESC' },
+        });
+        if (!transaction)
+            return null;
+        await this.auditService.log({
+            actorUserId: userId,
+            actorType: 'USER',
+            action: audit_action_enum_1.AuditAction.PAYMENT_CHECKOUT_REUSED,
+            resourceType: 'PaymentTransaction',
+            resourceId: transaction.id,
+            ipAddress,
+            metadata: {
+                planId,
+                currency,
+                countryCode,
+                invoiceId: existing.id,
+                reason: CheckoutReason.IDEMPOTENCY_KEY_REPLAY,
+            },
+            severity: audit_log_entity_1.AuditSeverity.INFO,
+        });
+        return this.toCheckoutResult(existing, transaction, true, CheckoutReason.IDEMPOTENCY_KEY_REPLAY);
+    }
+    toCheckoutResult(invoice, transaction, reused, reason) {
+        const summary = transaction.providerPayloadSummary ?? {};
+        return {
+            invoiceId: invoice.id,
+            transactionId: transaction.id,
+            provider: transaction.provider,
+            providerTransactionReference: transaction.providerTransactionReference ?? undefined,
+            checkoutUrl: summary['checkoutUrl'] ?? undefined,
+            sessionId: summary['sessionId'] ?? undefined,
+            requiresRedirect: !!summary['checkoutUrl'],
+            status: transaction.status,
+            reused,
+            reason,
+        };
+    }
+    isUniqueViolation(err) {
+        return err instanceof typeorm_2.QueryFailedError && err.code === '23505';
+    }
+    hashIdempotencyKey(key) {
+        return (0, crypto_1.createHash)('sha256').update(key).digest('hex');
+    }
+    hashIdempotencyFingerprint(params) {
+        const payload = JSON.stringify({
+            userId: params.userId,
+            planId: params.planId,
+            currency: params.currency,
+            countryCode: params.countryCode,
+            provider: params.provider ?? null,
+        });
+        return (0, crypto_1.createHash)('sha256').update(payload).digest('hex');
     }
 };
 exports.SubscriptionsService = SubscriptionsService;

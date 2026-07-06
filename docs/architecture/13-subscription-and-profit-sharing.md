@@ -596,3 +596,19 @@ activation invariant described throughout this document applies identically to P
 subscription or marks a performance-fee invoice paid. See
 [`21-payment-provider-architecture.md` §16](./21-payment-provider-architecture.md) for the
 full provider design and safety invariants.
+
+## Subscription Checkout Idempotency + Pending Invoice Reuse (Sprint 16)
+
+`SubscriptionsService.initiateCheckout()` previously created a brand-new `DRAFT`
+invoice and `PENDING` `PaymentTransaction` on every call, so a double-click or two
+near-simultaneous requests could leave several parallel pending invoices for the same
+subscription. It now deterministically **reuses** an existing unpaid checkout for the
+same `(userId, planId, currency, countryCode, paymentPurpose)` instead of creating a
+duplicate, and an already-active provider session is returned as-is rather than
+creating a second one. A database-level partial unique index backstops genuinely
+concurrent requests, and an optional client `Idempotency-Key` replays the exact same
+result for retried requests. None of this changes the webhook-only paid/activation
+invariant above — checkout still only ever returns a session reference, and only a
+verified webhook advances any state. Full rules, the reuse decision table, and the
+concurrency design are documented in
+[`21-payment-provider-architecture.md` §17](./21-payment-provider-architecture.md).

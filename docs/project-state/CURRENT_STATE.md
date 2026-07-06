@@ -4,39 +4,41 @@
 
 \## Current Sprint Checkpoint
 
-Last completed sprint: Sprint 15 audit — Paystack Sandbox Checkout Integration (PASS WITH FIXES).
+Last completed sprint: Sprint 16 — Subscription Checkout Idempotency + Pending Invoice Reuse.
 
 
 
 Last verified status:
 
-\- NestJS: 619 tests passing, 38 suites
+\- NestJS: 644 tests passing, 38 suites
 
-\- No pending migrations
+\- No pending migrations (AddSubscriptionCheckoutDuplicateGuard1751400000000 applied)
 
 \- No open handles
 
 \- No Python files touched
 
-\- PaystackPaymentProvider upgraded from fail-closed placeholder to real sandbox implementation
+\- SubscriptionsService.initiateCheckout no longer creates a new invoice/transaction on every call — reuses an existing DRAFT/ISSUED invoice + PENDING/PROCESSING transaction for the same (userId, planId, currency, countryCode, paymentPurpose) identity
 
-\- PaystackHttpClient (native fetch, no SDK) added for all Paystack API calls
+\- An existing active provider session (PROCESSING + providerTransactionReference) is returned as-is — never a second provider session
 
-\- Subscription checkout and performance-fee invoice checkout both work with Paystack — no business-logic changes needed in either service
+\- DB-level partial unique index on payments.invoices backstops the app-level reuse check against real concurrent double-clicks; a losing 23505 is caught and safely resolved to the winner's invoice/transaction
 
-\- Webhook signature verification is HMAC-SHA512 over the raw body, fails closed on any missing input
+\- Atomic conditional UPDATE (WHERE status IN (PENDING, FAILED)) claims a transaction before any provider call, preventing two concurrent requests from both creating a provider session for the same row
 
-\- Checkout does not mark invoice/subscription/assessment paid
+\- Optional Idempotency-Key support (header or body field) — same key+params replay the same result; same key+different params fails with 409; only a SHA-256 hash of the key is ever persisted, never the raw value
 
-\- Verified webhook remains the only PAID/HWM/subscription-activation path
+\- Active ACTIVE/TRIAL subscription for the same plan blocks a new checkout before any invoice/transaction is touched; a PAID invoice or SUCCEEDED transaction likewise blocks checkout
 
-\- Manual/admin settlement intentionally skipped
+\- FAILED/CANCELLED/REFUNDED transactions supersede (cancel) the stale invoice and allow a fresh checkout attempt
 
-\- No secrets (PAYSTACK_SECRET_KEY, webhook secret, Authorization header) in logs, responses, or errors
+\- Provider call failure reverts the transaction to PENDING (not FAILED) so a retry reuses it instead of creating a new invoice
 
-\- AUDIT FIX: webhook success now requires an exact amountMinor+currency match against the expected PaymentTransaction before marking anything paid (was previously trusting the providerTransactionReference match alone — underpayment/overpayment/currency-mismatch webhooks are now rejected and audit-logged as PAYMENT_FAILED/CRITICAL)
+\- Checkout still never activates a subscription, never trusts frontend success, and never marks anything paid — only a verified webhook does (Sprint 10-15 invariant unchanged and regression-tested)
 
-\- AUDIT FIX: PaymentRoutingService auto-routing now prefers a live provider over a non-live placeholder regardless of CountryConfig list order — fixes Ghana auto-checkout always failing via the dead Hubtel placeholder instead of reaching the configured, working Paystack provider
+\- Sprint 15 Paystack audit fixes (amount/currency webhook verification, Ghana live-provider routing) remain in place and regression-tested
+
+\- No secrets (provider keys, idempotency keys, webhook secrets, Authorization header) in checkout responses, audit metadata, or providerPayloadSummary
 
 
 
@@ -107,6 +109,8 @@ Last verified status:
 \- Sprint 14: Performance fee invoice checkout + provider assignment
 
 \- Sprint 15: Paystack sandbox checkout integration (subscription + performance-fee) — webhook-only paid/HWM path preserved
+
+\- Sprint 16: Subscription checkout idempotency + pending invoice reuse — DB-level duplicate guard, atomic provider-session claim, optional Idempotency-Key support
 
 
 

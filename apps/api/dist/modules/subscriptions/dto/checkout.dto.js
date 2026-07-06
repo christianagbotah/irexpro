@@ -41,6 +41,17 @@ __decorate([
     (0, class_validator_1.Length)(2, 2),
     __metadata("design:type", String)
 ], CheckoutDto.prototype, "countryCode", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'Optional client idempotency key. Reusing the same key with the same user and checkout ' +
+            'parameters returns the original checkout instead of creating a new one. Prefer the ' +
+            '`Idempotency-Key` request header instead of this field when possible.',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.Length)(1, 200),
+    __metadata("design:type", String)
+], CheckoutDto.prototype, "idempotencyKey", void 0);
 class CancelSubscriptionDto {
 }
 exports.CancelSubscriptionDto = CancelSubscriptionDto;

@@ -662,6 +662,142 @@ anything paid — it exists purely as an optional status-check convenience.
 
 ---
 
+## 17. Subscription Checkout Idempotency + Pending Invoice Reuse (Sprint 16)
+
+Prior to Sprint 16, `SubscriptionsService.initiateCheckout()` created a brand-new
+`DRAFT` invoice + `PENDING` `PaymentTransaction` on **every** call, so a double-click
+or two nearly-simultaneous checkout requests could leave multiple parallel pending
+invoices/transactions for the same user/plan. This section documents the fix, which
+applies identically to every payment provider (Stripe, Paystack, Flutterwave, Hubtel,
+PayPal, Wise, and any future provider) since it lives entirely in the
+provider-agnostic `SubscriptionsService`, not in any individual provider adapter.
+
+### 17.1 Checkout identity
+
+A checkout is considered "the same" when all of the following match:
+
+```
+(userId, planId, currency, countryCode, paymentPurpose)
+```
+
+`paymentPurpose` is `SUBSCRIPTION_INITIAL` for a user's first-ever subscription (or
+one still in `TRIAL`, which has never been paid) and `SUBSCRIPTION_RENEWAL`
+otherwise. These fields are stored on `Invoice.metadata` (`planId`, `countryCode`,
+`paymentPurpose`, `type: 'SUBSCRIPTION'`) — no new columns were required.
+
+### 17.2 Reuse decision table
+
+| Existing state found for the identity | Behaviour |
+|---|---|
+| No matching invoice | Create a new `DRAFT` invoice + `PENDING` transaction (unchanged from before). |
+| Invoice `PAID`, or its transaction `SUCCEEDED` | **Blocked** — `409 Conflict`, no invoice/transaction created. |
+| Invoice `DRAFT`/`ISSUED`, transaction `PENDING`/`PROCESSING`, amount still matches current pricing | **Reused** — no new invoice/transaction. |
+| ...and that transaction already has an active provider session (`PROCESSING` + `providerTransactionReference`) | **Provider session reused** — the existing `checkoutUrl`/`sessionId`/reference is returned; `provider.createCheckoutSession()` is never called again. |
+| ...and that transaction is `PENDING`/`manual` with no session yet | **Assignable** — the routed provider is attached to the *existing* transaction (no new row). |
+| Invoice `DRAFT`/`ISSUED`, transaction `FAILED`/`CANCELLED`/`REFUNDED` | The stale invoice is marked `CANCELLED` ("superseded") and a fresh invoice/transaction pair is created. Documented, not silently dropped. |
+| Invoice `DRAFT`/`ISSUED`, amount no longer matches current plan pricing (price changed) | Never reused — a fresh invoice/transaction pair is created; the stale one is left untouched for manual review (rare edge case). |
+| Requested provider differs from the existing transaction's provider **and** a real `providerTransactionReference` already exists | **Rejected** — `409 Conflict`; a real provider session is never silently abandoned. |
+| Requested provider differs and no session reference exists yet | **Allowed** — the provider is switched on the existing transaction before calling it. |
+
+An **ACTIVE**/**TRIAL** subscription that is still within its current period for the
+*same plan* blocks checkout entirely (`409 Conflict`) before any invoice/transaction
+lookup — there is nothing to check out for.
+
+### 17.3 Concurrency / race safety
+
+Two layers, matching the pattern already used by `PerformanceFeePaymentService`
+(Sprint 14) plus one new DB-level guard:
+
+1. **App-level reuse check** (read-then-decide) — closes the race in the common
+   case (sequential double-clicks, retries after a failure).
+2. **DB-level partial unique index** (`AddSubscriptionCheckoutDuplicateGuard`
+   migration) — the authoritative guard for two truly concurrent requests that both
+   pass the app-level check at the same time:
+
+   ```sql
+   CREATE UNIQUE INDEX IF NOT EXISTS idx_inv_unique_pending_subscription_checkout
+     ON payments.invoices (
+       user_id, currency, (metadata->>'planId'), (metadata->>'countryCode'), (metadata->>'paymentPurpose')
+     )
+     WHERE status IN ('DRAFT', 'ISSUED') AND (metadata->>'type') = 'SUBSCRIPTION'
+   ```
+
+   A losing `INSERT` raises Postgres `23505 unique_violation`, which
+   `SubscriptionsService` catches and resolves by re-reading and reusing the
+   winning invoice/transaction — never surfacing a raw DB error and never leaving
+   an orphaned transaction.
+3. **Atomic conditional claim before calling any provider** — `UPDATE
+   payment_transactions SET status = 'PROCESSING' WHERE id = :id AND status IN
+   ('PENDING', 'FAILED')`. This prevents two requests that both observed the same
+   reusable `PENDING` transaction from both calling `provider.createCheckoutSession()`
+   and racing to overwrite `providerTransactionReference`. A lost claim returns the
+   winner's active session if one now exists, or a `409 Conflict` asking the caller
+   to retry shortly — it never calls the provider a second time.
+
+Provider call failures release the claim back to `PENDING` (not `FAILED`) so the
+transaction — and therefore the invoice — remains retryable without spawning a new
+invoice on the next attempt.
+
+### 17.4 Optional Idempotency-Key support
+
+Clients may optionally send an `Idempotency-Key` header (or `idempotencyKey` in the
+`CheckoutDto` body). No schema change was required — the key is SHA-256 hashed
+(never stored raw) alongside a SHA-256 fingerprint of the checkout parameters
+(`userId`, `planId`, `currency`, `countryCode`, requested `provider`), both stored in
+the existing `Invoice.metadata` JSONB column.
+
+- Same key + same user + same parameters → returns the original invoice/transaction/
+  session again, with no new provider call.
+- Same key + different parameters → fails safely with `409 Conflict`.
+- The key is entirely optional; omitting it uses parameter-based reuse only (§17.1–17.3).
+
+### 17.5 Response shape
+
+`POST /subscriptions/checkout` now always returns:
+
+```typescript
+interface CheckoutResult {
+  invoiceId: string;
+  transactionId: string;
+  provider: string;
+  providerTransactionReference?: string;
+  checkoutUrl?: string;
+  sessionId?: string;
+  requiresRedirect: boolean;
+  status: PaymentTransactionStatus;   // PENDING | PROCESSING | ...
+  reused: boolean;
+  reason: 'NEW_CHECKOUT' | 'REUSED_PENDING_CHECKOUT' | 'PROVIDER_SESSION_REUSED' | 'IDEMPOTENCY_KEY_REPLAY';
+}
+```
+
+No provider secrets, raw provider payloads, or webhook data are ever included.
+
+### 17.6 Audit actions (new)
+
+| Action | When |
+|---|---|
+| `PAYMENT_CHECKOUT_REUSED` | A pending invoice/transaction is reused and a provider call is (re-)issued on it, or an Idempotency-Key replay is served. |
+| `PAYMENT_CHECKOUT_PROVIDER_SESSION_REUSED` | An already-active provider session is returned with no new provider call. |
+
+Existing `PAYMENT_CHECKOUT_INITIATED`/`PAYMENT_CHECKOUT_FAILED`/`INVOICE_CREATED`
+actions are unchanged and still emitted for genuinely new invoices/sessions. All
+metadata on every audit entry excludes provider secrets, authorization headers, raw
+provider responses, card data, mobile money PINs, and tokens — unchanged invariant.
+
+### 17.7 What is unchanged (webhook-only activation)
+
+This sprint touches **only** checkout-time invoice/transaction creation. It does not
+change:
+- `WebhookProcessorService` — a verified webhook remains the only path that marks an
+  invoice `PAID`, a transaction `SUCCEEDED`, or activates a subscription.
+- Amount/currency mismatch handling, duplicate-webhook idempotency, or invalid-
+  signature handling (Sprint 15 audit fixes) — all regression-tested, unchanged.
+- Any individual provider adapter (Stripe/Paystack/Flutterwave/Hubtel/PayPal/Wise) —
+  the fix lives entirely in `SubscriptionsService`, which depends only on the generic
+  `IPaymentProvider` interface.
+
+---
+
 ## 14. Failure Cases
 
 | Failure | Response |

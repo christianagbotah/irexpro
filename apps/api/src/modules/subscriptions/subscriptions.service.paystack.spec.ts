@@ -21,8 +21,20 @@ const mockPricingRepo = {
   getOne: jest.fn(),
 };
 const mockSubscriptionRepo = { findOne: jest.fn(), create: jest.fn(), save: jest.fn() };
-const mockInvoiceRepo = { create: jest.fn(), save: jest.fn() };
-const mockTransactionRepo = { create: jest.fn(), save: jest.fn(), update: jest.fn() };
+
+const mockInvoiceQueryBuilder = {
+  where: jest.fn().mockReturnThis(),
+  andWhere: jest.fn().mockReturnThis(),
+  orderBy: jest.fn().mockReturnThis(),
+  getOne: jest.fn(),
+};
+const mockInvoiceRepo = {
+  create: jest.fn(),
+  save: jest.fn(),
+  update: jest.fn(),
+  createQueryBuilder: jest.fn(),
+};
+const mockTransactionRepo = { create: jest.fn(), save: jest.fn(), update: jest.fn(), findOne: jest.fn() };
 const mockAuditService = { log: jest.fn() };
 const mockRoutingService = { routeForCheckout: jest.fn() };
 
@@ -45,6 +57,12 @@ describe('SubscriptionsService — Paystack checkout integration', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     mockPricingRepo.createQueryBuilder.mockReturnValue(mockPricingRepo);
+    mockInvoiceRepo.createQueryBuilder.mockReturnValue(mockInvoiceQueryBuilder);
+
+    mockSubscriptionRepo.findOne.mockResolvedValue(null);
+    mockInvoiceQueryBuilder.getOne.mockResolvedValue(null);
+    mockTransactionRepo.findOne.mockResolvedValue(null);
+    mockTransactionRepo.update.mockResolvedValue({ affected: 1 });
 
     module = await Test.createTestingModule({
       providers: [
@@ -107,9 +125,10 @@ describe('SubscriptionsService — Paystack checkout integration', () => {
 
     await expect(service.initiateCheckout(request)).rejects.toThrow(BadRequestException);
 
+    // Reverted to PENDING (not FAILED) so the transaction is recoverable for retry.
     expect(mockTransactionRepo.update).toHaveBeenCalledWith(
       'tx-1',
-      expect.objectContaining({ status: PaymentTransactionStatus.FAILED }),
+      expect.objectContaining({ status: PaymentTransactionStatus.PENDING }),
     );
     expect(mockSubscriptionRepo.save).not.toHaveBeenCalled();
   });
@@ -123,7 +142,7 @@ describe('SubscriptionsService — Paystack checkout integration', () => {
     await expect(service.initiateCheckout(request)).rejects.toThrow(BadRequestException);
     expect(mockTransactionRepo.update).toHaveBeenCalledWith(
       'tx-1',
-      expect.objectContaining({ status: PaymentTransactionStatus.FAILED }),
+      expect.objectContaining({ status: PaymentTransactionStatus.PENDING }),
     );
   });
 
@@ -139,5 +158,44 @@ describe('SubscriptionsService — Paystack checkout integration', () => {
 
     const result = await service.initiateCheckout(request);
     expect(JSON.stringify(result)).not.toContain('sk_test_subscription_checkout');
+  });
+
+  it('a second identical Paystack checkout reuses the same pending invoice/transaction', async () => {
+    const http = { request: jest.fn() };
+    http.request.mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: { status: true, data: { authorization_url: 'https://checkout.paystack.com/first', reference: 'psk_first' } },
+    });
+    const provider = new PaystackPaymentProvider(enabledPaystackConfigService(), http as unknown as PaystackHttpClient);
+    mockRoutingService.routeForCheckout.mockResolvedValue({ provider, reason: 'preferred' });
+
+    const first = await service.initiateCheckout(request);
+    expect(first.reused).toBe(false);
+
+    // Simulate the pending invoice/transaction created by the first call being found on retry.
+    mockInvoiceQueryBuilder.getOne.mockResolvedValueOnce({
+      id: 'invoice-1',
+      status: 'DRAFT',
+      currency: 'GHS',
+      totalAmount: '5000',
+      metadata: { type: 'SUBSCRIPTION', planId: 'plan-1', countryCode: 'GH', paymentPurpose: 'SUBSCRIPTION_INITIAL' },
+    });
+    mockTransactionRepo.findOne.mockResolvedValueOnce({
+      id: 'tx-1',
+      invoiceId: 'invoice-1',
+      status: PaymentTransactionStatus.PROCESSING,
+      provider: 'paystack',
+      providerTransactionReference: 'psk_first',
+      providerPayloadSummary: { checkoutUrl: 'https://checkout.paystack.com/first', sessionId: 'psk_first' },
+    });
+
+    const second = await service.initiateCheckout(request);
+    expect(second.reused).toBe(true);
+    expect(second.invoiceId).toBe('invoice-1');
+    expect(second.transactionId).toBe('tx-1');
+    expect(second.checkoutUrl).toBe('https://checkout.paystack.com/first');
+    // Only ONE Paystack HTTP call — the second request must reuse the first session.
+    expect(http.request).toHaveBeenCalledTimes(1);
   });
 });

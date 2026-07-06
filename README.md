@@ -22,7 +22,7 @@ iRexPro supports users from multiple countries worldwide with regional payment p
 
 ## Current Status
 
-**Phase 1 Sprint 15 — Paystack Sandbox Checkout Integration: Complete**
+**Phase 1 Sprint 16 — Subscription Checkout Idempotency + Pending Invoice Reuse: Complete**
 
 - ✅ Sprint 1-2: Backend Foundation (NestJS, Auth, Users, Audit)
 - ✅ Sprint 3-4: Broker Integration (MetaTrader adapter, credentials, health checks)
@@ -34,6 +34,28 @@ iRexPro supports users from multiple countries worldwide with regional payment p
 - ✅ Sprint 13: Performance Fee Billing Cycle Orchestrator
 - ✅ Sprint 14: Performance Fee Invoice Payment Flow + Provider Checkout Assignment
 - ✅ Sprint 15: Paystack Sandbox Checkout Integration (subscription + performance-fee, webhook-verified)
+- ✅ Sprint 16: Subscription Checkout Idempotency + Pending Invoice Reuse (all providers, DB-level duplicate guard)
+
+### Sprint 16 — Subscription checkout idempotency + pending invoice reuse
+
+`SubscriptionsService.initiateCheckout()` no longer creates a new invoice/transaction
+on every call. A repeated checkout for the same user/plan/currency/country now safely
+**reuses** the existing pending invoice/transaction (or an already-active provider
+session) instead of spawning duplicates — closing the double-click/repeated-checkout
+gap flagged by the Sprint 15 audit. Applies uniformly to every payment provider.
+
+- An existing active provider session (`PROCESSING` + reference) is returned as-is —
+  no second provider session is ever created.
+- A DB-level partial unique index (`AddSubscriptionCheckoutDuplicateGuard` migration)
+  backstops the app-level check against real concurrent double-clicks; a losing
+  request safely reuses the winner instead of erroring.
+- An optional `Idempotency-Key` header (or `idempotencyKey` body field) is supported —
+  same key + same params replays the same result; same key + different params fails
+  safely with `409 Conflict`. No raw key is ever persisted, only a SHA-256 hash.
+- Checkout still never activates a subscription, never trusts frontend success, and
+  never marks anything paid — only a verified webhook does.
+- See [docs/architecture/21-payment-provider-architecture.md](./docs/architecture/21-payment-provider-architecture.md)
+  for the full Sprint 16 design/safety notes.
 
 ### Sprint 15 — Paystack sandbox integration
 
@@ -62,7 +84,7 @@ iRexPro is global-first. Regional providers are plug-in implementations of globa
 
 | Concern | Architecture |
 |---|---|
-| Payment providers | `IPaymentProvider` interface — Stripe, Paystack (sandbox-live, Sprint 15), Flutterwave, Hubtel, PayPal |
+| Payment providers | `IPaymentProvider` interface — Stripe, Paystack (sandbox-live, Sprint 15), Flutterwave, Hubtel, PayPal; checkout idempotency + reuse (Sprint 16) applies to all |
 | SMS providers | `ISmsProvider` interface — Twilio, Hubtel SMS, Arkesel, AWS SNS |
 | Regional configuration | `CountryConfig` entity — per-country provider routing, KYC, currency, compliance |
 | Multi-currency billing | `PlanPricing` entity — per-currency pricing for each plan |
