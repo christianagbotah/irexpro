@@ -169,6 +169,28 @@ let WebhookProcessorService = WebhookProcessorService_1 = class WebhookProcessor
             this.logger.warn(`[Webhook] Payment succeeded but no matching transaction found: ref=${event.providerTransactionReference}, provider=${providerId}`);
             return;
         }
+        if (!this.amountAndCurrencyMatch(transaction, event)) {
+            this.logger.error(`[Webhook] Amount/currency mismatch for tx ${transaction.id} (provider=${providerId}): ` +
+                `expected ${transaction.amountMinor} ${transaction.currency}, received ` +
+                `${event.amountMinor ?? 'undefined'} ${event.currency ?? 'undefined'} — NOT marking paid`);
+            await this.auditService.log({
+                actorUserId: transaction.userId,
+                actorType: 'SYSTEM',
+                action: audit_action_enum_1.AuditAction.PAYMENT_FAILED,
+                resourceType: 'PaymentTransaction',
+                resourceId: transaction.id,
+                metadata: {
+                    provider: providerId,
+                    reason: 'AMOUNT_OR_CURRENCY_MISMATCH',
+                    expectedAmountMinor: transaction.amountMinor,
+                    expectedCurrency: transaction.currency,
+                    receivedAmountMinor: event.amountMinor ?? null,
+                    receivedCurrency: event.currency ?? null,
+                },
+                severity: audit_log_entity_1.AuditSeverity.CRITICAL,
+            });
+            return;
+        }
         await this.transactionRepo.update(transaction.id, {
             status: payment_transaction_entity_1.PaymentTransactionStatus.SUCCEEDED,
             providerPayloadSummary: {
@@ -320,6 +342,24 @@ let WebhookProcessorService = WebhookProcessorService_1 = class WebhookProcessor
             severity: audit_log_entity_1.AuditSeverity.INFO,
         });
         this.logger.log(`[Webhook] PERFORMANCE_FEE paid: assessment=${assessment.id}, tx=${transaction.id}`);
+    }
+    amountAndCurrencyMatch(transaction, event) {
+        if (event.amountMinor === undefined || event.currency === undefined)
+            return false;
+        if (!transaction.amountMinor || !transaction.currency)
+            return false;
+        let expectedAmount;
+        let receivedAmount;
+        try {
+            expectedAmount = BigInt(transaction.amountMinor);
+            receivedAmount = BigInt(Math.round(event.amountMinor));
+        }
+        catch {
+            return false;
+        }
+        if (expectedAmount !== receivedAmount)
+            return false;
+        return transaction.currency.trim().toUpperCase() === event.currency.trim().toUpperCase();
     }
     async handlePaymentFailed(event, providerId) {
         const transaction = event.providerTransactionReference

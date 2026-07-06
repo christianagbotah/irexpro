@@ -90,15 +90,26 @@ let PaymentRoutingService = PaymentRoutingService_1 = class PaymentRoutingServic
             this.logger.log(`[Routing] Using preferred provider ${preferredProviderId} for ${country}/${currency}`);
             return { provider: preferred, reason: 'preferred' };
         }
+        const matchingCandidates = [];
         for (const providerId of publicEnabledIds) {
             const candidate = this.tryGetProvider(providerId);
             if (!candidate)
                 continue;
             if (this.providerSupportsCountry(candidate, country) &&
                 this.providerSupportsCurrency(candidate, currency)) {
-                this.logger.log(`[Routing] Selected ${providerId} for ${country}/${currency} via CountryConfig`);
-                return { provider: candidate, reason: 'country_config' };
+                matchingCandidates.push(candidate);
             }
+        }
+        const liveMatch = matchingCandidates.find((candidate) => candidate.isLive);
+        if (liveMatch) {
+            this.logger.log(`[Routing] Selected live provider ${liveMatch.providerId} for ${country}/${currency} via CountryConfig`);
+            return { provider: liveMatch, reason: 'country_config' };
+        }
+        if (matchingCandidates.length > 0) {
+            const first = matchingCandidates[0];
+            this.logger.log(`[Routing] Selected ${first.providerId} for ${country}/${currency} via CountryConfig ` +
+                `(no live provider configured for this country/currency)`);
+            return { provider: first, reason: 'country_config' };
         }
         const stripe = this.tryGetProvider('stripe');
         if (stripe && this.providerSupportsCurrency(stripe, currency)) {

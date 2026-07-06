@@ -153,7 +153,15 @@ export class PaymentRoutingService {
       return { provider: preferred, reason: 'preferred' };
     }
 
-    // 2. Select first CountryConfig-enabled provider that supports country+currency
+    // 2. Select a CountryConfig-enabled provider that supports country+currency.
+    // A LIVE provider is always preferred over a non-live placeholder, regardless
+    // of list order — otherwise a permanently fail-closed placeholder listed
+    // earlier (e.g. Hubtel before Paystack for GH) would always be auto-selected
+    // ahead of a fully configured, working provider, silently breaking checkout
+    // for that country. If no live provider matches, fall back to the first
+    // matching candidate (existing "route now, fail closed in
+    // createCheckoutSession()" placeholder behaviour is preserved).
+    const matchingCandidates: IPaymentProvider[] = [];
     for (const providerId of publicEnabledIds) {
       const candidate = this.tryGetProvider(providerId);
       if (!candidate) continue;
@@ -161,11 +169,25 @@ export class PaymentRoutingService {
         this.providerSupportsCountry(candidate, country) &&
         this.providerSupportsCurrency(candidate, currency)
       ) {
-        this.logger.log(
-          `[Routing] Selected ${providerId} for ${country}/${currency} via CountryConfig`,
-        );
-        return { provider: candidate, reason: 'country_config' };
+        matchingCandidates.push(candidate);
       }
+    }
+
+    const liveMatch = matchingCandidates.find((candidate) => candidate.isLive);
+    if (liveMatch) {
+      this.logger.log(
+        `[Routing] Selected live provider ${liveMatch.providerId} for ${country}/${currency} via CountryConfig`,
+      );
+      return { provider: liveMatch, reason: 'country_config' };
+    }
+
+    if (matchingCandidates.length > 0) {
+      const first = matchingCandidates[0];
+      this.logger.log(
+        `[Routing] Selected ${first.providerId} for ${country}/${currency} via CountryConfig ` +
+          `(no live provider configured for this country/currency)`,
+      );
+      return { provider: first, reason: 'country_config' };
     }
 
     // 3. Stripe global fallback

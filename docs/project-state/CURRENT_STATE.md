@@ -4,13 +4,13 @@
 
 \## Current Sprint Checkpoint
 
-Last completed sprint: Sprint 15 — Paystack Sandbox Checkout Integration.
+Last completed sprint: Sprint 15 audit — Paystack Sandbox Checkout Integration (PASS WITH FIXES).
 
 
 
 Last verified status:
 
-\- NestJS: 609 tests passing, 38 suites
+\- NestJS: 619 tests passing, 38 suites
 
 \- No pending migrations
 
@@ -33,6 +33,10 @@ Last verified status:
 \- Manual/admin settlement intentionally skipped
 
 \- No secrets (PAYSTACK_SECRET_KEY, webhook secret, Authorization header) in logs, responses, or errors
+
+\- AUDIT FIX: webhook success now requires an exact amountMinor+currency match against the expected PaymentTransaction before marking anything paid (was previously trusting the providerTransactionReference match alone — underpayment/overpayment/currency-mismatch webhooks are now rejected and audit-logged as PAYMENT_FAILED/CRITICAL)
+
+\- AUDIT FIX: PaymentRoutingService auto-routing now prefers a live provider over a non-live placeholder regardless of CountryConfig list order — fixes Ghana auto-checkout always failing via the dead Hubtel placeholder instead of reaching the configured, working Paystack provider
 
 
 

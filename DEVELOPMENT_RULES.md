@@ -666,3 +666,8 @@ Before approving any PR touching trading, risk, financial, payment, or regional 
 - [ ] No Paystack SDK dependency — use the injectable `PaystackHttpClient` (native `fetch` + `AbortController` timeout), consistent with `AiEngineClient`
 - [ ] `PaystackHttpClient` must never log the `Authorization` header, and must sanitise/length-cap any provider-supplied error message before it is returned or logged
 - [ ] Tests for Paystack must mock `PaystackHttpClient`/`fetch` — never call the live Paystack network
+
+## Sprint 15 Payment/Security Audit Fixes (2026-07-06)
+
+- [ ] `WebhookProcessorService.handlePaymentSucceeded()` MUST verify that the webhook-reported `amountMinor` and `currency` exactly match the expected `PaymentTransaction` (BigInt/string comparison, never floats, case-insensitive currency) BEFORE marking anything paid — a matching `providerTransactionReference` alone is not sufficient. Missing amount/currency on either side fails closed. A mismatch logs a `CRITICAL`-severity `PAYMENT_FAILED` audit entry (`reason: 'AMOUNT_OR_CURRENCY_MISMATCH'`) and leaves the transaction/invoice/subscription/assessment untouched.
+- [ ] `PaymentRoutingService.routeForCheckout()` auto-routing (no explicit `provider` preference) MUST prefer a `isLive === true` candidate among all providers enabled for a country/currency, regardless of list order in `CountryConfig.enabledPaymentProviders` — otherwise a permanently non-functional placeholder listed earlier (e.g. `hubtel` before `paystack` for Ghana) silently blocks checkout for that country even when a real provider is fully configured. Falls back to the first matching candidate (existing placeholder behaviour) only when no enabled provider is live.

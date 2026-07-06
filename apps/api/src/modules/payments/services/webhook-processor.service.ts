@@ -243,6 +243,39 @@ export class WebhookProcessorService {
       return;
     }
 
+    // Amount/currency verification — a webhook event that resolves to a known
+    // transaction reference must still report the EXACT expected amount and
+    // currency before the transaction is marked paid. Without this check, a
+    // malformed/forged provider payload (or a provider-side data error) could
+    // mark an under-paid, over-paid, or wrong-currency charge as fully paid,
+    // activating a subscription or crediting a performance fee that was never
+    // actually collected in full. This guard runs BEFORE any state change and
+    // applies identically to subscription and performance-fee transactions.
+    if (!this.amountAndCurrencyMatch(transaction, event)) {
+      this.logger.error(
+        `[Webhook] Amount/currency mismatch for tx ${transaction.id} (provider=${providerId}): ` +
+          `expected ${transaction.amountMinor} ${transaction.currency}, received ` +
+          `${event.amountMinor ?? 'undefined'} ${event.currency ?? 'undefined'} — NOT marking paid`,
+      );
+      await this.auditService.log({
+        actorUserId: transaction.userId,
+        actorType: 'SYSTEM',
+        action: AuditAction.PAYMENT_FAILED,
+        resourceType: 'PaymentTransaction',
+        resourceId: transaction.id,
+        metadata: {
+          provider: providerId,
+          reason: 'AMOUNT_OR_CURRENCY_MISMATCH',
+          expectedAmountMinor: transaction.amountMinor,
+          expectedCurrency: transaction.currency,
+          receivedAmountMinor: event.amountMinor ?? null,
+          receivedCurrency: event.currency ?? null,
+        },
+        severity: AuditSeverity.CRITICAL,
+      });
+      return;
+    }
+
     await this.transactionRepo.update(transaction.id, {
       status: PaymentTransactionStatus.SUCCEEDED,
       providerPayloadSummary: {
@@ -445,6 +478,32 @@ export class WebhookProcessorService {
     this.logger.log(
       `[Webhook] PERFORMANCE_FEE paid: assessment=${assessment.id}, tx=${transaction.id}`,
     );
+  }
+
+  /**
+   * True only when the webhook-reported amount and currency exactly match the
+   * expected PaymentTransaction — using BigInt/string comparison, never floats.
+   * Fails closed (returns false) when either side is missing/unparseable.
+   */
+  private amountAndCurrencyMatch(
+    transaction: PaymentTransaction,
+    event: { amountMinor?: number; currency?: string },
+  ): boolean {
+    if (event.amountMinor === undefined || event.currency === undefined) return false;
+    if (!transaction.amountMinor || !transaction.currency) return false;
+
+    let expectedAmount: bigint;
+    let receivedAmount: bigint;
+    try {
+      expectedAmount = BigInt(transaction.amountMinor);
+      // Provider amounts arrive as JS numbers; round defensively before BigInt().
+      receivedAmount = BigInt(Math.round(event.amountMinor));
+    } catch {
+      return false;
+    }
+    if (expectedAmount !== receivedAmount) return false;
+
+    return transaction.currency.trim().toUpperCase() === event.currency.trim().toUpperCase();
   }
 
   private async handlePaymentFailed(

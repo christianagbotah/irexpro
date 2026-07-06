@@ -247,6 +247,58 @@ describe('PaymentRoutingService', () => {
       expect(provider.providerId).toBe('paystack');
       expect(reason).toBe('preferred');
     });
+
+    describe('auto-routing prefers a live provider over an earlier-listed placeholder', () => {
+      async function buildLiveGhRoutingService(): Promise<PaymentRoutingService> {
+        const registry = new PaymentProviderRegistry();
+        registry.register(new ManualPaymentProvider());
+        registry.register(new StripePaymentProvider());
+        registry.register(
+          new PaystackPaymentProvider(
+            {
+              get: jest.fn((key: string, fallback?: unknown) => {
+                const values: Record<string, unknown> = {
+                  'paystack.enabled': true,
+                  'paystack.secretKey': 'sk_test_gh_live',
+                };
+                return values[key] ?? fallback;
+              }),
+            } as any,
+            new PaystackHttpClient(),
+          ),
+        );
+        registry.register(new FlutterwavePaymentProvider());
+        registry.register(new HubtelPaymentProvider());
+        const module = await Test.createTestingModule({
+          providers: [
+            PaymentRoutingService,
+            { provide: PaymentProviderRegistry, useValue: registry },
+            { provide: getRepositoryToken(CountryConfig), useValue: mockCountryConfigRepo },
+          ],
+        }).compile();
+        return module.get<PaymentRoutingService>(PaymentRoutingService);
+      }
+
+      it('auto-routes GH/GHS to Paystack (live) instead of Hubtel (non-live, listed first) when no provider is explicitly preferred', async () => {
+        mockCountryConfigRepo.findOne.mockResolvedValue(ghConfig()); // hubtel listed before paystack
+        const liveService = await buildLiveGhRoutingService();
+
+        const { provider, reason } = await liveService.routeForCheckout('GH', 'GHS');
+
+        expect(provider.providerId).toBe('paystack');
+        expect(provider.isLive).toBe(true);
+        expect(reason).toBe('country_config');
+      });
+
+      it('falls back to the first listed non-live provider when no configured provider is live (existing GH default)', async () => {
+        // Default registry (this describe block's parent) has Paystack disabled —
+        // preserves pre-Sprint-15 placeholder routing behaviour when nothing is live.
+        mockCountryConfigRepo.findOne.mockResolvedValue(ghConfig());
+        const { provider, reason } = await service.routeForCheckout('GH', 'GHS');
+        expect(provider.providerId).toBe('hubtel');
+        expect(reason).toBe('country_config');
+      });
+    });
   });
 
   describe('manual provider stays blocked for public checkout — Sprint 15 regression', () => {

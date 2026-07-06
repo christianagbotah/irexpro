@@ -110,6 +110,8 @@ describe('WebhookProcessorService — Paystack integration', () => {
         provider: 'paystack',
         providerTransactionReference: 'psk_sub_ref',
         paymentPurpose: PaymentPurpose.SUBSCRIPTION_INITIAL,
+        amountMinor: '50000',
+        currency: 'GHS',
         providerPayloadSummary: { planId: 'plan-1' },
       });
       mockSubscriptionsService.activateSubscriptionFromPayment.mockResolvedValue({ id: 'sub-1' });
@@ -266,6 +268,125 @@ describe('WebhookProcessorService — Paystack integration', () => {
 
       expect(mockAssessmentRepo.update).not.toHaveBeenCalled();
       expect(mockAuditService.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'PAYMENT_FAILED' }));
+    });
+  });
+
+  describe('amount/currency verification (Sprint 15 audit)', () => {
+    it('underpayment does not activate subscription', async () => {
+      // Expected 50000 GHS, but the webhook reports only 40000 (underpayment).
+      const rawBody = chargeSuccessPayload('psk_sub_under', 3001, 40000, 'GHS');
+      const signature = sign(rawBody);
+
+      mockWebhookEventRepo.create.mockImplementation((x: unknown) => x);
+      mockWebhookEventRepo.save.mockImplementation(async (x: any) => x);
+      mockTransactionRepo.findOne.mockResolvedValue({
+        id: 'tx-sub-under',
+        userId: 'user-1',
+        invoiceId: 'inv-sub-under',
+        provider: 'paystack',
+        providerTransactionReference: 'psk_sub_under',
+        paymentPurpose: PaymentPurpose.SUBSCRIPTION_INITIAL,
+        amountMinor: '50000',
+        currency: 'GHS',
+        providerPayloadSummary: { planId: 'plan-1' },
+      });
+
+      const result = await service.processWebhook('paystack', rawBody, {
+        'x-paystack-signature': signature,
+      });
+
+      expect(result.accepted).toBe(true);
+      expect(mockSubscriptionsService.activateSubscriptionFromPayment).not.toHaveBeenCalled();
+      expect(mockTransactionRepo.update).not.toHaveBeenCalled();
+      expect(mockInvoiceRepo.update).not.toHaveBeenCalled();
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'PAYMENT_FAILED',
+          metadata: expect.objectContaining({ reason: 'AMOUNT_OR_CURRENCY_MISMATCH' }),
+        }),
+      );
+    });
+
+    it('overpayment does not mark performance fee paid', async () => {
+      // Expected 200000 USD, but the webhook reports 250000 (overpayment).
+      const rawBody = chargeSuccessPayload('psk_pf_over', 3002, 250000, 'USD');
+      const signature = sign(rawBody);
+
+      mockWebhookEventRepo.create.mockImplementation((x: unknown) => x);
+      mockWebhookEventRepo.save.mockImplementation(async (x: any) => x);
+      mockTransactionRepo.findOne.mockResolvedValue({
+        id: 'tx-pf-over',
+        userId: 'user-pf',
+        invoiceId: 'inv-pf-over',
+        provider: 'paystack',
+        providerTransactionReference: 'psk_pf_over',
+        paymentPurpose: PaymentPurpose.PERFORMANCE_FEE,
+        amountMinor: '200000',
+        currency: 'USD',
+        providerPayloadSummary: {},
+      });
+
+      const result = await service.processWebhook('paystack', rawBody, {
+        'x-paystack-signature': signature,
+      });
+
+      expect(result.accepted).toBe(true);
+      expect(mockAssessmentRepo.update).not.toHaveBeenCalled();
+      expect(mockLedgerRepo.save).not.toHaveBeenCalled();
+      expect(mockPerformanceRepo.update).not.toHaveBeenCalled();
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'PAYMENT_FAILED',
+          metadata: expect.objectContaining({ reason: 'AMOUNT_OR_CURRENCY_MISMATCH' }),
+        }),
+      );
+    });
+
+    it('currency mismatch does not mark paid even when amount matches', async () => {
+      // Expected 200000 USD, webhook reports the same numeric amount but in GHS.
+      const rawBody = chargeSuccessPayload('psk_pf_curr', 3003, 200000, 'GHS');
+      const signature = sign(rawBody);
+
+      mockWebhookEventRepo.create.mockImplementation((x: unknown) => x);
+      mockWebhookEventRepo.save.mockImplementation(async (x: any) => x);
+      mockTransactionRepo.findOne.mockResolvedValue({
+        id: 'tx-pf-curr',
+        userId: 'user-pf',
+        invoiceId: 'inv-pf-curr',
+        provider: 'paystack',
+        providerTransactionReference: 'psk_pf_curr',
+        paymentPurpose: PaymentPurpose.PERFORMANCE_FEE,
+        amountMinor: '200000',
+        currency: 'USD',
+        providerPayloadSummary: {},
+      });
+
+      const result = await service.processWebhook('paystack', rawBody, {
+        'x-paystack-signature': signature,
+      });
+
+      expect(result.accepted).toBe(true);
+      expect(mockAssessmentRepo.update).not.toHaveBeenCalled();
+      expect(mockLedgerRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('a success event for a different reference cannot pay this transaction', async () => {
+      // Webhook references psk_other_ref; the stored transaction is for a different ref
+      // (findOne returning null simulates the correct "no cross-transaction match" lookup).
+      const rawBody = chargeSuccessPayload('psk_other_ref', 3004, 200000, 'USD');
+      const signature = sign(rawBody);
+
+      mockWebhookEventRepo.create.mockImplementation((x: unknown) => x);
+      mockWebhookEventRepo.save.mockImplementation(async (x: any) => x);
+      mockTransactionRepo.findOne.mockResolvedValue(null);
+
+      const result = await service.processWebhook('paystack', rawBody, {
+        'x-paystack-signature': signature,
+      });
+
+      expect(result.accepted).toBe(true);
+      expect(mockAssessmentRepo.update).not.toHaveBeenCalled();
+      expect(mockSubscriptionsService.activateSubscriptionFromPayment).not.toHaveBeenCalled();
     });
   });
 

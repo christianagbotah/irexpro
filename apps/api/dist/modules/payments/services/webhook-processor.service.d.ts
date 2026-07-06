@@ -30,6 +30,7 @@ export declare class WebhookProcessorService {
     private handlePaymentSucceeded;
     private handleSubscriptionPaymentSucceeded;
     private handlePerformanceFeePaymentSucceeded;
+    private amountAndCurrencyMatch;
     private handlePaymentFailed;
     private handleSubscriptionCancelled;
 }

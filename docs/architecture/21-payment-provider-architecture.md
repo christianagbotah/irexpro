@@ -630,6 +630,36 @@ anything paid — it exists purely as an optional status-check convenience.
   at the public webhook endpoint — unaffected by this sprint.
 - All tests mock `PaystackHttpClient`/`fetch`; no live Paystack network calls are made.
 
+### Sprint 15 payment/security audit — fixes applied (2026-07-06)
+
+1. **Missing amount/currency verification before marking a webhook payment paid.**
+   `WebhookProcessorService.handlePaymentSucceeded()` located the `PaymentTransaction`
+   solely by `providerTransactionReference` + `provider` and then marked it `SUCCEEDED`
+   — without ever checking that the webhook-reported `amountMinor`/`currency` matched
+   the transaction's expected values. A malformed/forged payload (or a provider-side
+   data error) reporting success for the right reference but the wrong amount or
+   currency (underpayment, overpayment, wrong currency) would have been accepted as a
+   full payment, activating a subscription or crediting a performance fee that was
+   never actually collected in full. Fixed by adding `amountAndCurrencyMatch()` —
+   a BigInt/string-safe, case-insensitive comparison that runs before any state
+   change and fails closed when either side's amount/currency is missing. A mismatch
+   is audit-logged as `PAYMENT_FAILED` (`severity: CRITICAL`, `reason:
+   'AMOUNT_OR_CURRENCY_MISMATCH'`) and leaves the transaction/invoice/
+   subscription/assessment completely untouched. Applies identically to subscription
+   and performance-fee transactions since both flow through the same handler.
+2. **Ghana auto-routing could never actually reach Paystack.** `CountryConfig` lists
+   `enabledPaymentProviders: ['hubtel', 'paystack', 'flutterwave', 'stripe', 'manual']`
+   for Ghana, and `PaymentRoutingService.routeForCheckout()`'s auto-routing step picked
+   the *first* listed provider that supported the country/currency — without regard to
+   `isLive`. Since `hubtel` is a permanently non-implemented placeholder (fails closed
+   with `NotImplementedException` on every checkout call), **every** Ghana checkout
+   that didn't explicitly pass `provider: 'paystack'` would auto-route to `hubtel` and
+   always fail, even with Paystack fully enabled and configured. Fixed by having the
+   auto-routing step prefer a `isLive === true` candidate among all matching enabled
+   providers regardless of list order, falling back to the first matching candidate
+   (preserving prior placeholder-routing behaviour) only when no enabled provider is
+   live. Nigeria was unaffected (`paystack` was already listed first there).
+
 ---
 
 ## 14. Failure Cases

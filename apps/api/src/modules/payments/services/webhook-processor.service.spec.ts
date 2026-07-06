@@ -223,6 +223,8 @@ describe('WebhookProcessorService', () => {
           eventType: PaymentEventType.PAYMENT_SUCCEEDED,
           providerEventId: 'mock_evt_success',
           providerTransactionReference: 'mock_session_test',
+          amountMinor: 5000,
+          currency: 'USD',
         }),
         createCustomer: jest.fn(),
         createCheckoutSession: jest.fn(),
@@ -252,6 +254,8 @@ describe('WebhookProcessorService', () => {
         providerTransactionReference: 'mock_session_test',
         providerPayloadSummary: { planId: 'plan-id' },
         status: PaymentTransactionStatus.PENDING,
+        amountMinor: '5000',
+        currency: 'USD',
       };
       mockTransactionRepo.findOne.mockResolvedValue(transaction);
       mockSubscriptionsService.activateSubscriptionFromPayment.mockResolvedValue({ id: 'sub-id' });
@@ -326,6 +330,8 @@ describe('WebhookProcessorService', () => {
           eventType: PaymentEventType.PAYMENT_SUCCEEDED,
           providerEventId: `${providerId}_evt`,
           providerTransactionReference: txRef,
+          amountMinor: 5000,
+          currency: 'USD',
         },
       });
     }
@@ -344,6 +350,7 @@ describe('WebhookProcessorService', () => {
         id: 'tx-mo', userId: 'u1', invoiceId: 'inv-mo', provider: 'mock_mo',
         providerTransactionReference: 'ref_mo', paymentPurpose: PaymentPurpose.SUBSCRIPTION_INITIAL,
         providerPayloadSummary: { planId: 'plan-mo' },
+        amountMinor: '5000', currency: 'USD',
       });
       mockSubscriptionsService.getPlanById.mockResolvedValue({ billingInterval: BillingInterval.MONTHLY });
 
@@ -364,6 +371,7 @@ describe('WebhookProcessorService', () => {
         id: 'tx-q', userId: 'u1', invoiceId: 'inv-q', provider: 'mock_q',
         providerTransactionReference: 'ref_q', paymentPurpose: PaymentPurpose.SUBSCRIPTION_INITIAL,
         providerPayloadSummary: { planId: 'plan-q' },
+        amountMinor: '5000', currency: 'USD',
       });
       mockSubscriptionsService.getPlanById.mockResolvedValue({ billingInterval: BillingInterval.QUARTERLY });
 
@@ -384,6 +392,7 @@ describe('WebhookProcessorService', () => {
         id: 'tx-an', userId: 'u1', invoiceId: 'inv-an', provider: 'mock_an',
         providerTransactionReference: 'ref_an', paymentPurpose: PaymentPurpose.SUBSCRIPTION_INITIAL,
         providerPayloadSummary: { planId: 'plan-an' },
+        amountMinor: '5000', currency: 'USD',
       });
       mockSubscriptionsService.getPlanById.mockResolvedValue({ billingInterval: BillingInterval.ANNUAL });
 
@@ -404,6 +413,7 @@ describe('WebhookProcessorService', () => {
         id: 'tx-unk', userId: 'u1', invoiceId: 'inv-unk', provider: 'mock_unk',
         providerTransactionReference: 'ref_unk', paymentPurpose: PaymentPurpose.SUBSCRIPTION_INITIAL,
         providerPayloadSummary: { planId: 'nonexistent-plan' },
+        amountMinor: '5000', currency: 'USD',
       });
       mockSubscriptionsService.getPlanById.mockResolvedValue(null); // plan not found
 
@@ -426,6 +436,8 @@ describe('WebhookProcessorService', () => {
           eventType: PaymentEventType.PAYMENT_SUCCEEDED,
           providerEventId: `${providerId}_evt`,
           providerTransactionReference: txRef,
+          amountMinor: 200000,
+          currency: 'USD',
         },
       });
     }
@@ -511,6 +523,126 @@ describe('WebhookProcessorService', () => {
       await service.processWebhook('mock_pf_fail', Buffer.from('{}'), {});
 
       expect(mockAssessmentRepo.update).not.toHaveBeenCalled();
+      expect(mockSubscriptionsService.activateSubscriptionFromPayment).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('processWebhook — amount/currency verification (Sprint 15 audit)', () => {
+    it('underpayment does not mark transaction succeeded or activate subscription', async () => {
+      registry.register(
+        buildMockProvider('mock_under', {
+          signatureValid: true,
+          event: {
+            eventType: PaymentEventType.PAYMENT_SUCCEEDED,
+            providerEventId: 'mock_under_evt',
+            providerTransactionReference: 'ref_under',
+            amountMinor: 4000, // expected 5000
+            currency: 'USD',
+          },
+        }),
+      );
+      const record = { id: 'wh-under', processed: false };
+      mockWebhookEventRepo.create.mockReturnValue(record);
+      mockWebhookEventRepo.save.mockResolvedValue(record);
+      mockTransactionRepo.findOne.mockResolvedValue({
+        id: 'tx-under', userId: 'u1', invoiceId: 'inv-under', provider: 'mock_under',
+        providerTransactionReference: 'ref_under', paymentPurpose: PaymentPurpose.SUBSCRIPTION_INITIAL,
+        amountMinor: '5000', currency: 'USD',
+      });
+
+      await service.processWebhook('mock_under', Buffer.from('{}'), {});
+
+      expect(mockTransactionRepo.update).not.toHaveBeenCalled();
+      expect(mockInvoiceRepo.update).not.toHaveBeenCalled();
+      expect(mockSubscriptionsService.activateSubscriptionFromPayment).not.toHaveBeenCalled();
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'PAYMENT_FAILED',
+          metadata: expect.objectContaining({ reason: 'AMOUNT_OR_CURRENCY_MISMATCH' }),
+        }),
+      );
+    });
+
+    it('overpayment does not mark transaction succeeded', async () => {
+      registry.register(
+        buildMockProvider('mock_over', {
+          signatureValid: true,
+          event: {
+            eventType: PaymentEventType.PAYMENT_SUCCEEDED,
+            providerEventId: 'mock_over_evt',
+            providerTransactionReference: 'ref_over',
+            amountMinor: 6000, // expected 5000
+            currency: 'USD',
+          },
+        }),
+      );
+      const record = { id: 'wh-over', processed: false };
+      mockWebhookEventRepo.create.mockReturnValue(record);
+      mockWebhookEventRepo.save.mockResolvedValue(record);
+      mockTransactionRepo.findOne.mockResolvedValue({
+        id: 'tx-over', userId: 'u1', invoiceId: 'inv-over', provider: 'mock_over',
+        providerTransactionReference: 'ref_over', paymentPurpose: PaymentPurpose.SUBSCRIPTION_INITIAL,
+        amountMinor: '5000', currency: 'USD',
+      });
+
+      await service.processWebhook('mock_over', Buffer.from('{}'), {});
+
+      expect(mockTransactionRepo.update).not.toHaveBeenCalled();
+      expect(mockSubscriptionsService.activateSubscriptionFromPayment).not.toHaveBeenCalled();
+    });
+
+    it('currency mismatch does not mark transaction succeeded', async () => {
+      registry.register(
+        buildMockProvider('mock_curr', {
+          signatureValid: true,
+          event: {
+            eventType: PaymentEventType.PAYMENT_SUCCEEDED,
+            providerEventId: 'mock_curr_evt',
+            providerTransactionReference: 'ref_curr',
+            amountMinor: 5000,
+            currency: 'GHS', // expected USD
+          },
+        }),
+      );
+      const record = { id: 'wh-curr', processed: false };
+      mockWebhookEventRepo.create.mockReturnValue(record);
+      mockWebhookEventRepo.save.mockResolvedValue(record);
+      mockTransactionRepo.findOne.mockResolvedValue({
+        id: 'tx-curr', userId: 'u1', invoiceId: 'inv-curr', provider: 'mock_curr',
+        providerTransactionReference: 'ref_curr', paymentPurpose: PaymentPurpose.SUBSCRIPTION_INITIAL,
+        amountMinor: '5000', currency: 'USD',
+      });
+
+      await service.processWebhook('mock_curr', Buffer.from('{}'), {});
+
+      expect(mockTransactionRepo.update).not.toHaveBeenCalled();
+      expect(mockSubscriptionsService.activateSubscriptionFromPayment).not.toHaveBeenCalled();
+    });
+
+    it('missing amount/currency in webhook event fails closed (does not mark paid)', async () => {
+      registry.register(
+        buildMockProvider('mock_missing', {
+          signatureValid: true,
+          event: {
+            eventType: PaymentEventType.PAYMENT_SUCCEEDED,
+            providerEventId: 'mock_missing_evt',
+            providerTransactionReference: 'ref_missing',
+            // amountMinor/currency intentionally omitted
+          },
+        }),
+      );
+      const record = { id: 'wh-missing', processed: false };
+      mockWebhookEventRepo.create.mockReturnValue(record);
+      mockWebhookEventRepo.save.mockResolvedValue(record);
+      mockTransactionRepo.findOne.mockResolvedValue({
+        id: 'tx-missing', userId: 'u1', invoiceId: 'inv-missing', provider: 'mock_missing',
+        providerTransactionReference: 'ref_missing', paymentPurpose: PaymentPurpose.SUBSCRIPTION_INITIAL,
+        amountMinor: '5000', currency: 'USD',
+      });
+
+      await service.processWebhook('mock_missing', Buffer.from('{}'), {});
+
+      expect(mockTransactionRepo.update).not.toHaveBeenCalled();
       expect(mockSubscriptionsService.activateSubscriptionFromPayment).not.toHaveBeenCalled();
     });
   });
