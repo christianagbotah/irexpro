@@ -909,3 +909,72 @@ for full details. Final count: 648 tests, 39 suites, all passing.
 - Provider fails closed when disabled or unconfigured; `manual` provider still never reachable via public checkout/webhook
 - No live broker withdrawals, no auto-charge, no Flutterwave/Hubtel/PayPal/Wise/Braintree implementation work, no frontend/mobile work
 - No new migrations (reuses existing `payments` schema)
+
+## Sprint 17 Audit — Payment/Security Audit (PASS, no fixes required)
+
+**Completed:** 2026-07-06
+
+A dedicated audit of the Sprint 17 Stripe sandbox integration reviewed all 17 areas
+requested (config, HTTP client, `createCheckoutSession`, webhook signature
+verification, `parseWebhookEvent`, amount/currency verification,
+`getTransactionStatus`, subscription checkout integration, performance-fee checkout
+integration, provider routing, idempotency/duplicate-checkout handling, module
+wiring, audit logging, build-artifact tracking, regressions, test coverage, and
+documentation) and found **no bugs requiring a code fix**:
+
+- Config fails closed (`STRIPE_ENABLED`/`STRIPE_SECRET_KEY` both required for
+  `isLive`); app boots with zero Stripe env vars set; no secrets in `.env.example`
+  placeholders.
+- `StripeHttpClient` times out via `AbortController`, sanitises/length-caps error
+  messages, never logs `Authorization`, and is fully mocked in tests (no live
+  network calls).
+- `createCheckoutSession` sends only whitelisted metadata (no card data, tokens, or
+  credentials), uses minor units, lower-cases currency safely for Stripe's API only,
+  and never marks anything paid.
+- `verifyWebhookSignature` correctly implements HMAC-SHA256 over
+  `"${timestamp}.${rawBody}"`, checks buffer length before `crypto.timingSafeEqual`
+  (never throws on length mismatch), enforces the 300s replay tolerance, and fails
+  closed on every missing/malformed input — confirmed via `try/catch` wrapping the
+  entire method body.
+- `parseWebhookEvent` only extracts whitelisted scalar/metadata fields; verified
+  with a payload containing `payment_method_details`/`cardNumber` that neither ever
+  survives into the parsed event.
+- Amount/currency verification (`WebhookProcessorService.amountAndCurrencyMatch`)
+  is fully provider-agnostic and already handles Stripe's lower-cased currency via
+  case-insensitive comparison — regression-tested with underpayment, overpayment,
+  currency-mismatch, and missing-amount/currency scenarios.
+- `getTransactionStatus` is confirmed read-only everywhere in the codebase — no
+  controller or service ever calls it to transition paid state; the performance-fee
+  `GET .../payment-status` endpoint reads only from the database.
+- Provider routing confirmed against the live `country-config.seed.ts`: US/GB list
+  `stripe` first (auto-routed once configured); GH/NG/ZA list `paystack` before
+  `stripe` (Paystack wins when both are live); explicit `provider: 'stripe'`
+  preference still works for any country.
+- `PaymentsModule`'s real module graph (including `StripeHttpClient` DI) compiles
+  in `payments.module.spec.ts` — no wiring regression.
+- Audit log metadata across `PAYMENT_CHECKOUT_INITIATED/FAILED`,
+  `PAYMENT_WEBHOOK_RECEIVED/SIGNATURE_FAILED`, `PAYMENT_SUCCEEDED/FAILED`, and
+  `PERFORMANCE_FEE_CHECKOUT_INITIATED/FAILED` contains only safe scalar identifiers
+  — no secrets, raw payloads, or card data.
+- `apps/api/dist/**` is an established, intentionally-tracked repository convention
+  (confirmed via `git log` — every prior sprint's feature commit includes matching
+  `dist` changes, and `.gitignore` never excluded it) — not a Sprint 17-specific
+  issue; left unchanged.
+- Full regression suite green: Paystack, webhook, subscription idempotency,
+  performance-fee/HWM, billing-cycle, and broker-reconciliation tests all still
+  pass; `manual` and placeholder providers still fail closed.
+- Test coverage for all 17 requested scenarios (fail-closed, request shape, error
+  handling, signature edge cases, event mapping, amount/currency mismatches,
+  idempotency, no-secrets, and routing priority) already existed and needed no
+  additions.
+
+One **minor, non-security observation** (not fixed, out of Stripe-specific audit
+scope): `PerformanceFeePaymentService.initiatePerformanceFeeCheckout()`'s
+`createCheckoutSession` metadata omits the `transactionId` key that subscription
+checkout includes — `invoiceId`/`assessmentId` already uniquely identify the
+transaction, so this is a debug-metadata completeness gap only. This is pre-existing
+shared code from Sprint 14 and applies identically to Paystack (already
+audited/passed in Sprint 15), so no change was made.
+
+Final count: 734 tests, 44 suites, all passing. No pending migrations. No open
+handles. **Sprint 18 is safe to begin.**

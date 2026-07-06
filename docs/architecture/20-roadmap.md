@@ -227,6 +227,15 @@ tests, 39 suites.
 | Flutterwave, Hubtel, PayPal, Wise, Braintree explicitly out of scope — not implemented | ✅ |
 | New tests (provider, HTTP client, webhook, subscription + performance-fee checkout, routing) | ✅ |
 
+**Sprint 17 audit (2026-07-06) — PASS, no fixes required:** reviewed all 17
+requested areas (config, HTTP client, checkout, webhook signature/parsing,
+amount/currency verification, transaction status, subscription/performance-fee
+integration, routing, idempotency, module wiring, audit logging, build artifacts,
+regressions, coverage, docs) and found no Stripe-specific bugs. One pre-existing,
+non-security observation noted (performance-fee checkout metadata omits
+`transactionId`, shared code since Sprint 14, identical for Paystack) — not fixed,
+out of scope. Final count unchanged: 734 tests, 44 suites, all passing.
+
 > Note: this is the actual, chronologically-next Sprint 15 (Paystack). The
 > "Sprint 15+"/"Sprint 15-16" entries below predate this sprint's numbering and
 > describe a separate, aspirational execution/revenue-engine roadmap track that

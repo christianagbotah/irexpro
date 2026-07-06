@@ -4,7 +4,7 @@
 
 \## Current Sprint Checkpoint
 
-Last completed sprint: Sprint 17 — Stripe Sandbox Checkout Integration (subscription + performance-fee, webhook-only paid/HWM path preserved).
+Last completed sprint: Sprint 17 audit — Stripe Sandbox Checkout Integration (PASS, no fixes required).
 
 
 
@@ -35,6 +35,8 @@ Last verified status:
 \- No secrets (STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, Authorization header, raw webhook payload, card data) in checkout responses, logs, errors, or audit metadata
 
 \- Flutterwave, Hubtel, PayPal, Wise, and Braintree remain untouched fail-closed placeholders — explicitly out of scope for this sprint
+
+\- Sprint 17 AUDIT (2026-07-06) — PASS, no code fixes required. Reviewed config fail-closed behaviour, StripeHttpClient, createCheckoutSession request shape/metadata, webhook signature verification (HMAC-SHA256, timestamp tolerance, timingSafeEqual, never throws), parseWebhookEvent mapping and safe-field extraction, amount/currency verification, getTransactionStatus read-only behaviour, subscription and performance-fee checkout integration, provider routing (US/GB vs GH/NG/ZA), module wiring (real PaymentsModule graph compiles), audit log metadata, and build-artifact (dist) tracking convention. All 734 tests pass (44 suites), db:migrate has no pending migrations, api:build succeeds, no open handles. One minor non-security observation noted: performance-fee checkout metadata (shared PerformanceFeePaymentService code, pre-existing since Sprint 14) does not pass a `transactionId` key into provider metadata the way subscription checkout does — invoiceId/assessmentId already uniquely identify the transaction, so this is a debug-metadata completeness gap only, not a payment-state or security risk, and applies identically to Paystack (already audited/passed). No fix applied — out of the Sprint 17 Stripe-specific audit scope.
 
 \- SubscriptionsService.initiateCheckout no longer creates a new invoice/transaction on every call — reuses an existing DRAFT/ISSUED invoice + PENDING/PROCESSING transaction for the same (userId, planId, currency, countryCode, paymentPurpose) identity
 
@@ -145,6 +147,8 @@ Last verified status:
 \- Sprint 16 audit: raw DB error leak on a narrow 23505 race, idempotency fingerprint missing paymentPurpose/amount, empty Idempotency-Key header precedence bug — all fixed
 
 \- Sprint 17: Stripe sandbox checkout integration (subscription + performance-fee) — webhook-only paid/HWM path preserved; zero business-logic changes required in SubscriptionsService/PerformanceFeePaymentService/WebhookProcessorService
+
+\- Sprint 17 audit: PASS, no fixes required — see Last verified status above for scope and detail
 
 
 
