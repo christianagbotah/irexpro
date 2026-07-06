@@ -56,4 +56,15 @@ export default () => ({
     baseUrl: process.env.AI_ENGINE_BASE_URL ?? 'http://localhost:8001/api/v1',
     schedulerEnabled: process.env.AI_ENGINE_SCHEDULER_ENABLED === 'true',
   },
+  paystack: {
+    // Fail-closed by default — PAYSTACK_ENABLED must be explicitly 'true' to
+    // allow live checkout/webhook verification. Never log this secret.
+    enabled: process.env.PAYSTACK_ENABLED === 'true',
+    secretKey: process.env.PAYSTACK_SECRET_KEY || undefined,
+    // Public key is safe to expose to clients if ever needed; not used server-side.
+    publicKey: process.env.PAYSTACK_PUBLIC_KEY || undefined,
+    webhookSecret: process.env.PAYSTACK_WEBHOOK_SECRET || undefined,
+    baseUrl: process.env.PAYSTACK_BASE_URL || 'https://api.paystack.co',
+    callbackUrl: process.env.PAYSTACK_CALLBACK_URL || undefined,
+  },
 });

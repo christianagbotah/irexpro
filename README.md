@@ -22,7 +22,7 @@ iRexPro supports users from multiple countries worldwide with regional payment p
 
 ## Current Status
 
-**Phase 1 Sprint 14 — Performance Fee Invoice Payment Flow: Complete**
+**Phase 1 Sprint 15 — Paystack Sandbox Checkout Integration: Complete**
 
 - ✅ Sprint 1-2: Backend Foundation (NestJS, Auth, Users, Audit)
 - ✅ Sprint 3-4: Broker Integration (MetaTrader adapter, credentials, health checks)
@@ -33,6 +33,24 @@ iRexPro supports users from multiple countries worldwide with regional payment p
 - ✅ Sprint 12: Broker Trade Reconciliation → Realised P&L Ledger Entries
 - ✅ Sprint 13: Performance Fee Billing Cycle Orchestrator
 - ✅ Sprint 14: Performance Fee Invoice Payment Flow + Provider Checkout Assignment
+- ✅ Sprint 15: Paystack Sandbox Checkout Integration (subscription + performance-fee, webhook-verified)
+
+### Sprint 15 — Paystack sandbox integration
+
+`PaystackPaymentProvider` is now a **live sandbox implementation** (no longer a
+placeholder) of `IPaymentProvider`, covering transaction initialize, transaction
+verify, and webhook signature verification/parsing per the
+[official Paystack API docs](https://paystack.com/docs/api/). It plugs into the
+existing subscription and performance-fee checkout flows with **zero business-logic
+changes** — routing, checkout, and webhook processing are provider-agnostic by design.
+
+- Fails closed unless `PAYSTACK_ENABLED=true` **and** `PAYSTACK_SECRET_KEY` is set.
+- Checkout (`createCheckoutSession`) only ever returns a checkout URL/reference —
+  it never marks an invoice, subscription, or performance-fee assessment paid.
+- The verified `x-paystack-signature` webhook (HMAC-SHA512 of the raw body) remains
+  the **only** path that activates a subscription or marks a performance fee paid.
+- See [docs/architecture/21-payment-provider-architecture.md](./docs/architecture/21-payment-provider-architecture.md)
+  for the full Sprint 15 design/safety notes.
 
 See [IMPLEMENTATION_ROADMAP.md](./IMPLEMENTATION_ROADMAP.md) for the next steps and Cursor prompts.
 
@@ -44,7 +62,7 @@ iRexPro is global-first. Regional providers are plug-in implementations of globa
 
 | Concern | Architecture |
 |---|---|
-| Payment providers | `IPaymentProvider` interface — Stripe, Paystack, Flutterwave, Hubtel, PayPal |
+| Payment providers | `IPaymentProvider` interface — Stripe, Paystack (sandbox-live, Sprint 15), Flutterwave, Hubtel, PayPal |
 | SMS providers | `ISmsProvider` interface — Twilio, Hubtel SMS, Arkesel, AWS SNS |
 | Regional configuration | `CountryConfig` entity — per-country provider routing, KYC, currency, compliance |
 | Multi-currency billing | `PlanPricing` entity — per-currency pricing for each plan |
@@ -111,7 +129,7 @@ irexpro/
 | AI/ML Services | Python 3.11+, FastAPI, XGBoost, pandas-ta |
 | Database | PostgreSQL 15+ |
 | Cache / Queue | Redis 7+, BullMQ |
-| Payment Providers | Stripe, Paystack, Flutterwave, Hubtel, PayPal (IPaymentProvider) |
+| Payment Providers | Stripe, Paystack (sandbox-live), Flutterwave, Hubtel, PayPal (IPaymentProvider) |
 | SMS Providers | Twilio, Hubtel SMS, Arkesel, AWS SNS (ISmsProvider) |
 | Containerisation | Docker, Docker Compose |
 | Production Orchestration | Kubernetes (Phase 2) |

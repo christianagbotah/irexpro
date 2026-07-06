@@ -652,3 +652,17 @@ Before approving any PR touching trading, risk, financial, payment, or regional 
 - [ ] Normal users may list/view/pay only their own performance-fee invoices; cross-user access → 403; admins may act on any
 - [ ] Checkout responses, `providerPayloadSummary`, and audit metadata must contain no secrets, tokens, raw payloads, card data, or PINs
 - [ ] All persisted money values remain bigint minor-unit strings
+
+## Paystack Sandbox Integration Rules (Sprint 15)
+
+- [ ] `PaystackPaymentProvider` must fail closed when `PAYSTACK_ENABLED` is not `'true'` or `PAYSTACK_SECRET_KEY` is missing — `isLive` is only `true` when both conditions hold
+- [ ] `PAYSTACK_SECRET_KEY` / `PAYSTACK_WEBHOOK_SECRET` must never be logged, returned in an API response, or included in any thrown error message
+- [ ] `createCheckoutSession()` must NEVER mark an invoice, subscription, or performance-fee assessment paid — it only returns a checkout URL/reference
+- [ ] `verifyWebhookSignature()` must fail closed (return `false`, never throw) on a missing signature header, missing secret, missing raw body, or any crypto/parsing error
+- [ ] Webhook signature verification uses HMAC-SHA512 of the **raw** request body against `x-paystack-signature`, compared with `crypto.timingSafeEqual` — never a plain `===` string comparison
+- [ ] `parseWebhookEvent()` must never persist the raw webhook payload — only a whitelisted metadata subset (`invoiceId`, `subscriptionId`, `assessmentId`, `paymentPurpose`, `userId`, `planId`, `internalTransactionId`) and safe scalar fields
+- [ ] Paystack's Verify Transaction endpoint (`getTransactionStatus`) is read-only server-side confirmation only — it must never replace webhook signature verification and must never itself mark anything paid
+- [ ] The verified `charge.success` webhook remains the ONLY path that activates a subscription or marks a performance-fee assessment/invoice paid — Paystack checkout initiation and frontend callbacks are never trusted
+- [ ] No Paystack SDK dependency — use the injectable `PaystackHttpClient` (native `fetch` + `AbortController` timeout), consistent with `AiEngineClient`
+- [ ] `PaystackHttpClient` must never log the `Authorization` header, and must sanitise/length-cap any provider-supplied error message before it is returned or logged
+- [ ] Tests for Paystack must mock `PaystackHttpClient`/`fetch` — never call the live Paystack network

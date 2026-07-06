@@ -1,8 +1,10 @@
 import { forwardRef, Module, OnModuleInit } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ManualPaymentProvider } from './providers/manual.provider';
 import { StripePaymentProvider } from './providers/stripe.provider';
 import { PaystackPaymentProvider } from './providers/paystack.provider';
+import { PaystackHttpClient } from './providers/paystack-http.client';
 import { FlutterwavePaymentProvider } from './providers/flutterwave.provider';
 import { HubtelPaymentProvider } from './providers/hubtel.provider';
 import { PayPalBraintreePaymentProvider } from './providers/paypal.provider';
@@ -36,6 +38,7 @@ import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
       TradingAccountPerformance,
       User,
     ]),
+    ConfigModule,
     AuditModule,
     // Bidirectional dependency with SubscriptionsModule — resolved via forwardRef.
     forwardRef(() => SubscriptionsModule),
@@ -45,6 +48,7 @@ import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
     PaymentProviderRegistry,
     ManualPaymentProvider,
     StripePaymentProvider,
+    PaystackHttpClient,
     PaystackPaymentProvider,
     FlutterwavePaymentProvider,
     HubtelPaymentProvider,

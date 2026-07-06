@@ -169,6 +169,29 @@ Phase 5: Platform Expansion
 | Fail closed on unconfigured providers; no secrets exposed | ✅ |
 | 35 new tests (service + controller) | ✅ |
 
+### Sprint 15: Paystack Sandbox Checkout Integration ✅ Complete
+
+| Task | Status |
+|---|---|
+| `PaystackPaymentProvider` — real sandbox implementation (was a placeholder) | ✅ |
+| `PaystackHttpClient` — injectable native-`fetch` HTTP wrapper, no SDK | ✅ |
+| `createCheckoutSession` (Transaction Initialize), `getTransactionStatus` (Transaction Verify) | ✅ |
+| `verifyWebhookSignature` (HMAC-SHA512, `x-paystack-signature`, fails closed) | ✅ |
+| `parseWebhookEvent` (`charge.success`/`charge.failed`/`invoice.payment_failed`/`subscription.disable`) | ✅ |
+| Subscription + performance-fee checkout work with Paystack — zero business-logic changes | ✅ |
+| Webhook endpoint reused unchanged (`POST /payments/webhooks/paystack`) | ✅ |
+| `PAYSTACK_ENABLED`/`PAYSTACK_SECRET_KEY`/etc. config, fail-closed by default | ✅ |
+| Checkout never marks paid / never updates HWM — verified webhook remains the only paid path | ✅ |
+| No secrets in logs, responses, errors, or audit metadata | ✅ |
+| 60 new tests (provider, HTTP client, webhook, subscription + performance-fee checkout, routing) | ✅ |
+
+> Note: this is the actual, chronologically-next Sprint 15 (Paystack). The
+> "Sprint 15+"/"Sprint 15-16" entries below predate this sprint's numbering and
+> describe a separate, aspirational execution/revenue-engine roadmap track that
+> has not yet been renumbered — see
+> [`docs/project-state/CURRENT_STATE.md`](../project-state/CURRENT_STATE.md) for
+> the authoritative, up-to-date sprint checkpoint.
+
 ### Sprint 15+: Execution Engine (3 weeks)
 
 | Task | Priority |

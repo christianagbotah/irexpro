@@ -28,7 +28,7 @@ export abstract class BasePaymentProvider implements IPaymentProvider {
   abstract readonly displayName: string;
   abstract readonly supportedCountries: string[];
   abstract readonly supportedCurrencies: string[];
-  readonly isLive = false;
+  readonly isLive: boolean = false;
   readonly supportedPaymentMethods: string[] = ['card'];
 
   async createCustomer(_params: CreateCustomerParams): Promise<ProviderCustomerResult> {

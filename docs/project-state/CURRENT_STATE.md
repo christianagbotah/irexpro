@@ -4,13 +4,13 @@
 
 \## Current Sprint Checkpoint
 
-Last completed sprint: Sprint 14 — Performance Fee Invoice Payment Flow + Provider Checkout Assignment.
+Last completed sprint: Sprint 15 — Paystack Sandbox Checkout Integration.
 
 
 
 Last verified status:
 
-\- NestJS: 540 tests passing, 32 suites
+\- NestJS: 609 tests passing, 38 suites
 
 \- No pending migrations
 
@@ -18,15 +18,21 @@ Last verified status:
 
 \- No Python files touched
 
-\- Performance-fee invoice checkout flow added
+\- PaystackPaymentProvider upgraded from fail-closed placeholder to real sandbox implementation
 
-\- Provider assignment uses PaymentRoutingService
+\- PaystackHttpClient (native fetch, no SDK) added for all Paystack API calls
 
-\- Checkout does not mark invoice/assessment paid
+\- Subscription checkout and performance-fee invoice checkout both work with Paystack — no business-logic changes needed in either service
 
-\- Verified webhook remains the only PAID/HWM path
+\- Webhook signature verification is HMAC-SHA512 over the raw body, fails closed on any missing input
+
+\- Checkout does not mark invoice/subscription/assessment paid
+
+\- Verified webhook remains the only PAID/HWM/subscription-activation path
 
 \- Manual/admin settlement intentionally skipped
+
+\- No secrets (PAYSTACK_SECRET_KEY, webhook secret, Authorization header) in logs, responses, or errors
 
 
 
@@ -51,6 +57,10 @@ Last verified status:
 \- Do not expose secrets, credentials, tokens, raw webhook payloads, card data, or mobile money PINs.
 
 \- All money values must remain decimal-safe.
+
+\- Paystack provider must fail closed unless PAYSTACK_ENABLED=true and a secret key is configured.
+
+\- Paystack Transaction Verify (getTransactionStatus) is read-only confirmation only — never a substitute for webhook signature verification.
 
 
 
@@ -91,6 +101,8 @@ Last verified status:
 \- Sprint 13 audit: failed reconciliation treated as success fixed; null-broker duplicate lookup fixed
 
 \- Sprint 14: Performance fee invoice checkout + provider assignment
+
+\- Sprint 15: Paystack sandbox checkout integration (subscription + performance-fee) — webhook-only paid/HWM path preserved
 
 
 

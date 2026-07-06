@@ -164,7 +164,7 @@ All providers implement `IPaymentProvider`. No direct SDK calls in business logi
 |---|---|---|---|---|
 | **Stripe** | `stripe` | Global (incl. NG, KE, GH, ZA) | Card | Sandbox placeholder — Sprint 10+ |
 | **PayPal / Braintree** | `paypal` | Global (US, GB, CA, AU, DE, FR) | PayPal, Card | Sandbox placeholder |
-| **Paystack** | `paystack` | Africa (NG, GH, KE, ZA) | Card, Mobile Money, Bank | Sandbox placeholder |
+| **Paystack** | `paystack` | Africa (NG, GH, KE, ZA) | Card, Mobile Money, Bank | **Sandbox-live — Sprint 15** (fails closed unless `PAYSTACK_ENABLED=true` + secret key set) |
 | **Flutterwave** | `flutterwave` | Pan-Africa (30+ countries) | Card, Mobile Money, USSD | Sandbox placeholder |
 | **Hubtel** | `hubtel` | Ghana | Mobile Money (MTN/Vodafone/Airtel), Card | Sandbox placeholder |
 | **Wise** | `wise` | Global (payout-only) | Bank Transfer | Sandbox placeholder — Phase 3 |
@@ -172,9 +172,22 @@ All providers implement `IPaymentProvider`. No direct SDK calls in business logi
 
 **Security rules:**
 - Placeholder providers fail closed: `verifyWebhookSignature` returns `false`
+- Paystack fails closed identically when `PAYSTACK_ENABLED` is not `'true'` or `PAYSTACK_SECRET_KEY` is missing (`isLive` reflects both conditions)
 - ManualPaymentProvider excluded from `PaymentRoutingService.routeForCheckout()`
 - Subscription activated ONLY via verified webhook — frontend payment success never trusted
 - All monetary amounts stored as bigint strings (minor units) — never float
+
+### Paystack Sandbox Integration (Sprint 15)
+
+| Component | Location | Status |
+|---|---|---|
+| `PaystackHttpClient` (native `fetch` wrapper, no SDK) | `payments/providers/paystack-http.client.ts` | ✅ Sprint 15 |
+| `PaystackPaymentProvider` (`createCheckoutSession`/`verifyWebhookSignature`/`parseWebhookEvent`/`getTransactionStatus`) | `payments/providers/paystack.provider.ts` | ✅ Sprint 15 |
+| `PAYSTACK_ENABLED`/`PAYSTACK_SECRET_KEY`/`PAYSTACK_PUBLIC_KEY`/`PAYSTACK_WEBHOOK_SECRET`/`PAYSTACK_BASE_URL`/`PAYSTACK_CALLBACK_URL` | `config/configuration.ts`, `config/validation.schema.ts` | ✅ Sprint 15 |
+| Webhook endpoint reuse (`POST /api/v1/payments/webhooks/paystack`) | `payments.controller.ts` (no changes needed) | ✅ Sprint 15 |
+| Migrations | — | None (reuses `payments` schema) |
+
+**Paystack API surface used** (per [official docs](https://paystack.com/docs/api/)): Transaction Initialize (`POST /transaction/initialize`), Transaction Verify (`GET /transaction/verify/:reference`), and webhook signature verification (`x-paystack-signature` = HMAC-SHA512 of the raw body). No undocumented fields are used.
 
 ---
 
@@ -287,6 +300,15 @@ All providers implement `IPaymentProvider`. No direct SDK calls in business logi
 | Migrations | — | None (reuses `payments` schema) |
 
 **Payment safety:** checkout only assigns a routed provider + creates a provider session; it never marks paid and never updates the high-water mark. A verified provider webhook remains the sole path to paid/HWM state. The `manual` provider is excluded from public checkout and providers fail closed when unconfigured.
+
+### Paystack Sandbox Checkout Integration (Sprint 15)
+
+Both the subscription checkout (`SubscriptionsService.initiateCheckout`) and performance-fee
+checkout (`PerformanceFeePaymentService.initiatePerformanceFeeCheckout`) flows now work
+end-to-end with Paystack via the existing provider-agnostic `IPaymentProvider` interface —
+no business-logic changes were required in either service. See
+[docs/architecture/21-payment-provider-architecture.md](./docs/architecture/21-payment-provider-architecture.md)
+for the full design and safety invariants.
 
 ---
 

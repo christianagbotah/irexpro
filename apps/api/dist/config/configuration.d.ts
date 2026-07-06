@@ -56,5 +56,13 @@ declare const _default: () => {
         baseUrl: string;
         schedulerEnabled: boolean;
     };
+    paystack: {
+        enabled: boolean;
+        secretKey: string | undefined;
+        publicKey: string | undefined;
+        webhookSecret: string | undefined;
+        baseUrl: string;
+        callbackUrl: string | undefined;
+    };
 };
 export default _default;

@@ -10,14 +10,20 @@ import { FlutterwavePaymentProvider } from '../providers/flutterwave.provider';
 import { HubtelPaymentProvider } from '../providers/hubtel.provider';
 import { PayPalBraintreePaymentProvider } from '../providers/paypal.provider';
 import { ManualPaymentProvider } from '../providers/manual.provider';
+import { PaystackHttpClient } from '../providers/paystack-http.client';
 
 const mockCountryConfigRepo = { findOne: jest.fn() };
+
+/** Disabled by default (PAYSTACK_ENABLED=false) — mirrors production defaults. */
+function mockDisabledConfigService(): any {
+  return { get: jest.fn((_key: string, fallback?: unknown) => fallback ?? undefined) };
+}
 
 function buildRegistry(): PaymentProviderRegistry {
   const registry = new PaymentProviderRegistry();
   registry.register(new ManualPaymentProvider());
   registry.register(new StripePaymentProvider());
-  registry.register(new PaystackPaymentProvider());
+  registry.register(new PaystackPaymentProvider(mockDisabledConfigService(), new PaystackHttpClient()));
   registry.register(new FlutterwavePaymentProvider());
   registry.register(new HubtelPaymentProvider());
   registry.register(new PayPalBraintreePaymentProvider());
@@ -177,6 +183,110 @@ describe('PaymentRoutingService', () => {
       mockCountryConfigRepo.findOne.mockResolvedValue(ghConfig());
       const { provider } = await service.routeForCheckout('GH', 'GHS');
       expect(provider.providerId).not.toBe('manual');
+    });
+  });
+
+  describe('Paystack availability — Sprint 15', () => {
+    function enabledConfigService(): any {
+      const values: Record<string, unknown> = {
+        'paystack.enabled': true,
+        'paystack.secretKey': 'sk_test_routing_secret',
+      };
+      return { get: jest.fn((key: string, fallback?: unknown) => values[key] ?? fallback) };
+    }
+
+    it('Paystack appears in the country provider list but is not live when disabled/missing config', async () => {
+      mockCountryConfigRepo.findOne.mockResolvedValue(ghConfig());
+      const providers = await service.getAvailableProviders('GH', 'GHS');
+      const paystack = providers.find((p) => p.providerId === 'paystack');
+      expect(paystack).toBeDefined();
+      expect(paystack?.isLive).toBe(false);
+      expect(paystack?.isSandbox).toBe(true);
+    });
+
+    it('Paystack is reported live when enabled/configured and country/currency supported', async () => {
+      const registryWithLivePaystack = new PaymentProviderRegistry();
+      registryWithLivePaystack.register(new ManualPaymentProvider());
+      registryWithLivePaystack.register(
+        new PaystackPaymentProvider(enabledConfigService(), new PaystackHttpClient()),
+      );
+      const moduleWithLive = await Test.createTestingModule({
+        providers: [
+          PaymentRoutingService,
+          { provide: PaymentProviderRegistry, useValue: registryWithLivePaystack },
+          { provide: getRepositoryToken(CountryConfig), useValue: mockCountryConfigRepo },
+        ],
+      }).compile();
+      const liveService = moduleWithLive.get<PaymentRoutingService>(PaymentRoutingService);
+
+      mockCountryConfigRepo.findOne.mockResolvedValue(ghConfig());
+      const providers = await liveService.getAvailableProviders('GH', 'GHS');
+      const paystack = providers.find((p) => p.providerId === 'paystack');
+      expect(paystack).toBeDefined();
+      expect(paystack?.isLive).toBe(true);
+      expect(paystack?.isSandbox).toBe(false);
+
+      await moduleWithLive.close();
+    });
+
+    it('routes checkout to Paystack when explicitly preferred for GH/GHS', async () => {
+      mockCountryConfigRepo.findOne.mockResolvedValue(ghConfig());
+      const { provider, reason } = await service.routeForCheckout('GH', 'GHS', 'paystack');
+      expect(provider.providerId).toBe('paystack');
+      expect(reason).toBe('preferred');
+    });
+
+    it('routes checkout to Paystack when explicitly preferred for NG/NGN', async () => {
+      mockCountryConfigRepo.findOne.mockResolvedValue({
+        countryCode: 'NG',
+        isActive: true,
+        isBlocked: false,
+        enabledPaymentProviders: ['paystack', 'flutterwave', 'stripe', 'manual'],
+      });
+      const { provider, reason } = await service.routeForCheckout('NG', 'NGN', 'paystack');
+      expect(provider.providerId).toBe('paystack');
+      expect(reason).toBe('preferred');
+    });
+  });
+
+  describe('manual provider stays blocked for public checkout — Sprint 15 regression', () => {
+    it('manual is never returned by getAllPublicProviders even when explicitly enabled in CountryConfig', () => {
+      const providers = service.getAllPublicProviders();
+      expect(providers.map((p) => p.providerId)).not.toContain('manual');
+    });
+
+    it('manual is never returned by getAvailableProviders even when explicitly enabled in CountryConfig', async () => {
+      mockCountryConfigRepo.findOne.mockResolvedValue({
+        countryCode: 'GH',
+        isActive: true,
+        isBlocked: false,
+        enabledPaymentProviders: ['manual', 'paystack'],
+      });
+      const providers = await service.getAvailableProviders('GH', 'GHS');
+      expect(providers.map((p) => p.providerId)).not.toContain('manual');
+    });
+
+    it('routeForCheckout rejects an explicit manual preference for public checkout', async () => {
+      mockCountryConfigRepo.findOne.mockResolvedValue({
+        countryCode: 'GH',
+        isActive: true,
+        isBlocked: false,
+        enabledPaymentProviders: ['manual', 'paystack'],
+      });
+      await expect(service.routeForCheckout('GH', 'GHS', 'manual')).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('GET /payments/providers exposes no secrets — Sprint 15 regression', () => {
+    it('does not expose the Paystack secret key or any secret-like field', async () => {
+      mockCountryConfigRepo.findOne.mockResolvedValue(ghConfig());
+      const providers = await service.getAvailableProviders('GH', 'GHS');
+      const json = JSON.stringify(providers);
+      expect(json).not.toContain('sk_test');
+      expect(json).not.toContain('SECRET');
+      expect(json).not.toContain('secretKey');
+      expect(json).not.toContain('webhookSecret');
+      expect(json).not.toContain('Authorization');
     });
   });
 });

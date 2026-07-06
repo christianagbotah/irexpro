@@ -11,10 +11,12 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PaymentsModule = void 0;
 const common_1 = require("@nestjs/common");
+const config_1 = require("@nestjs/config");
 const typeorm_1 = require("@nestjs/typeorm");
 const manual_provider_1 = require("./providers/manual.provider");
 const stripe_provider_1 = require("./providers/stripe.provider");
 const paystack_provider_1 = require("./providers/paystack.provider");
+const paystack_http_client_1 = require("./providers/paystack-http.client");
 const flutterwave_provider_1 = require("./providers/flutterwave.provider");
 const hubtel_provider_1 = require("./providers/hubtel.provider");
 const paypal_provider_1 = require("./providers/paypal.provider");
@@ -70,6 +72,7 @@ exports.PaymentsModule = PaymentsModule = __decorate([
                 trading_account_performance_entity_1.TradingAccountPerformance,
                 user_entity_1.User,
             ]),
+            config_1.ConfigModule,
             audit_module_1.AuditModule,
             (0, common_1.forwardRef)(() => subscriptions_module_1.SubscriptionsModule),
         ],
@@ -78,6 +81,7 @@ exports.PaymentsModule = PaymentsModule = __decorate([
             payment_provider_registry_1.PaymentProviderRegistry,
             manual_provider_1.ManualPaymentProvider,
             stripe_provider_1.StripePaymentProvider,
+            paystack_http_client_1.PaystackHttpClient,
             paystack_provider_1.PaystackPaymentProvider,
             flutterwave_provider_1.FlutterwavePaymentProvider,
             hubtel_provider_1.HubtelPaymentProvider,

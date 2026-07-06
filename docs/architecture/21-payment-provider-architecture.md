@@ -446,7 +446,8 @@ class ManualPaymentProvider implements IPaymentProvider {
 | `IPaymentProvider` interface | ✅ Hardened — `createCheckoutSession`, `verifyWebhookSignature`, `getTransactionStatus`, `refundPayment` |
 | `BasePaymentProvider` | ✅ Fail-closed — all live methods throw `NotImplementedException`, `verifyWebhookSignature` returns `false` |
 | `ManualPaymentProvider` | ✅ DEV/TEST only — full interface, all methods warn |
-| Stripe, Paystack, Flutterwave, Hubtel, PayPal, Wise | ✅ Safe sandbox placeholders — fail closed |
+| Stripe, Flutterwave, Hubtel, PayPal, Wise | ✅ Safe sandbox placeholders — fail closed |
+| Paystack | ✅ **Sandbox-live since Sprint 15** — see §16 below; fails closed when disabled/unconfigured |
 | `PaymentRoutingService` | ✅ Country/currency routing via `CountryConfig`, excludes `manual` |
 | `PaymentTransaction` entity | ✅ `payments.payment_transactions` — bigint minor units |
 | `Invoice` entity | ✅ `payments.invoices` — bigint minor units |
@@ -553,6 +554,81 @@ to the pending transaction created at invoicing time and returns a checkout sess
    already) or a `409 Conflict` asking the caller to retry shortly — it never
    calls the provider a second time. Provider/validation failures release the
    claim back to `PENDING` so the invoice remains retryable.
+
+---
+
+## 16. Paystack Sandbox Integration (Sprint 15)
+
+`PaystackPaymentProvider` is upgraded from a fail-closed placeholder to a real
+**sandbox** implementation of `IPaymentProvider`, used identically by both the
+subscription checkout flow (§8) and the performance-fee invoice checkout flow (§15) —
+neither service required any change, since both depend only on the generic interface.
+No Paystack SDK is used; a small injectable `PaystackHttpClient` wraps native `fetch`.
+
+### Configuration (fail-closed by default)
+
+| Variable | Default | Notes |
+|---|---|---|
+| `PAYSTACK_ENABLED` | `false` | Master switch; provider is never "live" unless `true` |
+| `PAYSTACK_SECRET_KEY` | unset | Server-side only; never logged/returned/thrown |
+| `PAYSTACK_PUBLIC_KEY` | unset | Not currently exposed by any endpoint |
+| `PAYSTACK_WEBHOOK_SECRET` | unset | Falls back to `PAYSTACK_SECRET_KEY` for signature verification if unset, per Paystack's own model |
+| `PAYSTACK_BASE_URL` | `https://api.paystack.co` | Overridable for testing |
+| `PAYSTACK_CALLBACK_URL` | unset | Passed to Paystack as the post-checkout redirect; never trusted for state changes |
+
+`isLive` is `true` only when `PAYSTACK_ENABLED === 'true'` **and** a secret key is
+configured; otherwise the provider behaves like every other fail-closed placeholder.
+
+### `createCheckoutSession` — Transaction Initialize
+
+Calls Paystack's `POST /transaction/initialize` with amount in minor units (kobo/pesewas),
+currency, customer email, a generated stable reference (`psk_<uuid>`), and a whitelisted
+`metadata` object (`invoiceId`, `userId`, `planId`, `paymentPurpose`,
+`internalTransactionId`, `subscriptionId` — no secrets, no free-form data). Returns the
+Paystack `authorization_url` and `reference`; never marks anything paid.
+
+### `verifyWebhookSignature` — HMAC-SHA512 over the raw body
+
+Reads the `x-paystack-signature` header, computes `HMAC-SHA512(rawBody, secretKey)` and
+compares it to the header using `crypto.timingSafeEqual` (never `===`). Fails closed
+(returns `false`, never throws) when the header, secret, or raw body is missing, or on
+any crypto/parsing error. This check runs before any state change in
+`WebhookProcessorService`, identical to every other provider (§12).
+
+### `parseWebhookEvent` — safe mapping, no raw payload persistence
+
+| Paystack event | Internal `PaymentEventType` |
+|---|---|
+| `charge.success` | `PAYMENT_SUCCEEDED` |
+| `charge.failed` | `PAYMENT_FAILED` |
+| `invoice.payment_failed` | `PAYMENT_FAILED` |
+| `subscription.disable` | `SUBSCRIPTION_CANCELLED` |
+
+A stable `providerEventId` is derived from the event type + transaction reference (Paystack
+does not send a dedicated event ID) and is the idempotency key `WebhookProcessorService`
+uses to guarantee a duplicate webhook is never double-processed. Only whitelisted metadata
+fields are extracted and stored — the raw webhook body is never persisted.
+
+### `getTransactionStatus` — Transaction Verify (read-only)
+
+Calls `GET /transaction/verify/:reference` for server-side status confirmation only. This
+is **never** a substitute for webhook signature verification and never itself marks
+anything paid — it exists purely as an optional status-check convenience.
+
+### Safety invariants (identical to every other provider)
+
+- Checkout (`createCheckoutSession`) never marks an invoice, subscription, or
+  performance-fee assessment paid, and never updates the high-water mark.
+- The verified `charge.success` webhook is the **only** path to subscription activation
+  or performance-fee paid/HWM state — frontend callbacks and `PAYSTACK_CALLBACK_URL`
+  redirects are never trusted.
+- `PAYSTACK_SECRET_KEY` / `PAYSTACK_WEBHOOK_SECRET` are never logged, returned in an API
+  response, or included in a thrown error message; `PaystackHttpClient` never logs the
+  `Authorization` header.
+- No raw card data or mobile money PINs are read, stored, or forwarded.
+- `manual` remains excluded from `PaymentRoutingService.routeForCheckout()` and blocked
+  at the public webhook endpoint — unaffected by this sprint.
+- All tests mock `PaystackHttpClient`/`fetch`; no live Paystack network calls are made.
 
 ---
 

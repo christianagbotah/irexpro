@@ -1,6 +1,6 @@
 # iRexPro — Implementation Roadmap
 
-## Current Phase: Phase 1 Sprint 14 Complete — Performance Fee Invoice Payment Flow
+## Current Phase: Phase 1 Sprint 15 Complete — Paystack Sandbox Checkout Integration
 
 ---
 
@@ -746,4 +746,50 @@ Critical rules (from DEVELOPMENT_RULES.md):
 - `manual` provider is never a public checkout provider; providers fail closed when unconfigured
 - No duplicate payable transaction/invoice; money values remain bigint minor-unit strings
 - No secrets in responses, `providerPayloadSummary`, or audit metadata
+- No new migrations (reuses existing `payments` schema)
+
+## Sprint 15 — Paystack Sandbox Checkout Integration
+
+**Completed:** 2026-07-06
+
+### What was built
+
+**PART A — Configuration**
+- `PAYSTACK_ENABLED` (default `false`), `PAYSTACK_SECRET_KEY`, `PAYSTACK_PUBLIC_KEY`, `PAYSTACK_WEBHOOK_SECRET`, `PAYSTACK_BASE_URL` (default `https://api.paystack.co`), `PAYSTACK_CALLBACK_URL`
+- Added to `config/configuration.ts`, `config/validation.schema.ts` (all optional/defaulted — never required), and `.env.example` (placeholder values only)
+
+**PART B/C — Provider + HTTP client**
+- `PaystackHttpClient` (new, injectable): thin wrapper around native `fetch` with an `AbortController` timeout, sanitised/length-capped error messages, and safe handling of non-2xx and Paystack's `status: false` API-level failures — no Paystack SDK dependency
+- `PaystackPaymentProvider` (rewritten from a placeholder to a real sandbox implementation of `IPaymentProvider`):
+  - `createCheckoutSession` → `POST /transaction/initialize` (amount in minor units, safe whitelisted metadata, generated `psk_<uuid>` reference)
+  - `verifyWebhookSignature` → HMAC-SHA512 of the raw body vs `x-paystack-signature`, `crypto.timingSafeEqual`, fails closed on any missing input
+  - `parseWebhookEvent` → maps `charge.success`→`PAYMENT_SUCCEEDED`, `charge.failed`/`invoice.payment_failed`→`PAYMENT_FAILED`, `subscription.disable`→`SUBSCRIPTION_CANCELLED`; never stores the raw payload, only whitelisted metadata
+  - `getTransactionStatus` → `GET /transaction/verify/:reference`, read-only server-side status check
+  - `refundPayment`/`cancelSubscription`/`createCustomer` remain fail-closed (inherited `NotImplementedException`)
+  - `isLive` is computed from config (`PAYSTACK_ENABLED=true` **and** a secret key present) — fails closed otherwise
+
+**PART D/E — Subscription + performance-fee checkout integration**
+- **No business-logic changes required** — `SubscriptionsService.initiateCheckout` and `PerformanceFeePaymentService.initiatePerformanceFeeCheckout` already call the generic `IPaymentProvider` interface via `PaymentRoutingService`; Paystack now works through both flows automatically once enabled/configured
+- Verified via new integration tests that checkout never touches subscription/invoice/assessment/HWM state
+
+**PART F — Webhook integration**
+- `POST /api/v1/payments/webhooks/paystack` reuses the existing `WebhookProcessorService` — no controller changes needed; signature verification happens before any state change, exactly as for other providers
+- `manual` provider remains hard-blocked at the webhook endpoint (pre-existing guard, re-verified)
+
+**PART G — Provider routing**
+- No routing code changes — `paystack` was already present in `GH`/`NG`/`ZA` `CountryConfig.enabledPaymentProviders` seeds; it now resolves to a real (sandbox) implementation instead of a placeholder
+- `GET /payments/providers` now reports `isLive: true` for Paystack only when `PAYSTACK_ENABLED=true` and a secret key is configured — otherwise `isSandbox: true`, matching every other provider's default
+
+**PART I — Tests**
+- New: `paystack.provider.spec.ts`, `paystack-http.client.spec.ts`, `webhook-processor.paystack.spec.ts`, `subscriptions.service.paystack.spec.ts`, `performance-fee-payment.paystack.spec.ts`, plus new describe blocks in `payment-routing.service.spec.ts`
+- Updated: `payments.spec.ts` and `payment-routing.service.spec.ts` to construct the real `PaystackPaymentProvider(ConfigService, PaystackHttpClient)` instead of the old zero-arg placeholder constructor
+
+### Safety invariants (enforced, never violated)
+- Checkout NEVER marks invoice/subscription/assessment PAID, never creates FEE_PAID ledger, never updates HWM
+- Verified `x-paystack-signature` webhook remains the ONLY paid/HWM/subscription-activation path; frontend callback is never trusted
+- Paystack Verify Transaction is read-only server-side confirmation only — never a webhook-signature-verification substitute
+- `PAYSTACK_SECRET_KEY`/`PAYSTACK_WEBHOOK_SECRET` never logged, returned, or present in thrown errors
+- No raw card data or mobile money PINs read/stored/forwarded; raw webhook payload never persisted (whitelisted metadata only)
+- Provider fails closed when disabled or unconfigured; `manual` provider still never reachable via public checkout/webhook
+- No live broker withdrawals, no auto-charge, no Stripe/Flutterwave/Hubtel changes, no frontend/mobile work
 - No new migrations (reuses existing `payments` schema)

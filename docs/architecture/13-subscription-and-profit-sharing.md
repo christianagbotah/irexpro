@@ -581,3 +581,18 @@ assessment paid and **never** updates the high-water mark — a verified provide
 remains the only path to paid state / HWM advance. Full details, endpoints, and safety
 invariants are documented in
 [`21-payment-provider-architecture.md` §15](./21-payment-provider-architecture.md).
+
+## Paystack Sandbox Checkout Integration (Sprint 15)
+
+`PaystackPaymentProvider` is now a real sandbox implementation (previously a fail-closed
+placeholder). Both subscription checkout (this section) and performance-fee invoice
+checkout (above) can route to Paystack for Ghana/Nigeria users once
+`PAYSTACK_ENABLED=true` and a secret key are configured — no changes were needed in
+`SubscriptionsService` or `PerformanceFeePaymentService` since both already depend only
+on the generic `IPaymentProvider` interface. The webhook-only paid/HWM/subscription-
+activation invariant described throughout this document applies identically to Paystack:
+`createCheckoutSession` only returns an authorization URL/reference, and only a verified
+`charge.success` webhook (HMAC-SHA512 signature over the raw body) activates a
+subscription or marks a performance-fee invoice paid. See
+[`21-payment-provider-architecture.md` §16](./21-payment-provider-architecture.md) for the
+full provider design and safety invariants.

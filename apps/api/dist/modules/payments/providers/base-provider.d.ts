@@ -4,7 +4,7 @@ export declare abstract class BasePaymentProvider implements IPaymentProvider {
     abstract readonly displayName: string;
     abstract readonly supportedCountries: string[];
     abstract readonly supportedCurrencies: string[];
-    readonly isLive = false;
+    readonly isLive: boolean;
     readonly supportedPaymentMethods: string[];
     createCustomer(_params: CreateCustomerParams): Promise<ProviderCustomerResult>;
     createCheckoutSession(_request: CreateCheckoutSessionRequest): Promise<CreateCheckoutSessionResult>;

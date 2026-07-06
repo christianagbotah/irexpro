@@ -2,6 +2,7 @@ import { NotImplementedException } from '@nestjs/common';
 import { IPaymentProvider } from './interfaces/payment-provider.interface';
 import { StripePaymentProvider } from './providers/stripe.provider';
 import { PaystackPaymentProvider } from './providers/paystack.provider';
+import { PaystackHttpClient } from './providers/paystack-http.client';
 import { FlutterwavePaymentProvider } from './providers/flutterwave.provider';
 import { HubtelPaymentProvider } from './providers/hubtel.provider';
 import { PayPalBraintreePaymentProvider } from './providers/paypal.provider';
@@ -9,9 +10,20 @@ import { WisePayoutProvider } from './providers/wise.provider';
 import { ManualPaymentProvider } from './providers/manual.provider';
 import { PaymentProviderRegistry } from './registry/payment-provider.registry';
 
+/** PAYSTACK_ENABLED=false, no secret key — mirrors production defaults. */
+function disabledConfigService(): any {
+  return { get: jest.fn((_key: string, fallback?: unknown) => fallback ?? undefined) };
+}
+
+function buildDisabledPaystackProvider(): PaystackPaymentProvider {
+  return new PaystackPaymentProvider(disabledConfigService(), new PaystackHttpClient());
+}
+
+// Paystack is a real (Sprint 15) implementation, not a raw NotImplementedException
+// placeholder like the providers below — it has its own dedicated fail-closed test
+// suite in `providers/paystack.provider.spec.ts`.
 const providerCases: [string, IPaymentProvider][] = [
   ['Stripe', new StripePaymentProvider()],
-  ['Paystack', new PaystackPaymentProvider()],
   ['Flutterwave', new FlutterwavePaymentProvider()],
   ['Hubtel', new HubtelPaymentProvider()],
   ['PayPal/Braintree', new PayPalBraintreePaymentProvider()],
@@ -132,7 +144,7 @@ describe('PaymentProviderRegistry', () => {
     registry = new PaymentProviderRegistry();
     registry.register(new ManualPaymentProvider());
     registry.register(new StripePaymentProvider());
-    registry.register(new PaystackPaymentProvider());
+    registry.register(buildDisabledPaystackProvider());
   });
 
   it('should return registered provider', () => {

@@ -36,5 +36,11 @@ exports.validationSchema = Joi.object({
     NESTJS_INTERNAL_API_KEY: Joi.string().optional().allow(''),
     AI_ENGINE_BASE_URL: Joi.string().default('http://localhost:8001/api/v1'),
     AI_ENGINE_SCHEDULER_ENABLED: Joi.boolean().default(false),
+    PAYSTACK_ENABLED: Joi.boolean().default(false),
+    PAYSTACK_SECRET_KEY: Joi.string().optional().allow(''),
+    PAYSTACK_PUBLIC_KEY: Joi.string().optional().allow(''),
+    PAYSTACK_WEBHOOK_SECRET: Joi.string().optional().allow(''),
+    PAYSTACK_BASE_URL: Joi.string().default('https://api.paystack.co'),
+    PAYSTACK_CALLBACK_URL: Joi.string().optional().allow(''),
 });
 //# sourceMappingURL=validation.schema.js.map
