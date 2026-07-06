@@ -867,3 +867,45 @@ index (informational — unreachable today since all identity fields are always
 non-null in the current checkout flow). See
 [docs/architecture/21-payment-provider-architecture.md §17.7](./docs/architecture/21-payment-provider-architecture.md)
 for full details. Final count: 648 tests, 39 suites, all passing.
+
+## Sprint 17 — Stripe Sandbox Checkout Integration
+
+**Completed:** 2026-07-06
+
+### What was built
+
+**PART A — Configuration**
+- `STRIPE_ENABLED` (default `false`), `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_BASE_URL` (default `https://api.stripe.com`), `STRIPE_SUCCESS_URL`, `STRIPE_CANCEL_URL`
+- Added to `config/configuration.ts`, `config/validation.schema.ts` (all optional/defaulted — never required), and `.env.example` (placeholder values only)
+
+**PART B/C — Provider + HTTP client**
+- `StripeHttpClient` (new, injectable): thin wrapper around native `fetch` with an `AbortController` timeout, `application/x-www-form-urlencoded` request bodies (via a `flattenToFormParams` nested-object-to-bracket-notation utility, matching Stripe's documented REST format), sanitised/length-capped error messages extracted from Stripe's JSON error envelope — no Stripe SDK dependency
+- `StripePaymentProvider` (rewritten from a placeholder to a real sandbox implementation of `IPaymentProvider`):
+  - `createCheckoutSession` → `POST /v1/checkout/sessions` (`mode: 'payment'`, `price_data` line item with `unit_amount` in minor units, currency lower-cased for Stripe's API, `client_reference_id`, `customer_email` when available, safe whitelisted metadata, `success_url`/`cancel_url` from config or per-request override)
+  - `verifyWebhookSignature` → parses `Stripe-Signature` (`t=...,v1=...`), computes HMAC-SHA256 over `"${timestamp}.${rawBody}"`, compares every `v1` value with `crypto.timingSafeEqual`, enforces a 300-second timestamp tolerance, fails closed on any missing input
+  - `parseWebhookEvent` → maps `checkout.session.completed`(paid)/`checkout.session.async_payment_succeeded`/`payment_intent.succeeded`→`PAYMENT_SUCCEEDED`, `checkout.session.expired`/`checkout.session.async_payment_failed`/`payment_intent.payment_failed`→`PAYMENT_FAILED`; uses Stripe's stable `evt_...` id directly as `providerEventId`; never stores the raw payload, only whitelisted metadata
+  - `getTransactionStatus` → routes to `GET /v1/checkout/sessions/:id` (`cs_...`) or `GET /v1/payment_intents/:id` (`pi_...`), read-only server-side status check
+  - `refundPayment`/`cancelSubscription`/`createCustomer` remain fail-closed (inherited `NotImplementedException`)
+  - `isLive` is computed from config (`STRIPE_ENABLED=true` **and** a secret key present) — fails closed otherwise
+
+**PART D/E/F — Amount/currency verification + subscription + performance-fee checkout integration**
+- **No business-logic changes required** — `WebhookProcessorService`'s amount/currency verification is already case-insensitive/provider-agnostic (Sprint 15/16), and `SubscriptionsService.initiateCheckout`/`PerformanceFeePaymentService.initiatePerformanceFeeCheckout` already call the generic `IPaymentProvider` interface via `PaymentRoutingService`; Stripe now works through all three automatically once enabled/configured
+- Verified via new integration tests that checkout never touches subscription/invoice/assessment/HWM state, that duplicate/invalid-signature webhooks never double-activate or activate incorrectly, and that amount/currency mismatches (including Stripe's lower-cased currency) fail closed
+
+**PART G — Provider routing**
+- No routing code changes — `stripe` was already listed first in `US`/`GB` `CountryConfig.enabledPaymentProviders` seeds; it now resolves to a real (sandbox) implementation instead of a placeholder. `paystack` remains ahead of `stripe` in `GH`/`NG`/`ZA` seeds, so Paystack stays the auto-routed live choice there when both are configured
+- `GET /payments/providers` now reports `isLive: true` for Stripe only when `STRIPE_ENABLED=true` and a secret key is configured — otherwise `isSandbox: true`, matching every other provider's default; no Stripe secrets exposed
+
+**PART I — Tests**
+- New: `stripe.provider.spec.ts`, `stripe-http.client.spec.ts`, `webhook-processor.stripe.spec.ts`, `subscriptions.service.stripe.spec.ts`, `performance-fee-payment.stripe.spec.ts`, plus new describe blocks in `payment-routing.service.spec.ts`
+- Updated: `payments.spec.ts` and `payment-routing.service.spec.ts` to construct the real `StripePaymentProvider(ConfigService, StripeHttpClient)` instead of the old zero-arg placeholder constructor
+
+### Safety invariants (enforced, never violated)
+- Checkout NEVER marks invoice/subscription/assessment PAID, never creates FEE_PAID ledger, never updates HWM
+- Verified `Stripe-Signature` webhook remains the ONLY paid/HWM/subscription-activation path; frontend callback/redirect URLs are never trusted
+- Stripe Checkout Session/PaymentIntent retrieval is read-only server-side confirmation only — never a webhook-signature-verification substitute
+- `STRIPE_SECRET_KEY`/`STRIPE_PUBLISHABLE_KEY`/`STRIPE_WEBHOOK_SECRET` never logged, returned, or present in thrown errors
+- No raw card data or payment-method details read/stored/forwarded; raw webhook payload never persisted (whitelisted metadata only)
+- Provider fails closed when disabled or unconfigured; `manual` provider still never reachable via public checkout/webhook
+- No live broker withdrawals, no auto-charge, no Flutterwave/Hubtel/PayPal/Wise/Braintree implementation work, no frontend/mobile work
+- No new migrations (reuses existing `payments` schema)

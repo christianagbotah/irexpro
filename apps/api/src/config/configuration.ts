@@ -67,4 +67,16 @@ export default () => ({
     baseUrl: process.env.PAYSTACK_BASE_URL || 'https://api.paystack.co',
     callbackUrl: process.env.PAYSTACK_CALLBACK_URL || undefined,
   },
+  stripe: {
+    // Fail-closed by default — STRIPE_ENABLED must be explicitly 'true' to
+    // allow live checkout/webhook verification. Never log this secret.
+    enabled: process.env.STRIPE_ENABLED === 'true',
+    secretKey: process.env.STRIPE_SECRET_KEY || undefined,
+    // Publishable key is safe to expose to clients if ever needed; not used server-side.
+    publishableKey: process.env.STRIPE_PUBLISHABLE_KEY || undefined,
+    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || undefined,
+    baseUrl: process.env.STRIPE_BASE_URL || 'https://api.stripe.com',
+    successUrl: process.env.STRIPE_SUCCESS_URL || undefined,
+    cancelUrl: process.env.STRIPE_CANCEL_URL || undefined,
+  },
 });

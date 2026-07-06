@@ -15,6 +15,7 @@ const config_1 = require("@nestjs/config");
 const typeorm_1 = require("@nestjs/typeorm");
 const manual_provider_1 = require("./providers/manual.provider");
 const stripe_provider_1 = require("./providers/stripe.provider");
+const stripe_http_client_1 = require("./providers/stripe-http.client");
 const paystack_provider_1 = require("./providers/paystack.provider");
 const paystack_http_client_1 = require("./providers/paystack-http.client");
 const flutterwave_provider_1 = require("./providers/flutterwave.provider");
@@ -80,6 +81,7 @@ exports.PaymentsModule = PaymentsModule = __decorate([
         providers: [
             payment_provider_registry_1.PaymentProviderRegistry,
             manual_provider_1.ManualPaymentProvider,
+            stripe_http_client_1.StripeHttpClient,
             stripe_provider_1.StripePaymentProvider,
             paystack_http_client_1.PaystackHttpClient,
             paystack_provider_1.PaystackPaymentProvider,

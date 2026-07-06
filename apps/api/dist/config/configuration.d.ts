@@ -64,5 +64,14 @@ declare const _default: () => {
         baseUrl: string;
         callbackUrl: string | undefined;
     };
+    stripe: {
+        enabled: boolean;
+        secretKey: string | undefined;
+        publishableKey: string | undefined;
+        webhookSecret: string | undefined;
+        baseUrl: string;
+        successUrl: string | undefined;
+        cancelUrl: string | undefined;
+    };
 };
 export default _default;

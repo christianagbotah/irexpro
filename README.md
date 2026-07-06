@@ -22,7 +22,7 @@ iRexPro supports users from multiple countries worldwide with regional payment p
 
 ## Current Status
 
-**Phase 1 Sprint 16 — Subscription Checkout Idempotency + Pending Invoice Reuse: Complete**
+**Phase 1 Sprint 17 — Stripe Sandbox Checkout Integration: Complete**
 
 - ✅ Sprint 1-2: Backend Foundation (NestJS, Auth, Users, Audit)
 - ✅ Sprint 3-4: Broker Integration (MetaTrader adapter, credentials, health checks)
@@ -35,6 +35,30 @@ iRexPro supports users from multiple countries worldwide with regional payment p
 - ✅ Sprint 14: Performance Fee Invoice Payment Flow + Provider Checkout Assignment
 - ✅ Sprint 15: Paystack Sandbox Checkout Integration (subscription + performance-fee, webhook-verified)
 - ✅ Sprint 16: Subscription Checkout Idempotency + Pending Invoice Reuse (all providers, DB-level duplicate guard)
+- ✅ Sprint 17: Stripe Sandbox Checkout Integration (subscription + performance-fee, webhook-verified)
+
+### Sprint 17 — Stripe sandbox integration
+
+`StripePaymentProvider` is now a **live sandbox implementation** (no longer a
+placeholder) of `IPaymentProvider`, covering Checkout Session creation
+(`mode: 'payment'`), session/PaymentIntent status retrieval, and webhook signature
+verification/parsing. It plugs into the existing subscription and performance-fee
+checkout flows with **zero business-logic changes** — routing, checkout, and webhook
+processing are provider-agnostic by design.
+
+- Fails closed unless `STRIPE_ENABLED=true` **and** `STRIPE_SECRET_KEY` is set.
+- Checkout (`createCheckoutSession`) only ever returns a hosted checkout URL/session
+  reference — it never marks an invoice, subscription, or performance-fee assessment
+  paid.
+- The verified `Stripe-Signature` webhook (HMAC-SHA256 over
+  `"${timestamp}.${rawBody}"`, 300s replay-protection tolerance) remains the **only**
+  path that activates a subscription or marks a performance fee paid.
+- No Stripe SDK dependency — uses the injectable `StripeHttpClient` (native `fetch`,
+  `application/x-www-form-urlencoded` bodies), consistent with `PaystackHttpClient`.
+- US/GB prefer Stripe once configured; Paystack remains the preferred live provider
+  for GH/NG.
+- See [docs/architecture/21-payment-provider-architecture.md](./docs/architecture/21-payment-provider-architecture.md)
+  for the full Sprint 17 design/safety notes.
 
 ### Sprint 16 — Subscription checkout idempotency + pending invoice reuse
 
@@ -84,7 +108,7 @@ iRexPro is global-first. Regional providers are plug-in implementations of globa
 
 | Concern | Architecture |
 |---|---|
-| Payment providers | `IPaymentProvider` interface — Stripe, Paystack (sandbox-live, Sprint 15), Flutterwave, Hubtel, PayPal; checkout idempotency + reuse (Sprint 16) applies to all |
+| Payment providers | `IPaymentProvider` interface — Stripe (sandbox-live, Sprint 17), Paystack (sandbox-live, Sprint 15), Flutterwave, Hubtel, PayPal; checkout idempotency + reuse (Sprint 16) applies to all |
 | SMS providers | `ISmsProvider` interface — Twilio, Hubtel SMS, Arkesel, AWS SNS |
 | Regional configuration | `CountryConfig` entity — per-country provider routing, KYC, currency, compliance |
 | Multi-currency billing | `PlanPricing` entity — per-currency pricing for each plan |
@@ -151,7 +175,7 @@ irexpro/
 | AI/ML Services | Python 3.11+, FastAPI, XGBoost, pandas-ta |
 | Database | PostgreSQL 15+ |
 | Cache / Queue | Redis 7+, BullMQ |
-| Payment Providers | Stripe, Paystack (sandbox-live), Flutterwave, Hubtel, PayPal (IPaymentProvider) |
+| Payment Providers | Stripe (sandbox-live), Paystack (sandbox-live), Flutterwave, Hubtel, PayPal (IPaymentProvider) |
 | SMS Providers | Twilio, Hubtel SMS, Arkesel, AWS SNS (ISmsProvider) |
 | Containerisation | Docker, Docker Compose |
 | Production Orchestration | Kubernetes (Phase 2) |

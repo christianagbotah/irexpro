@@ -42,5 +42,12 @@ exports.validationSchema = Joi.object({
     PAYSTACK_WEBHOOK_SECRET: Joi.string().optional().allow(''),
     PAYSTACK_BASE_URL: Joi.string().default('https://api.paystack.co'),
     PAYSTACK_CALLBACK_URL: Joi.string().optional().allow(''),
+    STRIPE_ENABLED: Joi.boolean().default(false),
+    STRIPE_SECRET_KEY: Joi.string().optional().allow(''),
+    STRIPE_PUBLISHABLE_KEY: Joi.string().optional().allow(''),
+    STRIPE_WEBHOOK_SECRET: Joi.string().optional().allow(''),
+    STRIPE_BASE_URL: Joi.string().default('https://api.stripe.com'),
+    STRIPE_SUCCESS_URL: Joi.string().optional().allow(''),
+    STRIPE_CANCEL_URL: Joi.string().optional().allow(''),
 });
 //# sourceMappingURL=validation.schema.js.map

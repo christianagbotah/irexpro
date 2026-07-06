@@ -210,6 +210,23 @@ could replay a stale-priced session), and an empty-header precedence bug. Added 
 previously-missing `subscriptions.controller.spec.ts`. Final count after fixes: 648
 tests, 39 suites.
 
+### Sprint 17: Stripe Sandbox Checkout Integration ✅ Complete
+
+| Task | Status |
+|---|---|
+| `StripePaymentProvider` — real sandbox implementation (was a placeholder) | ✅ |
+| `StripeHttpClient` — injectable native-`fetch` HTTP wrapper, `application/x-www-form-urlencoded`, no SDK | ✅ |
+| `createCheckoutSession` (Checkout Session, `mode: 'payment'`), `getTransactionStatus` (Checkout Session / PaymentIntent retrieve) | ✅ |
+| `verifyWebhookSignature` (HMAC-SHA256 over `"${timestamp}.${rawBody}"`, `Stripe-Signature` header, 300s replay tolerance, fails closed) | ✅ |
+| `parseWebhookEvent` (`checkout.session.completed`/`payment_intent.succeeded`/`checkout.session.expired`/`payment_intent.payment_failed`/async variants) | ✅ |
+| Subscription + performance-fee checkout work with Stripe — zero business-logic changes | ✅ |
+| `STRIPE_ENABLED`/`STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET`/etc. config, fail-closed by default | ✅ |
+| Provider routing: US/GB prefer Stripe (already first in `enabledPaymentProviders`); Paystack remains preferred for GH/NG — no seed changes needed | ✅ |
+| Checkout never marks paid / never updates HWM — verified webhook remains the only paid path | ✅ |
+| No secrets in logs, responses, errors, or audit metadata | ✅ |
+| Flutterwave, Hubtel, PayPal, Wise, Braintree explicitly out of scope — not implemented | ✅ |
+| New tests (provider, HTTP client, webhook, subscription + performance-fee checkout, routing) | ✅ |
+
 > Note: this is the actual, chronologically-next Sprint 15 (Paystack). The
 > "Sprint 15+"/"Sprint 15-16" entries below predate this sprint's numbering and
 > describe a separate, aspirational execution/revenue-engine roadmap track that

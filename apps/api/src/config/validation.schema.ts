@@ -63,4 +63,15 @@ export const validationSchema = Joi.object({
   PAYSTACK_WEBHOOK_SECRET: Joi.string().optional().allow(''),
   PAYSTACK_BASE_URL: Joi.string().default('https://api.paystack.co'),
   PAYSTACK_CALLBACK_URL: Joi.string().optional().allow(''),
+
+  // Stripe sandbox integration (Sprint 17) — fail-closed by default.
+  // STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET must never be logged or returned;
+  // only present in local .env. The app must boot without either being set.
+  STRIPE_ENABLED: Joi.boolean().default(false),
+  STRIPE_SECRET_KEY: Joi.string().optional().allow(''),
+  STRIPE_PUBLISHABLE_KEY: Joi.string().optional().allow(''),
+  STRIPE_WEBHOOK_SECRET: Joi.string().optional().allow(''),
+  STRIPE_BASE_URL: Joi.string().default('https://api.stripe.com'),
+  STRIPE_SUCCESS_URL: Joi.string().optional().allow(''),
+  STRIPE_CANCEL_URL: Joi.string().optional().allow(''),
 });

@@ -5,6 +5,7 @@ import { PaymentRoutingService } from './payment-routing.service';
 import { PaymentProviderRegistry } from '../registry/payment-provider.registry';
 import { CountryConfig } from '../../global-config/entities/country-config.entity';
 import { StripePaymentProvider } from '../providers/stripe.provider';
+import { StripeHttpClient } from '../providers/stripe-http.client';
 import { PaystackPaymentProvider } from '../providers/paystack.provider';
 import { FlutterwavePaymentProvider } from '../providers/flutterwave.provider';
 import { HubtelPaymentProvider } from '../providers/hubtel.provider';
@@ -14,15 +15,30 @@ import { PaystackHttpClient } from '../providers/paystack-http.client';
 
 const mockCountryConfigRepo = { findOne: jest.fn() };
 
-/** Disabled by default (PAYSTACK_ENABLED=false) — mirrors production defaults. */
+/** Disabled by default (PAYSTACK_ENABLED=false / STRIPE_ENABLED=false) — mirrors production defaults. */
 function mockDisabledConfigService(): any {
   return { get: jest.fn((_key: string, fallback?: unknown) => fallback ?? undefined) };
+}
+
+function buildDisabledStripeProvider(): StripePaymentProvider {
+  return new StripePaymentProvider(mockDisabledConfigService(), new StripeHttpClient());
+}
+
+function buildLiveStripeProvider(): StripePaymentProvider {
+  const values: Record<string, unknown> = {
+    'stripe.enabled': true,
+    'stripe.secretKey': 'sk_test_routing_secret',
+  };
+  return new StripePaymentProvider(
+    { get: jest.fn((key: string, fallback?: unknown) => values[key] ?? fallback) } as any,
+    new StripeHttpClient(),
+  );
 }
 
 function buildRegistry(): PaymentProviderRegistry {
   const registry = new PaymentProviderRegistry();
   registry.register(new ManualPaymentProvider());
-  registry.register(new StripePaymentProvider());
+  registry.register(buildDisabledStripeProvider());
   registry.register(new PaystackPaymentProvider(mockDisabledConfigService(), new PaystackHttpClient()));
   registry.register(new FlutterwavePaymentProvider());
   registry.register(new HubtelPaymentProvider());
@@ -252,7 +268,7 @@ describe('PaymentRoutingService', () => {
       async function buildLiveGhRoutingService(): Promise<PaymentRoutingService> {
         const registry = new PaymentProviderRegistry();
         registry.register(new ManualPaymentProvider());
-        registry.register(new StripePaymentProvider());
+        registry.register(buildDisabledStripeProvider());
         registry.register(
           new PaystackPaymentProvider(
             {
@@ -301,6 +317,130 @@ describe('PaymentRoutingService', () => {
     });
   });
 
+  describe('Stripe availability and routing — Sprint 17', () => {
+    it('Stripe appears in the provider list but is not live when disabled/missing config', async () => {
+      mockCountryConfigRepo.findOne.mockResolvedValue(usConfig());
+      const providers = await service.getAvailableProviders('US', 'USD');
+      const stripe = providers.find((p) => p.providerId === 'stripe');
+      expect(stripe).toBeDefined();
+      expect(stripe?.isLive).toBe(false);
+      expect(stripe?.isSandbox).toBe(true);
+    });
+
+    it('Stripe is reported live when enabled/configured and country/currency supported', async () => {
+      const registryWithLiveStripe = new PaymentProviderRegistry();
+      registryWithLiveStripe.register(new ManualPaymentProvider());
+      registryWithLiveStripe.register(buildLiveStripeProvider());
+      const moduleWithLive = await Test.createTestingModule({
+        providers: [
+          PaymentRoutingService,
+          { provide: PaymentProviderRegistry, useValue: registryWithLiveStripe },
+          { provide: getRepositoryToken(CountryConfig), useValue: mockCountryConfigRepo },
+        ],
+      }).compile();
+      const liveService = moduleWithLive.get<PaymentRoutingService>(PaymentRoutingService);
+
+      mockCountryConfigRepo.findOne.mockResolvedValue(usConfig());
+      const providers = await liveService.getAvailableProviders('US', 'USD');
+      const stripe = providers.find((p) => p.providerId === 'stripe');
+      expect(stripe).toBeDefined();
+      expect(stripe?.isLive).toBe(true);
+      expect(stripe?.isSandbox).toBe(false);
+
+      await moduleWithLive.close();
+    });
+
+    it('routes US/USD to Stripe when configured (only live candidate)', async () => {
+      const registryWithLiveStripe = new PaymentProviderRegistry();
+      registryWithLiveStripe.register(new ManualPaymentProvider());
+      registryWithLiveStripe.register(buildLiveStripeProvider());
+      registryWithLiveStripe.register(new PayPalBraintreePaymentProvider());
+      const moduleWithLive = await Test.createTestingModule({
+        providers: [
+          PaymentRoutingService,
+          { provide: PaymentProviderRegistry, useValue: registryWithLiveStripe },
+          { provide: getRepositoryToken(CountryConfig), useValue: mockCountryConfigRepo },
+        ],
+      }).compile();
+      const liveService = moduleWithLive.get<PaymentRoutingService>(PaymentRoutingService);
+
+      mockCountryConfigRepo.findOne.mockResolvedValue(usConfig());
+      const { provider, reason } = await liveService.routeForCheckout('US', 'USD');
+      expect(provider.providerId).toBe('stripe');
+      expect(provider.isLive).toBe(true);
+      expect(reason).toBe('country_config');
+
+      await moduleWithLive.close();
+    });
+
+    it('routes GB/GBP to Stripe when configured', async () => {
+      const registryWithLiveStripe = new PaymentProviderRegistry();
+      registryWithLiveStripe.register(new ManualPaymentProvider());
+      registryWithLiveStripe.register(buildLiveStripeProvider());
+      const moduleWithLive = await Test.createTestingModule({
+        providers: [
+          PaymentRoutingService,
+          { provide: PaymentProviderRegistry, useValue: registryWithLiveStripe },
+          { provide: getRepositoryToken(CountryConfig), useValue: mockCountryConfigRepo },
+        ],
+      }).compile();
+      const liveService = moduleWithLive.get<PaymentRoutingService>(PaymentRoutingService);
+
+      mockCountryConfigRepo.findOne.mockResolvedValue({
+        countryCode: 'GB',
+        isActive: true,
+        isBlocked: false,
+        enabledPaymentProviders: ['stripe', 'paypal', 'wise', 'manual'],
+      });
+      const { provider, reason } = await liveService.routeForCheckout('GB', 'GBP');
+      expect(provider.providerId).toBe('stripe');
+      expect(reason).toBe('country_config');
+
+      await moduleWithLive.close();
+    });
+
+    it('GH/GHS still routes to Paystack (live, listed first among live candidates) when both Paystack and Stripe are live', async () => {
+      const registry = new PaymentProviderRegistry();
+      registry.register(new ManualPaymentProvider());
+      registry.register(
+        new PaystackPaymentProvider(
+          {
+            get: jest.fn((key: string, fallback?: unknown) => {
+              const values: Record<string, unknown> = {
+                'paystack.enabled': true,
+                'paystack.secretKey': 'sk_test_gh_live',
+              };
+              return values[key] ?? fallback;
+            }),
+          } as any,
+          new PaystackHttpClient(),
+        ),
+      );
+      registry.register(buildLiveStripeProvider());
+      const module = await Test.createTestingModule({
+        providers: [
+          PaymentRoutingService,
+          { provide: PaymentProviderRegistry, useValue: registry },
+          { provide: getRepositoryToken(CountryConfig), useValue: mockCountryConfigRepo },
+        ],
+      }).compile();
+      const liveService = module.get<PaymentRoutingService>(PaymentRoutingService);
+
+      mockCountryConfigRepo.findOne.mockResolvedValue(ghConfig()); // paystack listed before stripe
+      const { provider } = await liveService.routeForCheckout('GH', 'GHS');
+      expect(provider.providerId).toBe('paystack');
+
+      await module.close();
+    });
+
+    it('routes checkout to Stripe when explicitly preferred for GH/GHS', async () => {
+      mockCountryConfigRepo.findOne.mockResolvedValue(ghConfig());
+      const { provider, reason } = await service.routeForCheckout('GH', 'GHS', 'stripe');
+      expect(provider.providerId).toBe('stripe');
+      expect(reason).toBe('preferred');
+    });
+  });
+
   describe('manual provider stays blocked for public checkout — Sprint 15 regression', () => {
     it('manual is never returned by getAllPublicProviders even when explicitly enabled in CountryConfig', () => {
       const providers = service.getAllPublicProviders();
@@ -329,7 +469,7 @@ describe('PaymentRoutingService', () => {
     });
   });
 
-  describe('GET /payments/providers exposes no secrets — Sprint 15 regression', () => {
+  describe('GET /payments/providers exposes no secrets — Sprint 15/17 regression', () => {
     it('does not expose the Paystack secret key or any secret-like field', async () => {
       mockCountryConfigRepo.findOne.mockResolvedValue(ghConfig());
       const providers = await service.getAvailableProviders('GH', 'GHS');
@@ -339,6 +479,17 @@ describe('PaymentRoutingService', () => {
       expect(json).not.toContain('secretKey');
       expect(json).not.toContain('webhookSecret');
       expect(json).not.toContain('Authorization');
+    });
+
+    it('does not expose the Stripe secret key, publishable key, or webhook secret', async () => {
+      mockCountryConfigRepo.findOne.mockResolvedValue(usConfig());
+      const providers = await service.getAvailableProviders('US', 'USD');
+      const json = JSON.stringify(providers);
+      expect(json).not.toContain('sk_test');
+      expect(json).not.toContain('pk_test');
+      expect(json).not.toContain('whsec');
+      expect(json).not.toContain('secretKey');
+      expect(json).not.toContain('webhookSecret');
     });
   });
 });

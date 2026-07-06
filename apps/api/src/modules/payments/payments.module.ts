@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ManualPaymentProvider } from './providers/manual.provider';
 import { StripePaymentProvider } from './providers/stripe.provider';
+import { StripeHttpClient } from './providers/stripe-http.client';
 import { PaystackPaymentProvider } from './providers/paystack.provider';
 import { PaystackHttpClient } from './providers/paystack-http.client';
 import { FlutterwavePaymentProvider } from './providers/flutterwave.provider';
@@ -47,6 +48,7 @@ import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
   providers: [
     PaymentProviderRegistry,
     ManualPaymentProvider,
+    StripeHttpClient,
     StripePaymentProvider,
     PaystackHttpClient,
     PaystackPaymentProvider,

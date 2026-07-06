@@ -134,7 +134,7 @@ The full `IPaymentProvider` interface, `PaymentProviderRegistry`, `PaymentProvid
 
 | Provider | ID | Region | Phase |
 |---|---|---|---|
-| Stripe | `stripe` | Global | Phase 1 interface → Phase 2 live |
+| Stripe | `stripe` | Global | **Sandbox-live since Sprint 17** |
 | PayPal / Braintree | `paypal` | Global | Phase 2 |
 | Paystack | `paystack` | Africa (NG, GH, KE, ZA) | Phase 1 interface → Phase 2 live |
 | Flutterwave | `flutterwave` | Africa (30+ countries) | Phase 1 interface → Phase 2 live |
@@ -612,3 +612,24 @@ invariant above — checkout still only ever returns a session reference, and on
 verified webhook advances any state. Full rules, the reuse decision table, and the
 concurrency design are documented in
 [`21-payment-provider-architecture.md` §17](./21-payment-provider-architecture.md).
+
+## Stripe Sandbox Checkout Integration (Sprint 17)
+
+`StripePaymentProvider` is now a real sandbox implementation (previously a fail-closed
+placeholder), used identically by subscription checkout (this section) and
+performance-fee invoice checkout (above) — no changes were needed in
+`SubscriptionsService` or `PerformanceFeePaymentService`, since both depend only on
+the generic `IPaymentProvider` interface and the Sprint 16 reuse/idempotency logic is
+fully provider-agnostic. Stripe becomes a live routing candidate for US/GB
+(`enabledPaymentProviders` already lists `stripe` first for those countries) once
+`STRIPE_ENABLED=true` and a secret key are configured; Paystack remains the preferred
+live provider for GH/NG. The webhook-only paid/activation invariant applies
+identically to Stripe: `createCheckoutSession` (Stripe Checkout Session,
+`mode: 'payment'`) only returns a hosted checkout URL/session reference, and only a
+verified `checkout.session.completed`/`payment_intent.succeeded` webhook (HMAC-SHA256
+signature over `"${timestamp}.${rawBody}"`, verified via the `Stripe-Signature`
+header and `STRIPE_WEBHOOK_SECRET`, with a 300-second replay-protection window)
+activates a subscription or marks a performance-fee invoice paid — never the checkout
+call, a redirect, or a frontend callback. See
+[`21-payment-provider-architecture.md` §18](./21-payment-provider-architecture.md) for
+the full provider design and safety invariants.

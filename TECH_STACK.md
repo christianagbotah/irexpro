@@ -162,7 +162,7 @@ All providers implement `IPaymentProvider`. No direct SDK calls in business logi
 
 | Provider | ID | Region | Payment Methods | Status |
 |---|---|---|---|---|
-| **Stripe** | `stripe` | Global (incl. NG, KE, GH, ZA) | Card | Sandbox placeholder — Sprint 10+ |
+| **Stripe** | `stripe` | Global (incl. NG, KE, GH, ZA) | Card | **Sandbox-live — Sprint 17** (fails closed unless `STRIPE_ENABLED=true` + secret key set) |
 | **PayPal / Braintree** | `paypal` | Global (US, GB, CA, AU, DE, FR) | PayPal, Card | Sandbox placeholder |
 | **Paystack** | `paystack` | Africa (NG, GH, KE, ZA) | Card, Mobile Money, Bank | **Sandbox-live — Sprint 15** (fails closed unless `PAYSTACK_ENABLED=true` + secret key set) |
 | **Flutterwave** | `flutterwave` | Pan-Africa (30+ countries) | Card, Mobile Money, USSD | Sandbox placeholder |
@@ -172,6 +172,7 @@ All providers implement `IPaymentProvider`. No direct SDK calls in business logi
 
 **Security rules:**
 - Placeholder providers fail closed: `verifyWebhookSignature` returns `false`
+- Stripe fails closed identically when `STRIPE_ENABLED` is not `'true'` or `STRIPE_SECRET_KEY` is missing (`isLive` reflects both conditions)
 - Paystack fails closed identically when `PAYSTACK_ENABLED` is not `'true'` or `PAYSTACK_SECRET_KEY` is missing (`isLive` reflects both conditions)
 - ManualPaymentProvider excluded from `PaymentRoutingService.routeForCheckout()`
 - Subscription activated ONLY via verified webhook — frontend payment success never trusted
@@ -188,6 +189,18 @@ All providers implement `IPaymentProvider`. No direct SDK calls in business logi
 | Migrations | — | None (reuses `payments` schema) |
 
 **Paystack API surface used** (per [official docs](https://paystack.com/docs/api/)): Transaction Initialize (`POST /transaction/initialize`), Transaction Verify (`GET /transaction/verify/:reference`), and webhook signature verification (`x-paystack-signature` = HMAC-SHA512 of the raw body). No undocumented fields are used.
+
+### Stripe Sandbox Integration (Sprint 17)
+
+| Component | Location | Status |
+|---|---|---|
+| `StripeHttpClient` (native `fetch` wrapper, no SDK, form-urlencoded bodies) | `payments/providers/stripe-http.client.ts` | ✅ Sprint 17 |
+| `StripePaymentProvider` (`createCheckoutSession`/`verifyWebhookSignature`/`parseWebhookEvent`/`getTransactionStatus`) | `payments/providers/stripe.provider.ts` | ✅ Sprint 17 |
+| `STRIPE_ENABLED`/`STRIPE_SECRET_KEY`/`STRIPE_PUBLISHABLE_KEY`/`STRIPE_WEBHOOK_SECRET`/`STRIPE_BASE_URL`/`STRIPE_SUCCESS_URL`/`STRIPE_CANCEL_URL` | `config/configuration.ts`, `config/validation.schema.ts` | ✅ Sprint 17 |
+| Webhook endpoint reuse (`POST /api/v1/payments/webhooks/stripe`) | `payments.controller.ts` (no changes needed) | ✅ Sprint 17 |
+| Migrations | — | None (reuses `payments` schema) |
+
+**Stripe API surface used** (per [official docs](https://docs.stripe.com/api)): Checkout Sessions (`POST /v1/checkout/sessions`, `GET /v1/checkout/sessions/:id`), PaymentIntents (`GET /v1/payment_intents/:id`), and webhook signature verification (`Stripe-Signature` header = HMAC-SHA256 of `"${timestamp}.${rawBody}"`, 300-second replay-protection tolerance). No undocumented fields are used.
 
 ---
 

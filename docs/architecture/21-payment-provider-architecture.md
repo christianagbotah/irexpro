@@ -195,7 +195,7 @@ class PaymentProviderRouter {
 
 | Provider | ID | Recurring | Currencies | Notes |
 |---|---|---|---|---|
-| **Stripe** | `stripe` | Yes | 130+ | Primary global provider; best developer API |
+| **Stripe** | `stripe` | Yes | 130+ | Primary global provider; best developer API. **Sandbox-live since Sprint 17** (§18) |
 | **PayPal / Braintree** | `paypal` | Yes | 25+ | Wide global consumer recognition |
 | **Wise** | `wise` | No | 40+ | Payout-focused; international bank transfers |
 | **Adyen** | `adyen` (future) | Yes | 150+ | Enterprise-grade; Phase 3+ |
@@ -446,8 +446,9 @@ class ManualPaymentProvider implements IPaymentProvider {
 | `IPaymentProvider` interface | ✅ Hardened — `createCheckoutSession`, `verifyWebhookSignature`, `getTransactionStatus`, `refundPayment` |
 | `BasePaymentProvider` | ✅ Fail-closed — all live methods throw `NotImplementedException`, `verifyWebhookSignature` returns `false` |
 | `ManualPaymentProvider` | ✅ DEV/TEST only — full interface, all methods warn |
-| Stripe, Flutterwave, Hubtel, PayPal, Wise | ✅ Safe sandbox placeholders — fail closed |
+| Flutterwave, Hubtel, PayPal, Wise | ✅ Safe sandbox placeholders — fail closed |
 | Paystack | ✅ **Sandbox-live since Sprint 15** — see §16 below; fails closed when disabled/unconfigured |
+| Stripe | ✅ **Sandbox-live since Sprint 17** — see §18 below; fails closed when disabled/unconfigured |
 | `PaymentRoutingService` | ✅ Country/currency routing via `CountryConfig`, excludes `manual` |
 | `PaymentTransaction` entity | ✅ `payments.payment_transactions` — bigint minor units |
 | `Invoice` entity | ✅ `payments.invoices` — bigint minor units |
@@ -826,6 +827,159 @@ change:
 - Any individual provider adapter (Stripe/Paystack/Flutterwave/Hubtel/PayPal/Wise) —
   the fix lives entirely in `SubscriptionsService`, which depends only on the generic
   `IPaymentProvider` interface.
+
+---
+
+## 18. Stripe Sandbox Integration (Sprint 17)
+
+`StripePaymentProvider` is upgraded from a fail-closed placeholder to a real
+**sandbox** implementation of `IPaymentProvider`, used identically by both the
+subscription checkout flow (§8/§17) and the performance-fee invoice checkout flow
+(§15) — **neither service required any change**, since both depend only on the
+generic interface and the Sprint 16 reuse/idempotency/concurrency logic in
+`SubscriptionsService` is entirely provider-agnostic. No Stripe SDK is used; a small
+injectable `StripeHttpClient` wraps native `fetch` and sends
+`application/x-www-form-urlencoded` request bodies, matching Stripe's documented
+REST API format (bracket-notation nested fields, e.g.
+`line_items[0][price_data][currency]=usd`).
+
+### 18.1 Configuration (fail-closed by default)
+
+| Variable | Default | Notes |
+|---|---|---|
+| `STRIPE_ENABLED` | `false` | Master switch; provider is never "live" unless `true` |
+| `STRIPE_SECRET_KEY` | unset | Server-side only; never logged/returned/thrown |
+| `STRIPE_PUBLISHABLE_KEY` | unset | Not currently exposed by any endpoint |
+| `STRIPE_WEBHOOK_SECRET` | unset | Required for webhook signature verification — no fallback (unlike Paystack, Stripe issues a dedicated webhook signing secret) |
+| `STRIPE_BASE_URL` | `https://api.stripe.com` | Overridable for testing |
+| `STRIPE_SUCCESS_URL` / `STRIPE_CANCEL_URL` | unset | Checkout Session redirect URLs; overridable per-request via `CreateCheckoutSessionRequest.successUrl`/`cancelUrl`. Checkout fails with a safe `400` if neither config nor per-request URLs are present. |
+
+`isLive` is `true` only when `STRIPE_ENABLED === 'true'` **and** a secret key is
+configured; otherwise the provider behaves like every other fail-closed placeholder
+— the app boots normally with no Stripe credentials configured at all.
+
+### 18.2 `createCheckoutSession` — Checkout Session (`mode: 'payment'`)
+
+Calls `POST /v1/checkout/sessions` with a single line item built from
+`price_data` (currency lower-cased for Stripe's API; the rest of the platform keeps
+currency upper-cased — normalised only at this boundary), `unit_amount` in minor
+units, `client_reference_id` set to the internal `userId`, `customer_email` when
+available, and a whitelisted `metadata` object (`invoiceId`, `userId`, `planId`,
+`paymentPurpose`, `internalTransactionId`, `subscriptionId`, `assessmentId` — no
+secrets, no free-form data). Uses `mode: 'payment'` (one-time payment) rather than a
+Stripe-native recurring subscription object, consistent with the existing
+provider-agnostic design where `SubscriptionsService` — not the provider — owns
+renewal/period orchestration. Returns the Checkout Session `id` (`cs_...`) as both
+`sessionId` and `providerTransactionReference`, and the Stripe-hosted `url` as
+`checkoutUrl`; never marks anything paid.
+
+### 18.3 `verifyWebhookSignature` — HMAC-SHA256 with replay-protection tolerance
+
+Parses the `Stripe-Signature` header (`t=<timestamp>,v1=<signature>[,v1=<signature>...]`
+— multiple `v1` values are sent during secret rotation), computes
+`HMAC-SHA256(secret, "${timestamp}.${rawBody}")`, and compares it against every `v1`
+value using `crypto.timingSafeEqual` (never `===`). Also enforces a 300-second
+timestamp tolerance to reject stale/replayed payloads, per Stripe's own documented
+verification scheme. Fails closed (returns `false`, never throws) when the header,
+secret, or raw body is missing, on a malformed header, or when the timestamp is
+outside tolerance. This check runs before any state change in
+`WebhookProcessorService`, identical to every other provider (§12).
+
+### 18.4 `parseWebhookEvent` — safe mapping, no raw payload persistence
+
+| Stripe event | Internal `PaymentEventType` | Reference used |
+|---|---|---|
+| `checkout.session.completed` (`payment_status: 'paid'`) | `PAYMENT_SUCCEEDED` | Checkout Session id (`cs_...`) |
+| `checkout.session.async_payment_succeeded` | `PAYMENT_SUCCEEDED` | Checkout Session id |
+| `checkout.session.completed` (not yet paid) | `UNKNOWN` (no-op) | — |
+| `checkout.session.expired` / `checkout.session.async_payment_failed` | `PAYMENT_FAILED` | Checkout Session id |
+| `payment_intent.succeeded` | `PAYMENT_SUCCEEDED` | PaymentIntent id (`pi_...`) |
+| `payment_intent.payment_failed` | `PAYMENT_FAILED` | PaymentIntent id |
+
+Unlike Paystack, Stripe sends a stable, dedicated `evt_...` id with every webhook —
+used directly as `providerEventId`, no derived fallback needed. Only whitelisted
+metadata fields are extracted; the raw webhook body, `payment_method_details`, and
+any card/payment-method data are never read into the normalised event or persisted.
+
+### 18.5 `getTransactionStatus` — read-only status confirmation
+
+Routes to `GET /v1/checkout/sessions/:id` (reference starts with `cs_`) or
+`GET /v1/payment_intents/:id` (`pi_`) for server-side status checks. Maps
+`status: 'complete'` + `payment_status: 'paid'` (or `'no_payment_required'`) to
+`SUCCEEDED`, `status: 'expired'` to `CANCELLED`, and everything else to `PENDING`
+for Checkout Sessions; maps PaymentIntent `succeeded` → `SUCCEEDED`, `processing` →
+`PROCESSING`, `canceled` → `CANCELLED`, and the `requires_*` states → `PENDING`
+(retryable). This is **never** a substitute for webhook signature verification and
+never itself marks anything paid — a read-only status-check convenience only. The
+raw Stripe response (`customer_details`, `payment_method_types`, etc.) is never
+returned — only the mapped safe status fields.
+
+### 18.6 Subscription and performance-fee checkout integration — no code changes required
+
+Both `SubscriptionsService.initiateCheckout()` (§17) and
+`PerformanceFeePaymentService.initiatePerformanceFeeCheckout()` (§15) call only the
+generic `IPaymentProvider` interface (`createCheckoutSession`,
+`providerTransactionReference`, `checkoutUrl`/`sessionId`) — no Stripe-specific
+branching exists or is needed anywhere in either service. This was verified with
+dedicated integration test suites
+(`subscriptions.service.stripe.spec.ts`,
+`performance-fee-payment.stripe.spec.ts`,
+`webhook-processor.stripe.spec.ts`) covering:
+- Stripe checkout creates/reuses a provider session while the subscription/invoice/
+  assessment stays completely untouched (never activated/paid).
+- A disabled/unconfigured Stripe provider fails the checkout closed (`400`) and
+  releases the transaction back to `PENDING` for retry — never activates anything.
+- A verified Stripe webhook (`checkout.session.completed`, `payment_status: 'paid'`)
+  activates the subscription / marks the performance fee paid exactly once.
+- An invalid `Stripe-Signature` never activates/pays anything.
+- Amount/currency mismatches (including Stripe's lower-cased currency vs. the
+  platform's upper-cased stored currency) fail closed, verified by the existing
+  provider-agnostic `amountAndCurrencyMatch()` check (§16 audit fix) — no Stripe-
+  specific change was needed since currency comparison is already
+  case-insensitive.
+- Duplicate Stripe webhooks never double-activate a subscription or double-create a
+  `FEE_PAID` ledger entry (existing `23505`-based webhook-event idempotency, §10/§12).
+- Sprint 16 subscription-checkout idempotency (`Idempotency-Key`) works unchanged
+  with Stripe as the routed provider — only ever a single `createCheckoutSession`
+  call is made across a replayed request.
+
+### 18.7 Provider routing — US/GB prefer Stripe, Africa keeps Paystack preference
+
+No `CountryConfig` seed changes were required. `PaymentRoutingService.routeForCheckout()`
+already prefers the first **live** provider among a country's `enabledPaymentProviders`
+(§16 audit fix #2), so:
+- **US** (`enabledPaymentProviders: ['stripe', 'paypal', 'manual']`) and **GB**
+  (`['stripe', 'paypal', 'wise', 'manual']`) already list Stripe first and it becomes
+  the sole live candidate once configured — no seed change needed.
+- **GH/NG/ZA** list `paystack` before `stripe` in `enabledPaymentProviders`; when both
+  are live, Paystack is still selected automatically (list order among live
+  candidates), preserving regional preference. Explicitly requesting
+  `provider: 'stripe'` still works via the "preferred provider" routing path.
+- `manual` remains excluded from `PaymentRoutingService.routeForCheckout()` and
+  `getAllPublicProviders()`/`getAvailableProviders()` — unaffected by this sprint.
+- `GET /payments/providers` exposes only `providerId`, `displayName`,
+  `supportedCurrencies`, `supportedCountries`, `supportedPaymentMethods`, `isLive`,
+  `isSandbox` for Stripe — no secret key, publishable key, or webhook secret.
+
+### 18.8 Safety invariants (identical to every other provider)
+
+- Checkout (`createCheckoutSession`) never marks an invoice, subscription, or
+  performance-fee assessment paid, never creates a `FEE_PAID` ledger entry, and
+  never updates the high-water mark.
+- The verified `checkout.session.completed`/`payment_intent.succeeded` webhook is
+  the **only** path to subscription activation or performance-fee paid/HWM state —
+  frontend callbacks and `STRIPE_SUCCESS_URL`/`STRIPE_CANCEL_URL` redirects are
+  never trusted.
+- `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` are never logged, returned in an API
+  response, or included in a thrown error message; `StripeHttpClient` never logs the
+  `Authorization` header or raw response body.
+- No raw card data or payment-method details are read, stored, or forwarded — only
+  whitelisted scalar/metadata fields ever leave `StripePaymentProvider`.
+- `manual` remains excluded from public checkout and the public webhook endpoint —
+  unaffected by this sprint.
+- All tests mock `StripeHttpClient`/`fetch`; no live Stripe network calls are made.
+- Flutterwave, Hubtel, PayPal, and Wise remain untouched fail-closed placeholders —
+  not implemented this sprint (explicitly out of scope).
 
 ---
 

@@ -66,5 +66,14 @@ exports.default = () => ({
         baseUrl: process.env.PAYSTACK_BASE_URL || 'https://api.paystack.co',
         callbackUrl: process.env.PAYSTACK_CALLBACK_URL || undefined,
     },
+    stripe: {
+        enabled: process.env.STRIPE_ENABLED === 'true',
+        secretKey: process.env.STRIPE_SECRET_KEY || undefined,
+        publishableKey: process.env.STRIPE_PUBLISHABLE_KEY || undefined,
+        webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || undefined,
+        baseUrl: process.env.STRIPE_BASE_URL || 'https://api.stripe.com',
+        successUrl: process.env.STRIPE_SUCCESS_URL || undefined,
+        cancelUrl: process.env.STRIPE_CANCEL_URL || undefined,
+    },
 });
 //# sourceMappingURL=configuration.js.map

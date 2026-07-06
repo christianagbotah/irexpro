@@ -1,6 +1,7 @@
 import { NotImplementedException } from '@nestjs/common';
 import { IPaymentProvider } from './interfaces/payment-provider.interface';
 import { StripePaymentProvider } from './providers/stripe.provider';
+import { StripeHttpClient } from './providers/stripe-http.client';
 import { PaystackPaymentProvider } from './providers/paystack.provider';
 import { PaystackHttpClient } from './providers/paystack-http.client';
 import { FlutterwavePaymentProvider } from './providers/flutterwave.provider';
@@ -10,7 +11,7 @@ import { WisePayoutProvider } from './providers/wise.provider';
 import { ManualPaymentProvider } from './providers/manual.provider';
 import { PaymentProviderRegistry } from './registry/payment-provider.registry';
 
-/** PAYSTACK_ENABLED=false, no secret key — mirrors production defaults. */
+/** STRIPE_ENABLED=false / PAYSTACK_ENABLED=false, no secret key — mirrors production defaults. */
 function disabledConfigService(): any {
   return { get: jest.fn((_key: string, fallback?: unknown) => fallback ?? undefined) };
 }
@@ -19,11 +20,15 @@ function buildDisabledPaystackProvider(): PaystackPaymentProvider {
   return new PaystackPaymentProvider(disabledConfigService(), new PaystackHttpClient());
 }
 
-// Paystack is a real (Sprint 15) implementation, not a raw NotImplementedException
-// placeholder like the providers below — it has its own dedicated fail-closed test
-// suite in `providers/paystack.provider.spec.ts`.
+function buildDisabledStripeProvider(): StripePaymentProvider {
+  return new StripePaymentProvider(disabledConfigService(), new StripeHttpClient());
+}
+
+// Stripe and Paystack are real implementations (Sprint 17 / Sprint 15), not raw
+// NotImplementedException placeholders like the providers below — they have their
+// own dedicated fail-closed test suites in `providers/stripe.provider.spec.ts` and
+// `providers/paystack.provider.spec.ts`.
 const providerCases: [string, IPaymentProvider][] = [
-  ['Stripe', new StripePaymentProvider()],
   ['Flutterwave', new FlutterwavePaymentProvider()],
   ['Hubtel', new HubtelPaymentProvider()],
   ['PayPal/Braintree', new PayPalBraintreePaymentProvider()],
@@ -143,7 +148,7 @@ describe('PaymentProviderRegistry', () => {
   beforeEach(() => {
     registry = new PaymentProviderRegistry();
     registry.register(new ManualPaymentProvider());
-    registry.register(new StripePaymentProvider());
+    registry.register(buildDisabledStripeProvider());
     registry.register(buildDisabledPaystackProvider());
   });
 
