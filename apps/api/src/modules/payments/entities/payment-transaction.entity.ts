@@ -23,6 +23,15 @@ export enum PaymentTransactionStatus {
   REFUNDED = 'REFUNDED',
 }
 
+/**
+ * Sprint 18 — a partial UNIQUE index `ux_payment_transactions_provider_reference`
+ * on (provider, provider_transaction_reference) is enforced at the database level
+ * by migration `AddPaymentTransactionReferenceUniqueGuard1751500000000` (WHERE
+ * provider_transaction_reference IS NOT NULL AND <> ''). Not expressed as a
+ * TypeORM `@Index` decorator because `synchronize` is disabled and this is a
+ * partial (WHERE-scoped) index — see the migration file for the full guard and
+ * its rationale. The plain @Index below remains for non-unique lookup speed.
+ */
 @Entity({ name: 'payment_transactions', schema: 'payments' })
 @Index(['userId', 'createdAt'])
 @Index(['provider', 'providerTransactionReference'])

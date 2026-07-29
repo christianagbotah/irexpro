@@ -23,6 +23,7 @@ import { PaymentRoutingService } from './payment-routing.service';
 import { AuditService } from '../../audit/audit.service';
 import { AuditAction } from '../../../common/enums/audit-action.enum';
 import { AuditSeverity } from '../../audit/entities/audit-log.entity';
+import { isUniqueViolation } from '../utils/db-error.util';
 
 /** Invoice statuses that are eligible to start a payment checkout. */
 const PAYABLE_INVOICE_STATUSES: ReadonlySet<InvoiceStatus> = new Set([
@@ -220,6 +221,7 @@ export class PerformanceFeePaymentService {
           invoiceId: invoice.id,
           metadata: {
             type: 'PERFORMANCE_FEE',
+            transactionId: transaction.id,
             assessmentId: assessment.id,
             invoiceId: invoice.id,
           },
@@ -255,23 +257,62 @@ export class PerformanceFeePaymentService {
       const providerReference =
         sessionResult.providerTransactionReference ?? sessionResult.sessionId;
 
-      await this.transactionRepo.update(transaction.id, {
-        provider: provider.providerId,
-        providerTransactionReference: providerReference,
-        status: PaymentTransactionStatus.PROCESSING,
-        countryCode,
-        failureCode: null,
-        failureMessage: null,
-        providerPayloadSummary: {
-          assessmentId: assessment.id,
-          invoiceId: invoice.id,
-          type: 'PERFORMANCE_FEE',
+      try {
+        await this.transactionRepo.update(transaction.id, {
           provider: provider.providerId,
-          sessionId: sessionResult.sessionId,
-          checkoutUrl: sessionResult.checkoutUrl,
-          routingReason,
-        },
-      });
+          providerTransactionReference: providerReference,
+          status: PaymentTransactionStatus.PROCESSING,
+          countryCode,
+          failureCode: null,
+          failureMessage: null,
+          providerPayloadSummary: {
+            assessmentId: assessment.id,
+            invoiceId: invoice.id,
+            type: 'PERFORMANCE_FEE',
+            provider: provider.providerId,
+            sessionId: sessionResult.sessionId,
+            checkoutUrl: sessionResult.checkoutUrl,
+            routingReason,
+          },
+        });
+      } catch (err) {
+        if (!isUniqueViolation(err)) throw err;
+
+        // Sprint 18 PART C — the DB-level guard (migration
+        // AddPaymentTransactionReferenceUniqueGuard) rejected this
+        // providerTransactionReference as already in use for this provider.
+        // Should never happen in practice (each provider call requests a
+        // brand-new session), but if it ever does: fail closed, never mark
+        // the invoice/assessment paid from this path, release the claim back
+        // to PENDING so a retry is possible, and never leak the raw
+        // QueryFailedError.
+        await this.transactionRepo.update(transaction.id, {
+          status: PaymentTransactionStatus.PENDING,
+          failureMessage: 'Provider session reference conflict — please retry',
+        });
+
+        await this.auditService.log({
+          actorUserId: requestingUserId,
+          actorType: isAdmin ? 'ADMIN' : 'USER',
+          action: AuditAction.PERFORMANCE_FEE_CHECKOUT_FAILED,
+          resourceType: 'PaymentTransaction',
+          resourceId: transaction.id,
+          ipAddress,
+          metadata: {
+            invoiceId: invoice.id,
+            assessmentId: assessment.id,
+            provider: provider.providerId,
+            currency,
+            countryCode,
+            reason: 'PROVIDER_REFERENCE_CONFLICT',
+          },
+          severity: AuditSeverity.CRITICAL,
+        });
+
+        throw new ConflictException(
+          'Payment checkout failed: a conflicting payment session was detected — please retry shortly',
+        );
+      }
 
       await this.auditService.log({
         actorUserId: requestingUserId,

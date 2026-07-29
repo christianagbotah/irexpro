@@ -25,6 +25,7 @@ const payment_routing_service_1 = require("./payment-routing.service");
 const audit_service_1 = require("../../audit/audit.service");
 const audit_action_enum_1 = require("../../../common/enums/audit-action.enum");
 const audit_log_entity_1 = require("../../audit/entities/audit-log.entity");
+const db_error_util_1 = require("../utils/db-error.util");
 const PAYABLE_INVOICE_STATUSES = new Set([
     invoice_entity_1.InvoiceStatus.ISSUED,
     invoice_entity_1.InvoiceStatus.OVERDUE,
@@ -95,6 +96,7 @@ let PerformanceFeePaymentService = PerformanceFeePaymentService_1 = class Perfor
                     invoiceId: invoice.id,
                     metadata: {
                         type: 'PERFORMANCE_FEE',
+                        transactionId: transaction.id,
                         assessmentId: assessment.id,
                         invoiceId: invoice.id,
                     },
@@ -126,23 +128,51 @@ let PerformanceFeePaymentService = PerformanceFeePaymentService_1 = class Perfor
                 throw new common_1.BadRequestException(`Payment checkout failed: ${this.safeMessage(message)}`);
             }
             const providerReference = sessionResult.providerTransactionReference ?? sessionResult.sessionId;
-            await this.transactionRepo.update(transaction.id, {
-                provider: provider.providerId,
-                providerTransactionReference: providerReference,
-                status: payment_transaction_entity_1.PaymentTransactionStatus.PROCESSING,
-                countryCode,
-                failureCode: null,
-                failureMessage: null,
-                providerPayloadSummary: {
-                    assessmentId: assessment.id,
-                    invoiceId: invoice.id,
-                    type: 'PERFORMANCE_FEE',
+            try {
+                await this.transactionRepo.update(transaction.id, {
                     provider: provider.providerId,
-                    sessionId: sessionResult.sessionId,
-                    checkoutUrl: sessionResult.checkoutUrl,
-                    routingReason,
-                },
-            });
+                    providerTransactionReference: providerReference,
+                    status: payment_transaction_entity_1.PaymentTransactionStatus.PROCESSING,
+                    countryCode,
+                    failureCode: null,
+                    failureMessage: null,
+                    providerPayloadSummary: {
+                        assessmentId: assessment.id,
+                        invoiceId: invoice.id,
+                        type: 'PERFORMANCE_FEE',
+                        provider: provider.providerId,
+                        sessionId: sessionResult.sessionId,
+                        checkoutUrl: sessionResult.checkoutUrl,
+                        routingReason,
+                    },
+                });
+            }
+            catch (err) {
+                if (!(0, db_error_util_1.isUniqueViolation)(err))
+                    throw err;
+                await this.transactionRepo.update(transaction.id, {
+                    status: payment_transaction_entity_1.PaymentTransactionStatus.PENDING,
+                    failureMessage: 'Provider session reference conflict — please retry',
+                });
+                await this.auditService.log({
+                    actorUserId: requestingUserId,
+                    actorType: isAdmin ? 'ADMIN' : 'USER',
+                    action: audit_action_enum_1.AuditAction.PERFORMANCE_FEE_CHECKOUT_FAILED,
+                    resourceType: 'PaymentTransaction',
+                    resourceId: transaction.id,
+                    ipAddress,
+                    metadata: {
+                        invoiceId: invoice.id,
+                        assessmentId: assessment.id,
+                        provider: provider.providerId,
+                        currency,
+                        countryCode,
+                        reason: 'PROVIDER_REFERENCE_CONFLICT',
+                    },
+                    severity: audit_log_entity_1.AuditSeverity.CRITICAL,
+                });
+                throw new common_1.ConflictException('Payment checkout failed: a conflicting payment session was detected — please retry shortly');
+            }
             await this.auditService.log({
                 actorUserId: requestingUserId,
                 actorType: isAdmin ? 'ADMIN' : 'USER',

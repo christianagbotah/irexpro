@@ -261,10 +261,37 @@ let SubscriptionsService = SubscriptionsService_1 = class SubscriptionsService {
             const message = err instanceof Error ? err.message : 'Checkout unavailable';
             throw new common_1.BadRequestException(`Payment checkout failed: ${message}`);
         }
-        await this.transactionRepo.update(transaction.id, {
-            providerTransactionReference: sessionResult.providerTransactionReference ?? sessionResult.sessionId,
-            providerPayloadSummary: { sessionId: sessionResult.sessionId, checkoutUrl: sessionResult.checkoutUrl, provider: provider.providerId, planId },
-        });
+        try {
+            await this.transactionRepo.update(transaction.id, {
+                providerTransactionReference: sessionResult.providerTransactionReference ?? sessionResult.sessionId,
+                providerPayloadSummary: { sessionId: sessionResult.sessionId, checkoutUrl: sessionResult.checkoutUrl, provider: provider.providerId, planId },
+            });
+        }
+        catch (err) {
+            if (!this.isUniqueViolation(err))
+                throw err;
+            await this.transactionRepo.update(transaction.id, {
+                status: payment_transaction_entity_1.PaymentTransactionStatus.PENDING,
+                failureMessage: 'Provider session reference conflict — please retry',
+            });
+            await this.auditService.log({
+                actorUserId: userId,
+                actorType: 'USER',
+                action: audit_action_enum_1.AuditAction.PAYMENT_CHECKOUT_FAILED,
+                resourceType: 'PaymentTransaction',
+                resourceId: transaction.id,
+                ipAddress,
+                metadata: {
+                    planId,
+                    currency,
+                    countryCode,
+                    provider: provider.providerId,
+                    reason: 'PROVIDER_REFERENCE_CONFLICT',
+                },
+                severity: audit_log_entity_1.AuditSeverity.CRITICAL,
+            });
+            throw new common_1.ConflictException('Payment checkout failed: a conflicting payment session was detected — please retry shortly');
+        }
         await this.auditService.log({
             actorUserId: userId,
             actorType: 'USER',

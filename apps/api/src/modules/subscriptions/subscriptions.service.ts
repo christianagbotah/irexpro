@@ -421,10 +421,47 @@ export class SubscriptionsService {
     }
 
     // Update transaction with provider reference; include planId so webhook handler can load billing interval
-    await this.transactionRepo.update(transaction.id, {
-      providerTransactionReference: sessionResult.providerTransactionReference ?? sessionResult.sessionId,
-      providerPayloadSummary: { sessionId: sessionResult.sessionId, checkoutUrl: sessionResult.checkoutUrl, provider: provider.providerId, planId },
-    });
+    try {
+      await this.transactionRepo.update(transaction.id, {
+        providerTransactionReference: sessionResult.providerTransactionReference ?? sessionResult.sessionId,
+        providerPayloadSummary: { sessionId: sessionResult.sessionId, checkoutUrl: sessionResult.checkoutUrl, provider: provider.providerId, planId },
+      });
+    } catch (err) {
+      if (!this.isUniqueViolation(err)) throw err;
+
+      // Sprint 18 PART C — the DB-level guard (migration
+      // AddPaymentTransactionReferenceUniqueGuard) rejected this
+      // providerTransactionReference as already in use for this provider.
+      // This should never happen in practice (each provider call requests a
+      // brand-new session), but if it ever does: fail closed, never mark
+      // paid/activate from this path, release the claim back to PENDING so a
+      // retry is possible, and never leak the raw QueryFailedError.
+      await this.transactionRepo.update(transaction.id, {
+        status: PaymentTransactionStatus.PENDING,
+        failureMessage: 'Provider session reference conflict — please retry',
+      });
+
+      await this.auditService.log({
+        actorUserId: userId,
+        actorType: 'USER',
+        action: AuditAction.PAYMENT_CHECKOUT_FAILED,
+        resourceType: 'PaymentTransaction',
+        resourceId: transaction.id,
+        ipAddress,
+        metadata: {
+          planId,
+          currency,
+          countryCode,
+          provider: provider.providerId,
+          reason: 'PROVIDER_REFERENCE_CONFLICT',
+        },
+        severity: AuditSeverity.CRITICAL,
+      });
+
+      throw new ConflictException(
+        'Payment checkout failed: a conflicting payment session was detected — please retry shortly',
+      );
+    }
 
     // 10. Audit log
     await this.auditService.log({
