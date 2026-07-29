@@ -1,1 +1,45 @@
-node_modules
+# Dependencies
+node_modules/
+.pnpm-store/
+.yarn/
+.npm/
+
+# Build outputs
+dist/
+build/
+.next/
+.turbo/
+coverage/
+.cache/
+
+# Environment files - never commit real secrets
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Logs
+*.log
+logs/
+
+# Secrets / keys / certificates
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.csr
+id_rsa*
+id_ed25519*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
