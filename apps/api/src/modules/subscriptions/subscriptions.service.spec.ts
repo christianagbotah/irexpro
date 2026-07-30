@@ -283,6 +283,74 @@ describe('SubscriptionsService', () => {
       );
     });
 
+    // ─── Sprint 18 PART C: duplicate provider-reference (23505) handling ──────
+
+    it('Sprint 18 — DB unique-violation on providerTransactionReference is caught, never marks paid, never activates subscription, releases claim, audits CRITICAL, throws sanitized ConflictException', async () => {
+      // The DB-level guard (migration AddPaymentTransactionReferenceUniqueGuard)
+      // rejects a colliding (provider, providerTransactionReference) pair. This
+      // should never happen in practice (each provider call requests a brand-new
+      // session), but if it ever does the checkout must fail CLOSED: never mark
+      // the invoice paid, never activate a subscription, release the claim back
+      // to PENDING so a retry is possible, audit at CRITICAL severity, and never
+      // leak the raw QueryFailedError / constraint name to the caller.
+      mockFreshCheckoutHappyPath();
+      mockProvider.createCheckoutSession.mockResolvedValue({
+        sessionId: 'sess_dup',
+        checkoutUrl: 'https://stripe.com/pay/sess_dup',
+        providerTransactionReference: 'pi_dup_ref',
+        provider: 'stripe',
+      });
+
+      // The transactionRepo.update flow has two calls on the happy path:
+      //   1st = atomic claim (PENDING/FAILED -> PROCESSING) at line ~360 — must succeed.
+      //   2nd = writing the provider reference at line ~425 — must throw 23505.
+      //   (a 3rd call inside the catch releases the claim back to PENDING — must succeed.)
+      const uniqueViolation = new QueryFailedError(
+        'duplicate key value violates unique constraint "ux_payment_transactions_provider_reference"',
+        [],
+        new Error('duplicate key'),
+      );
+      (uniqueViolation as unknown as { code: string }).code = '23505';
+      mockTransactionRepo.update
+        .mockResolvedValueOnce({ affected: 1 }) // 1st: atomic claim succeeds
+        .mockRejectedValueOnce(uniqueViolation); // 2nd: provider-ref write rejected by DB guard
+
+      await expect(service.initiateCheckout(baseRequest)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+
+      // Never marked paid: invoice never updated to PAID.
+      expect(mockInvoiceRepo.update).not.toHaveBeenCalled();
+      // Never activated a subscription — only a verified webhook may do that.
+      expect(mockSubscriptionRepo.save).not.toHaveBeenCalled();
+      // The claim was released back to PENDING so a retry is possible.
+      expect(mockTransactionRepo.update).toHaveBeenCalledWith(
+        'tx-id',
+        expect.objectContaining({
+          status: PaymentTransactionStatus.PENDING,
+          failureMessage: 'Provider session reference conflict — please retry',
+        }),
+      );
+      // Audited at CRITICAL severity with the conflict reason.
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'PAYMENT_CHECKOUT_FAILED',
+          severity: 'CRITICAL',
+          metadata: expect.objectContaining({
+            reason: 'PROVIDER_REFERENCE_CONFLICT',
+            provider: 'stripe',
+          }),
+        }),
+      );
+      // The raw QueryFailedError / constraint name / 23505 code is never leaked
+      // to the caller — mirrors the performance-fee checkout 23505 leak check.
+      const thrown = await service.initiateCheckout(baseRequest).catch((e: unknown) => e);
+      const thrownStr = thrown instanceof Error
+        ? `${thrown.message} ${JSON.stringify((thrown as { response?: unknown }).response ?? {})}`
+        : String(thrown);
+      expect(thrownStr).not.toMatch(/ux_payment_transactions|QueryFailedError|23505|duplicate key/i);
+    });
+
     // ─── Active subscription blocks duplicate checkout ──────────────────────
 
     it('active subscription for the same plan blocks a new checkout', async () => {

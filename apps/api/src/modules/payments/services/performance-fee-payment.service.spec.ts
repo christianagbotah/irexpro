@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
+import { QueryFailedError } from 'typeorm';
 import { PerformanceFeePaymentService } from './performance-fee-payment.service';
 import { InvoiceStatus } from '../entities/invoice.entity';
 import { PaymentPurpose, PaymentTransactionStatus } from '../entities/payment-transaction.entity';
@@ -349,6 +350,93 @@ describe('initiatePerformanceFeeCheckout', () => {
       .find((e: any) => e.action === 'PERFORMANCE_FEE_CHECKOUT_INITIATED');
     const serialized = JSON.stringify(initiated);
     expect(serialized).not.toMatch(/secret|token|password|apiKey|authorization|pin/i);
+  });
+
+  // ── Sprint 18: metadata consistency hardening ─────────────────────────────
+  it('Sprint 18 — checkout metadata sent to the provider includes transactionId', async () => {
+    await service.initiatePerformanceFeeCheckout(base);
+    expect(mockProvider.createCheckoutSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          transactionId: 'tx-1',
+          invoiceId: 'invoice-1',
+          assessmentId: 'assessment-1',
+          type: 'PERFORMANCE_FEE',
+        }),
+      }),
+    );
+  });
+
+  it('Sprint 18 — stored providerPayloadSummary includes transactionId for debug parity with subscription checkout', async () => {
+    await service.initiatePerformanceFeeCheckout(base);
+    const updateCall = transactionRepo.update.mock.calls.find(
+      (c: any[]) => c[0] === 'tx-1' && c[1]?.providerTransactionReference,
+    );
+    expect(updateCall).toBeDefined();
+    expect(updateCall[1].providerPayloadSummary).toEqual(
+      expect.objectContaining({
+        transactionId: 'tx-1',
+        invoiceId: 'invoice-1',
+        assessmentId: 'assessment-1',
+      }),
+    );
+  });
+
+  // ── Sprint 18 PART C: duplicate provider-reference (23505) handling ───────
+  it('Sprint 18 — DB unique-violation on providerTransactionReference is caught, never marks paid, releases claim, audits CRITICAL, and throws sanitized ConflictException', async () => {
+    // Simulate the DB-level guard (AddPaymentTransactionReferenceUniqueGuard)
+    // rejecting the providerTransactionReference as a duplicate for this provider.
+    // Must be a real QueryFailedError with code='23505' so isUniqueViolation() recognises it.
+    const uniqueViolation = new QueryFailedError(
+      'duplicate key value violates unique constraint "ux_payment_transactions_provider_reference"',
+      [],
+      new Error('duplicate key'),
+    );
+    (uniqueViolation as unknown as { code: string }).code = '23505';
+    transactionRepo.update.mockImplementation(async (id: any, patch: any) => {
+      // First update = the atomic claim (PENDING/FAILED -> PROCESSING): succeeds.
+      if (patch.status === PaymentTransactionStatus.PROCESSING && !patch.providerTransactionReference) {
+        return { affected: 1 };
+      }
+      // Second update = writing the provider reference: throws 23505.
+      if (patch.providerTransactionReference) {
+        throw uniqueViolation;
+      }
+      // Any subsequent release-to-PENDING update: succeeds.
+      return { affected: 1 };
+    });
+
+    await expect(service.initiatePerformanceFeeCheckout(base)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+
+    // Never marked paid: invoice/assessment never touched.
+    expect(invoiceRepo.update).not.toHaveBeenCalled();
+    // The claim was released back to PENDING so a retry is possible.
+    expect(transactionRepo.update).toHaveBeenCalledWith(
+      'tx-1',
+      expect.objectContaining({
+        status: PaymentTransactionStatus.PENDING,
+        failureMessage: 'Provider session reference conflict — please retry',
+      }),
+    );
+    // Audited at CRITICAL severity with the conflict reason.
+    expect(auditService.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'PERFORMANCE_FEE_CHECKOUT_FAILED',
+        severity: 'CRITICAL',
+        metadata: expect.objectContaining({
+          reason: 'PROVIDER_REFERENCE_CONFLICT',
+          provider: 'stripe',
+        }),
+      }),
+    );
+    // The raw QueryFailedError / constraint name is never leaked to the caller.
+    const thrown = await service.initiatePerformanceFeeCheckout(base).catch((e: unknown) => e);
+    const thrownStr = thrown instanceof Error
+      ? `${thrown.message} ${JSON.stringify((thrown as { response?: unknown }).response ?? {})}`
+      : String(thrown);
+    expect(thrownStr).not.toMatch(/ux_payment_transactions|QueryFailedError|23505|duplicate key/i);
   });
 });
 

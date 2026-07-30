@@ -445,84 +445,32 @@ export class PerformanceFeeService {
     return updatedAssessment;
   }
 
-  /**
-   * Mark assessment as PAID and update high-water mark.
-   * Called by WebhookProcessorService after a verified PERFORMANCE_FEE payment webhook.
-   *
-   * RULES:
-   * - Only updates HWM after confirmed payment.
-   * - HWM is set to endingRealisedBalance (the new highest point).
-   * - DRAFT/CANCELLED assessments do not affect HWM.
-   */
-  async markAssessmentPaid(invoiceId: string): Promise<void> {
-    const assessment = await this.assessmentRepo.findOne({ where: { invoiceId } });
-    if (!assessment) {
-      this.logger.warn(`[PerfFee] No assessment found for invoiceId=${invoiceId}`);
-      return;
-    }
-
-    if (assessment.status === AssessmentStatus.PAID) {
-      this.logger.log(`[PerfFee] Assessment ${assessment.id} already PAID — idempotent`);
-      return;
-    }
-
-    if (assessment.status !== AssessmentStatus.INVOICED) {
-      this.logger.warn(
-        `[PerfFee] Cannot mark assessment ${assessment.id} PAID — status is ${assessment.status}`,
-      );
-      return;
-    }
-
-    await this.assessmentRepo.update(assessment.id, { status: AssessmentStatus.PAID });
-
-    // Update high-water mark to the new peak
-    const performance = await this.performanceRepo.findOne({
-      where: { userId: assessment.userId, brokerConnectionId: this.brokerScope(assessment.brokerConnectionId) } as FindOptionsWhere<TradingAccountPerformance>,
-    });
-
-    if (performance) {
-      const newHWM = assessment.endingRealisedBalance;
-      const oldHWM = performance.currentHighWaterMark;
-      const newTotalFees = (BigInt(performance.totalFeesCharged) + BigInt(assessment.feeAmount)).toString();
-
-      await this.performanceRepo.update(performance.id, {
-        currentHighWaterMark: newHWM,
-        totalFeesCharged: newTotalFees,
-      });
-
-      await this.auditService.log({
-        actorUserId: 'system',
-        actorType: 'SYSTEM',
-        action: AuditAction.HIGH_WATER_MARK_UPDATED,
-        resourceType: 'TradingAccountPerformance',
-        resourceId: performance.id,
-        metadata: {
-          userId: assessment.userId,
-          oldHWM,
-          newHWM,
-          assessmentId: assessment.id,
-        },
-        severity: AuditSeverity.INFO,
-      });
-    }
-
-    await this.auditService.log({
-      actorUserId: 'system',
-      actorType: 'SYSTEM',
-      action: AuditAction.PERFORMANCE_FEE_PAID,
-      resourceType: 'PerformanceFeeAssessment',
-      resourceId: assessment.id,
-      metadata: {
-        userId: assessment.userId,
-        invoiceId,
-        feeAmount: assessment.feeAmount,
-        currency: assessment.currency,
-      },
-      severity: AuditSeverity.INFO,
-    });
-
-    this.logger.log(`[PerfFee] Assessment ${assessment.id} marked PAID, HWM updated`);
-  }
+  // -------------------------------------------------------------------------
+  // PAID-state + high-water-mark transition (Sprint 18 safety hardening)
+  // -------------------------------------------------------------------------
+  //
+  // Sprint 18 removed the previously-orphaned `markAssessmentPaid(invoiceId)`
+  // method from this service. That method transitioned an assessment to PAID
+  // and updated the high-water mark directly, bypassing the payment-webhook
+  // path. It had NO production callers (the webhook processor inlines its own
+  // HWM logic in WebhookProcessorService.handlePerformanceFeePaymentSucceeded),
+  // but its mere existence was a latent safety hazard: a future developer
+  // could have wired it into a non-webhook flow and silently violated the
+  // "HWM may update only through the verified performance-fee webhook success
+  // path" invariant.
+  //
+  // The invariant is now enforced structurally:
+  //   - This service does NOT expose any method that transitions an assessment
+  //     to PAID or updates the high-water mark.
+  //   - The ONLY production write path to assessment.status = PAID and to
+  //     TradingAccountPerformance.currentHighWaterMark lives in
+  //     WebhookProcessorService.handlePerformanceFeePaymentSucceeded, which
+  //     runs exclusively after: verified provider webhook signature → matching
+  //     amount → matching currency → transaction SUCCEEDED → invoice PAID.
+  //   - The HWM update at that single site uses max(oldHWM, endingRealisedBalance)
+  //     so the high-water mark can never regress.
+  //
+  // Do NOT reintroduce a direct markAssessmentPaid() / HWM-update method here.
 
   // -------------------------------------------------------------------------
   // Ledger entries

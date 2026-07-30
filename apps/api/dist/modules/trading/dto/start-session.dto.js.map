@@ -1,1 +1,0 @@
-{"version":3,"file":"start-session.dto.js","sourceRoot":"","sources":["../../../../src/modules/trading/dto/start-session.dto.ts"],"names":[],"mappings":";;;;;;;;;;;;AAAA,qDAAqD;AACrD,6CAAsD;AAEtD,MAAa,eAAe;CAU3B;AAVD,0CAUC;AADC;IARC,IAAA,6BAAmB,EAAC;QACnB,WAAW,EACT,wCAAwC;YACxC,mEAAmE;QACrE,OAAO,EAAE,SAAS;KACnB,CAAC;IACD,IAAA,4BAAU,GAAE;IACZ,IAAA,wBAAM,GAAE;;2DACmB"}
