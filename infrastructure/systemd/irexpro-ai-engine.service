@@ -1,0 +1,64 @@
+# iRexPro Python AI Engine — systemd service unit (production, VPS / Webuzo)
+#
+# Install:
+#   sudo cp infrastructure/systemd/irexpro-ai-engine.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now irexpro-ai-engine
+#
+# Logs:
+#   journalctl -u irexpro-ai-engine -f
+#
+# This file contains NO secrets. All real secrets are read from
+# /opt/irexpro/services/ai-engine/.env (gitignored, chmod 600).
+#
+# See docs/runbooks/production-deployment-vps-webuzo.md §7.2 for the full
+# procedure and the PM2-vs-systemd comparison.
+
+[Unit]
+Description=iRexPro Python AI Engine (production)
+Documentation=https://github.com/christianagbotah/irexpro
+After=network-online.target redis-server.service irexpro-api.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=irexpro
+Group=irexpro
+WorkingDirectory=/opt/irexpro/services/ai-engine
+
+# Read real secrets from the gitignored .env file (loaded by pydantic-settings).
+# Do NOT inline secrets in this unit file — it is committed to git.
+EnvironmentFile=/opt/irexpro/services/ai-engine/.env
+Environment=AI_ENGINE_ENV=production
+
+ExecStart=/opt/irexpro/services/ai-engine/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8001 --workers 1
+
+# Restart policy — fail closed, restart quickly, but do not infinite-loop
+# if the app is crashing on every boot.
+Restart=on-failure
+RestartSec=3
+StartLimitIntervalSec=60
+StartLimitBurst=10
+
+# Graceful shutdown — uvicorn handles SIGTERM and closes Redis/FastAPI cleanly
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+# Resource limits (tune to your VPS size — XGBoost/scikit-learn use memory)
+MemoryMax=1G
+LimitNOFILE=65535
+
+# Logging — journalctl captures stdout/stderr
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=irexpro-ai-engine
+
+# Hardening — run with minimal privileges
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/log/irexpro
+
+[Install]
+WantedBy=multi-user.target
