@@ -4,9 +4,49 @@
 
 \## Current Sprint Checkpoint
 
-Last completed sprint: Sprint 18 — Payment Transaction Reference Uniqueness + Metadata Consistency Hardening (PASS).
+Current sprint: Sprint 19 — Production Deployment Foundation (IN PROGRESS).
+
+Last completed sprint: Sprint 18 — Payment Transaction Reference Uniqueness + Metadata Consistency Hardening (PASS, merged to `main`, tagged `sprint-18-complete`).
 
 Previous: Sprint 17 audit — Stripe Sandbox Checkout Integration (PASS, no fixes required).
+
+
+\## Sprint 19 — Production Deployment Foundation (in progress)
+
+Sprint 19 prepares iRexPro for safe VPS / Webuzo production deployment. It is a **documentation and deployment-foundation sprint only** — it does NOT change any production logic, payment-state transitions, webhook processing, broker credential handling, risk engine rules, execution engine rules, or the AI-to-trade flow. All Sprints 10–18 safety invariants remain exactly as they were.
+
+Deliverables (Sprint 19 branch `sprint-19-production-deployment`):
+
+\- Production deployment runbook for VPS / Webuzo: `docs/runbooks/production-deployment-vps-webuzo.md` — covers system requirements, PostgreSQL setup, Redis setup, environment variable setup, build process, migration run process, PM2/systemd process management, Nginx reverse proxy + TLS, health-check verification, logs, rollback process, and a full deployment checklist.
+
+\- Secrets policy runbook: `docs/runbooks/secrets-never-committed.md` — the authoritative list of files and values that must never be committed to git, with a pre-push self-check.
+
+\- PM2 ecosystem example: `infrastructure/pm2/ecosystem.config.js` — manages both the NestJS API and the Python AI engine from one config. Contains NO secrets (all read from gitignored `.env` files).
+
+\- systemd unit examples: `infrastructure/systemd/irexpro-api.service` and `infrastructure/systemd/irexpro-ai-engine.service` — alternative to PM2 for teams that prefer native systemd. Contain NO secrets.
+
+\- `.env.example` improvements (both `apps/api/` and `services/ai-engine/`) — added production-deployment pointers and per-variable production notes. No real secrets added; every value remains a `CHANGE_ME_*` / `PLACEHOLDER` / `dev_*` placeholder.
+
+\- `.gitignore` hardened — added `*.egg-info/` to prevent Python package metadata from being tracked. Untracked 5 pre-existing `irexpro_ai_engine.egg-info/` files (kept on disk).
+
+\- This document + `IMPLEMENTATION_ROADMAP.md` updated to reflect Sprint 19 start.
+
+Sprint 19 safety rules preserved (no regressions from Sprints 10–18):
+
+\- Checkout never marks invoice/transaction/subscription/assessment/HWM paid — only a verified provider webhook does.
+\- Only a verified provider webhook may confirm payment.
+\- Amount and currency must match before confirming payment.
+\- HWM may update only through the verified performance-fee webhook success path; HWM cannot regress (Sprint 18 `max()` semantics).
+\- `PerformanceFeeService` exposes no method that transitions an assessment to PAID or updates the HWM.
+\- DB-level uniqueness on `(provider, provider_transaction_reference)` is enforced; 23505 is caught safely and never leaks.
+\- Broker credentials remain AES-256-GCM encrypted; never in responses, logs, audit metadata, WebSocket events, or errors.
+\- AI never executes broker orders directly.
+\- Risk approval remains mandatory and non-bypassable.
+\- All persisted money values remain bigint minor-unit strings. No floating-point money.
+\- No demo-data / database-failure fallback in any production path. No SQLite. No Fovi-style Next.js API routes or localStorage auth.
+\- Production failures fail closed.
+
+No production logic, migrations, payment-state transitions, webhook processing, broker, risk, execution, or AI code was changed in Sprint 19. NestJS tests remain at 739 passing across 44 suites (unchanged from Sprint 18).
 
 
 \## Sprint 18 — Payment Transaction Reference Uniqueness + Metadata Consistency Hardening
@@ -177,7 +217,9 @@ Last verified status (Sprint 18):
 
 \- Sprint 17 audit: PASS, no fixes required — see Last verified status above for scope and detail
 
-\- Sprint 18: Payment transaction reference uniqueness + metadata consistency hardening — HWM anti-regression (max() semantics), removed orphaned `markAssessmentPaid()`, performance-fee `providerPayloadSummary` now includes `transactionId`, `dist/` untracked from git, pre-migration duplicate-check runbook added. Migration `1751500000000` verified as pre-existing and correct. No new migrations, no new libraries, no Python changes.
+\- Sprint 18: Payment transaction reference uniqueness + metadata consistency hardening — HWM anti-regression (max() semantics), removed orphaned `markAssessmentPaid()`, performance-fee `providerPayloadSummary` now includes `transactionId`, `dist/` untracked from git, pre-migration duplicate-check runbook added. Migration `1751500000000` verified as pre-existing and correct. No new migrations, no new libraries, no Python changes. Sprint 18 merged to `main` and tagged `sprint-18-complete`.
+
+\- Sprint 19 (in progress): Production deployment foundation — VPS/Webuzo deployment runbook, secrets policy runbook, PM2 ecosystem + systemd unit examples (no secrets), `.env.example` production notes, `.gitignore` hardened (`*.egg-info/`), `irexpro_ai_engine.egg-info/` untracked. Documentation + infrastructure only — no production logic, migrations, or payment/risk/execution/AI changes. 739 NestJS tests still passing across 44 suites.
 
 
 

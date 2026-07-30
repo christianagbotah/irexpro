@@ -1,0 +1,64 @@
+# iRexPro NestJS API — systemd service unit (production, VPS / Webuzo)
+#
+# Install:
+#   sudo cp infrastructure/systemd/irexpro-api.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now irexpro-api
+#
+# Logs:
+#   journalctl -u irexpro-api -f
+#
+# This file contains NO secrets. All real secrets are read from
+# /opt/irexpro/apps/api/.env (gitignored, chmod 600).
+#
+# See docs/runbooks/production-deployment-vps-webuzo.md §7.2 for the full
+# procedure and the PM2-vs-systemd comparison.
+
+[Unit]
+Description=iRexPro NestJS API (production)
+Documentation=https://github.com/christianagbotah/irexpro
+After=network-online.target postgresql.service redis-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=irexpro
+Group=irexpro
+WorkingDirectory=/opt/irexpro/apps/api
+
+# Read real secrets from the gitignored .env file (loaded by @nestjs/config).
+# Do NOT inline secrets in this unit file — it is committed to git.
+EnvironmentFile=/opt/irexpro/apps/api/.env
+Environment=NODE_ENV=production
+
+ExecStart=/usr/bin/node /opt/irexpro/apps/api/dist/main.js
+
+# Restart policy — fail closed, restart quickly, but do not infinite-loop
+# if the app is crashing on every boot.
+Restart=on-failure
+RestartSec=3
+StartLimitIntervalSec=60
+StartLimitBurst=10
+
+# Graceful shutdown — NestJS handles SIGTERM and closes BullMQ/TypeORM cleanly
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+# Resource limits (tune to your VPS size)
+MemoryMax=1G
+LimitNOFILE=65535
+
+# Logging — journalctl captures stdout/stderr
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=irexpro-api
+
+# Hardening — run with minimal privileges
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/log/irexpro
+
+[Install]
+WantedBy=multi-user.target
