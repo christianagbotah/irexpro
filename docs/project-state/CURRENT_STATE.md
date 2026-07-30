@@ -4,14 +4,49 @@
 
 \## Current Sprint Checkpoint
 
-Current sprint: Sprint 20 — Runtime Bootstrap Fix (IN PROGRESS).
+Current sprint: Sprint 21 — Staging Runbook Hardening (IN PROGRESS).
 
-Last completed sprint: Sprint 19 — Production Deployment Foundation (PASS, merged to `main`, tagged `sprint-19-complete`).
+Last completed sprint: Sprint 20 — Runtime Bootstrap Fix (PASS, merged to `main`, tagged `sprint-20-complete`).
 
-Previous: Sprint 18 — Payment Transaction Reference Uniqueness + Metadata Consistency Hardening (PASS, merged to `main`, tagged `sprint-18-complete`).
+Previous: Sprint 19 — Production Deployment Foundation (PASS, merged to `main`, tagged `sprint-19-complete`).
 
 
-\## Sprint 20 — Runtime Bootstrap Fix (in progress)
+\## Sprint 21 — Staging Runbook Hardening (in progress)
+
+Sprint 21 hardens the production deployment runbook with findings from a real Webuzo VPS staging dry-run on AlmaLinux 9.8 (PostgreSQL 18, PM2, Nginx + Cloudflare). The dry-run used VPS app path `/home/lightworld/webapps/irexpro-staging`, public staging API `https://irexpro.lightworldtech.com/api/v1`, NestJS API local `http://127.0.0.1:3010/api/v1`, and AI engine local-only `http://127.0.0.1:8011/api/v1`.
+
+Sprint 21 is a **documentation and deployment-examples sprint only**. It does NOT change any production application logic, migrations, payment logic, broker logic, risk gate logic, AI trading logic, database schemas, or secrets.
+
+Verified staging findings documented in this sprint:
+
+1. **PostgreSQL uuid-ossp on PG 18 / AlmaLinux:** migrations require `uuid_generate_v4()`. On Webuzo PG 18 the `uuid-ossp` extension can fail with a missing `libossp-uuid.so.16` error. Fix: install the AlmaLinux `uuid` package (or `uuid-dev`/`libossp-uuid16` on Ubuntu), run `ldconfig`, then retry `CREATE EXTENSION IF NOT EXISTS "uuid-ossp"` and verify with `SELECT uuid_generate_v4()`. An emergency-only fallback (`public.uuid_generate_v4()` wrapping `gen_random_uuid()`) is documented but the proper package install is preferred.
+
+2. **Correct DB env variable names:** the app reads `DB_USER`, NOT `DB_USERNAME`. Setting `DB_USERNAME` is silently ignored. Documented with a correct DB env block example.
+
+3. **API ports:** staging-verified API port is `3010` (`APP_PORT=3010`, also `PORT=3010` for tooling). Frontend uses `3005` or `3006`. AI engine uses `8011`. Do not reuse frontend ports for the API.
+
+4. **Health endpoints:** both the NestJS API and the AI engine expose health at `/api/v1/health`, NOT `/health`. The original Sprint 19 runbook incorrectly said `/health` (returns 404). Documented with curl examples for local API, local AI engine, and public endpoint.
+
+5. **AI engine entrypoint:** the correct Uvicorn entrypoint is `app.main:app` (NOT `main:app` or `src.main:app`). The correct PM2 command is `.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8011`. `AI_ENGINE_ENV=production`, `AI_SIGNAL_MODE=paper`, `AI_ALLOW_MOCK_MARKET_DATA=false` in staging/production.
+
+6. **AI engine remains private:** the AI engine is NOT publicly proxied through Nginx or Cloudflare. The NestJS API communicates with it internally at `http://127.0.0.1:8011`. Public traffic goes through the NestJS API only.
+
+7. **CORS guidance:** API `CORS_ORIGINS` = real frontend/staging domain (e.g. `https://irexpro.lightworldtech.com`); localhost frontend origins may be temporarily included during staging. AI engine `AI_CORS_ORIGINS` = origin only, no path (e.g. `http://localhost:3010`, NOT `http://localhost:3010/api/v1`).
+
+8. **Nginx/Webuzo reverse proxy:** do not define duplicate `location ^~ /` blocks. Recommended structure: `location /` proxies frontend to `127.0.0.1:3005`, `location ^~ /api/v1/` proxies NestJS API to `127.0.0.1:3010`, `location ^~ /_next/static/` proxies Next.js static assets. No public location block for AI engine 8011. Do not globally hide Content-Security-Policy. A version-controlled example config was added at `infrastructure/nginx/irexpro-staging.example.conf`.
+
+9. **PM2/systemd startup:** documented the full verified sequence — `pm2 save`, `pm2 startup`, `systemctl daemon-reload`, `systemctl reset-failed pm2-root`, `systemctl restart pm2-root`, `systemctl status pm2-root --no-pager`, `pm2 status`. Noted that old failed systemd state can persist even while PM2 processes are online; `reset-failed` + `restart` cleans it.
+
+10. **Verified Staging Dry-Run Checklist:** added §16 to the runbook — a go-live readiness gate covering source clone, pnpm install, PostgreSQL connection, uuid-ossp resolution, 8 migrations applied, API build, 743 tests / 45 suites passing, API start under PM2, API health at `/api/v1/health`, Python venv, AI engine start with `app.main:app`, AI health at `/api/v1/health`, PM2 startup saved, and public Cloudflare/Nginx API health.
+
+11. **Sprint 20 runtime DI failure documented:** the runbook now records that the real staging dry-run discovered a runtime NestJS DI failure (`ExecutionService` could not resolve `CredentialEncryptionService`), that Sprint 20 fixed it by exporting `CredentialEncryptionService` from `BrokerModule` and adding a bootstrap smoke test, and that operators must run the test suite before PM2 startup so this class of runtime failure is caught before deployment.
+
+Files changed in Sprint 21: `docs/runbooks/production-deployment-vps-webuzo.md` (hardened with all 11 findings + new §16/§17 sections), `infrastructure/nginx/irexpro-staging.example.conf` (new — version-controlled Nginx staging example, no secrets), `infrastructure/pm2/ecosystem.config.js` (comments + AI engine port updated to staging-verified 8011 + entrypoint documentation — no structural/behavior change), `docs/project-state/CURRENT_STATE.md` (this section).
+
+No production safety rules were changed: AI never executes broker orders directly, risk gate remains mandatory, payment checkout never marks paid, only verified webhooks confirm payment, no floating-point money, no demo fallback, no localStorage/Fovi-style assumptions, no secrets committed. NestJS tests remain at 743 passing across 45 suites (unchanged from Sprint 20 — no source logic changed).
+
+
+\## Sprint 20 — Runtime Bootstrap Fix (PASS, merged to `main`)
 
 Sprint 20 fixes a staging runtime bootstrap DI failure discovered during VPS dry-run. On the real Webuzo VPS staging deployment, migrations passed and all 739 tests passed, but the NestJS API failed at runtime under PM2 with:
 
@@ -238,7 +273,11 @@ Last verified status (Sprint 18):
 
 \- Sprint 18: Payment transaction reference uniqueness + metadata consistency hardening — HWM anti-regression (max() semantics), removed orphaned `markAssessmentPaid()`, performance-fee `providerPayloadSummary` now includes `transactionId`, `dist/` untracked from git, pre-migration duplicate-check runbook added. Migration `1751500000000` verified as pre-existing and correct. No new migrations, no new libraries, no Python changes. Sprint 18 merged to `main` and tagged `sprint-18-complete`.
 
-\- Sprint 19 (in progress): Production deployment foundation — VPS/Webuzo deployment runbook, secrets policy runbook, PM2 ecosystem + systemd unit examples (no secrets), `.env.example` production notes, `.gitignore` hardened (`*.egg-info/`), `irexpro_ai_engine.egg-info/` untracked. Documentation + infrastructure only — no production logic, migrations, or payment/risk/execution/AI changes. 739 NestJS tests still passing across 44 suites.
+\- Sprint 19: Production deployment foundation — VPS/Webuzo deployment runbook, secrets policy runbook, PM2 ecosystem + systemd unit examples (no secrets), `.env.example` production notes, `.gitignore` hardened (`*.egg-info/`), `irexpro_ai_engine.egg-info/` untracked. Documentation + infrastructure only — no production logic, migrations, or payment/risk/execution/AI changes. Merged to `main`, tagged `sprint-19-complete`.
+
+\- Sprint 20: Runtime bootstrap DI fix — `CredentialEncryptionService` exported from `BrokerModule` so `ExecutionService` can resolve it at runtime; added `apps/api/src/bootstrap.spec.ts` runtime DI smoke test that compiles the real feature-module graph (all 21 modules). The staging dry-run discovered that migrations + 739 unit tests passed but the API crashed under PM2 with a DI resolution failure; Sprint 20 fixed the wiring and added the smoke test so this class of failure is caught in CI. 743 tests passing across 45 suites. Merged to `main`, tagged `sprint-20-complete`.
+
+\- Sprint 21 (in progress): Staging runbook hardening — hardened the production deployment runbook with 11 verified findings from the real Webuzo VPS staging dry-run on AlmaLinux 9.8 (PG 18, PM2, Nginx + Cloudflare): uuid-ossp/`libossp-uuid.so.16` fix, `DB_USER` (not `DB_USERNAME`), API port `3010` / AI engine port `8011`, health endpoints at `/api/v1/health` (not `/health`), AI engine entrypoint `app.main:app`, AI engine remains private (no public Nginx proxy), CORS guidance (origin only, no path for AI engine), Nginx `^~ /api/v1/` structure with no duplicate location blocks, PM2/systemd `reset-failed` startup sequence, a Verified Staging Dry-Run Checklist (§16), and a Sprint 20 DI-failure pre-deploy gate (§17). Added `infrastructure/nginx/irexpro-staging.example.conf`. PM2 ecosystem comments + AI engine port updated to staging-verified `8011`. Documentation + infrastructure only — no production logic, migrations, or payment/risk/execution/AI changes. 743 NestJS tests still passing across 45 suites.
 
 
 
