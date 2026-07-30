@@ -135,7 +135,8 @@ describe('PerformanceFeeService', () => {
     });
 
     it('high-water mark updates only after fee is PAID (not on DRAFT)', async () => {
-      // HWM update is handled by markAssessmentPaid, not by calculateAssessment
+      // HWM update is handled solely by the verified-webhook path in
+      // WebhookProcessorService, not by calculateAssessment.
       setupBaseline('700000', '500000');
       const { start, end } = makePeriod();
 
@@ -146,53 +147,33 @@ describe('PerformanceFeeService', () => {
         expect.objectContaining({ currentHighWaterMark: expect.anything() }),
       );
     });
+  });
 
-    it('markAssessmentPaid updates HWM to endingRealisedBalance', async () => {
-      mockAssessmentRepo.findOne.mockResolvedValue({
-        id: 'assess-3',
-        status: AssessmentStatus.INVOICED,
-        userId: 'user-1',
-        invoiceId: 'inv-1',
-        brokerConnectionId: null,
-        feeAmount: '40000',
-        endingRealisedBalance: '700000',
-        currency: 'USD',
-      });
-      mockPerformanceRepo.findOne.mockResolvedValue({
-        id: 'perf-1', currentHighWaterMark: '500000', totalFeesCharged: '0',
-      });
-      mockAssessmentRepo.update.mockResolvedValue(undefined);
-      mockPerformanceRepo.update.mockResolvedValue(undefined);
+  // ─────────────────────────────────────────────────────────────────────────
+  // Sprint 18 — markAssessmentPaid removal / webhook-only HWM invariant
+  // ─────────────────────────────────────────────────────────────────────────
 
-      await service.markAssessmentPaid('inv-1');
-
-      expect(mockAssessmentRepo.update).toHaveBeenCalledWith('assess-3', { status: AssessmentStatus.PAID });
-      expect(mockPerformanceRepo.update).toHaveBeenCalledWith('perf-1', expect.objectContaining({
-        currentHighWaterMark: '700000',
-        totalFeesCharged: '40000',
-      }));
-      expect(mockAuditService.log).toHaveBeenCalledWith(
-        expect.objectContaining({ action: 'HIGH_WATER_MARK_UPDATED' }),
-      );
+  describe('Sprint 18 — markAssessmentPaid removed (webhook-only HWM invariant)', () => {
+    it('PerformanceFeeService does NOT expose a markAssessmentPaid method', () => {
+      // The previously-orphaned markAssessmentPaid() could transition an
+      // assessment to PAID and update the HWM directly, bypassing the verified
+      // payment-webhook path. Sprint 18 removed it entirely so the invariant
+      // "HWM may update only through the verified performance-fee webhook
+      // success path" is enforced structurally, not just by convention.
+      expect((service as unknown as Record<string, unknown>).markAssessmentPaid).toBeUndefined();
     });
 
-    it('markAssessmentPaid is idempotent for already-PAID assessment', async () => {
-      mockAssessmentRepo.findOne.mockResolvedValue({
-        id: 'assess-done', status: AssessmentStatus.PAID,
-      });
-
-      await service.markAssessmentPaid('inv-done');
-      expect(mockAssessmentRepo.update).not.toHaveBeenCalled();
-    });
-
-    it('CANCELLED assessment does not affect HWM', async () => {
-      // markAssessmentPaid on CANCELLED should not update HWM
-      mockAssessmentRepo.findOne.mockResolvedValue({
-        id: 'assess-cancelled', status: AssessmentStatus.CANCELLED,
-      });
-
-      await service.markAssessmentPaid('inv-cancelled');
-      expect(mockPerformanceRepo.update).not.toHaveBeenCalled();
+    it('PerformanceFeeService does NOT expose any method that updates the high-water mark', () => {
+      // No public method on this service writes currentHighWaterMark — that
+      // write lives solely in WebhookProcessorService.handlePerformanceFeePaymentSucceeded.
+      const ownMethods = Object.getOwnPropertyNames(
+        Object.getPrototypeOf(service),
+      ).filter((name) => name !== 'constructor' && typeof (service as unknown as Record<string, unknown>)[name] === 'function');
+      // Sanity: the service still has its expected public surface.
+      expect(ownMethods).toContain('calculateAssessment');
+      expect(ownMethods).toContain('invoiceAssessment');
+      // None of the public methods should touch HWM directly.
+      expect(ownMethods).not.toContain('markAssessmentPaid');
     });
   });
 

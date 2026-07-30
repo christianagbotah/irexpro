@@ -432,8 +432,31 @@ export class WebhookProcessorService {
     });
 
     if (performance) {
-      const newHWM = assessment.endingRealisedBalance;
+      // Sprint 18 — HWM anti-regression hardening.
+      //
+      // The high-water mark represents the highest realised-balance peak ever
+      // reached by this trading account. It must NEVER move downward — a
+      // regression would allow the same profit to be charged a performance fee
+      // twice in a later billing cycle.
+      //
+      // Previously this path assigned `currentHighWaterMark = endingRealisedBalance`
+      // unconditionally. That was safe only because the billing-cycle orchestrator
+      // refuses to create a second assessment while an outstanding (unpaid) one
+      // exists against the current HWM — so in normal operation `endingRealisedBalance`
+      // is always >= the stored HWM by the time a verified payment arrives.
+      //
+      // However, that safety is indirect and fragile: a future change to the
+      // outstanding-assessment guard, a manually-inserted assessment, or a
+      // reconciliation backfill that recomputes `endingRealisedBalance` could
+      // silently let the HWM regress. We now enforce the invariant directly at
+      // the single write site: `newHWM = max(oldHWM, endingRealisedBalance)`,
+      // using BigInt comparison so no floating-point money math is introduced.
+      const endingRealisedBalance = assessment.endingRealisedBalance;
       const oldHWM = performance.currentHighWaterMark;
+      const newHWM = BigInt(endingRealisedBalance) > BigInt(oldHWM)
+        ? endingRealisedBalance
+        : oldHWM;
+      const hwmRegulated = newHWM !== endingRealisedBalance;
       const newTotalFees = (BigInt(performance.totalFeesCharged) + BigInt(transaction.amountMinor)).toString();
 
       await this.performanceRepo.update(performance.id, {
@@ -451,6 +474,8 @@ export class WebhookProcessorService {
           userId: transaction.userId,
           oldHWM,
           newHWM,
+          endingRealisedBalance,
+          hwmRegulated,
           assessmentId: assessment.id,
           transactionId: transaction.id,
         },

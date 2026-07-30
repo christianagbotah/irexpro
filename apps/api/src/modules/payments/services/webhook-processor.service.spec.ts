@@ -525,6 +525,109 @@ describe('WebhookProcessorService', () => {
       expect(mockAssessmentRepo.update).not.toHaveBeenCalled();
       expect(mockSubscriptionsService.activateSubscriptionFromPayment).not.toHaveBeenCalled();
     });
+
+    // ── Sprint 18: HWM anti-regression hardening ────────────────────────────
+    it('HWM cannot regress after a verified payment (Sprint 18 max() semantics)', async () => {
+      // Scenario: the stored HWM (10,000,000) is HIGHER than the assessment's
+      // endingRealisedBalance (7,000,000). This can happen if a reconciliation
+      // backfill recomputes the balance, a manual assessment is inserted, or
+      // the outstanding-assessment guard is changed in future. Previously the
+      // webhook path assigned currentHighWaterMark = endingRealisedBalance
+      // unconditionally, which would regress the HWM and allow the same profit
+      // to be charged a performance fee twice in a later cycle. Sprint 18
+      // enforces max(oldHWM, endingRealisedBalance) so the HWM never moves
+      // downward.
+      registry.register(buildPerfFeeProvider('mock_pf_reg', 'ref_pf_reg'));
+      const record = { id: 'wh-pf-reg', provider: 'mock_pf_reg', providerEventId: 'mock_pf_reg_evt', processed: false };
+      mockWebhookEventRepo.create.mockReturnValue(record);
+      mockWebhookEventRepo.save.mockResolvedValue(record);
+
+      mockTransactionRepo.findOne.mockResolvedValue({
+        id: 'tx-pf-reg', userId: 'user-pf-reg', invoiceId: 'inv-pf-reg', provider: 'mock_pf_reg',
+        providerTransactionReference: 'ref_pf_reg',
+        paymentPurpose: PaymentPurpose.PERFORMANCE_FEE,
+        amountMinor: '200000', currency: 'USD',
+        providerPayloadSummary: {},
+      });
+      mockAssessmentRepo.findOne.mockResolvedValue({
+        id: 'assess-pf-reg', userId: 'user-pf-reg', invoiceId: 'inv-pf-reg',
+        status: AssessmentStatus.INVOICED, brokerConnectionId: null,
+        feeAmount: '200000', endingRealisedBalance: '7000000', currency: 'USD',
+      });
+      // Existing HWM is HIGHER than endingRealisedBalance — must not regress.
+      mockPerformanceRepo.findOne.mockResolvedValue({
+        id: 'perf-pf-reg', totalFeesCharged: '0', currentHighWaterMark: '10000000',
+      });
+
+      await service.processWebhook('mock_pf_reg', Buffer.from('{}'), {});
+
+      // Assessment is still marked PAID (the payment was verified) ...
+      expect(mockAssessmentRepo.update).toHaveBeenCalledWith('assess-pf-reg', { status: AssessmentStatus.PAID });
+      // ... but the HWM must stay at 10,000,000 — NOT regress to 7,000,000.
+      expect(mockPerformanceRepo.update).toHaveBeenCalledWith('perf-pf-reg', expect.objectContaining({
+        currentHighWaterMark: '10000000',
+        totalFeesCharged: '200000',
+      }));
+      // Audit metadata records that the HWM was regulated (held at the old peak).
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'HIGH_WATER_MARK_UPDATED',
+          metadata: expect.objectContaining({
+            oldHWM: '10000000',
+            newHWM: '10000000',
+            endingRealisedBalance: '7000000',
+            hwmRegulated: true,
+          }),
+        }),
+      );
+    });
+
+    it('HWM advances normally when endingRealisedBalance exceeds the old peak', async () => {
+      // Sanity check: the max() hardening does NOT prevent legitimate upward
+      // HWM advancement. endingRealisedBalance (12,000,000) > oldHWM (8,000,000)
+      // → newHWM should be 12,000,000.
+      // NOTE: buildPerfFeeProvider hardcodes amountMinor=200000 in the webhook
+      // event, so the transaction must also carry amountMinor='200000' to pass
+      // the amount/currency verification gate before the HWM update runs.
+      registry.register(buildPerfFeeProvider('mock_pf_up', 'ref_pf_up'));
+      const record = { id: 'wh-pf-up', provider: 'mock_pf_up', providerEventId: 'mock_pf_up_evt', processed: false };
+      mockWebhookEventRepo.create.mockReturnValue(record);
+      mockWebhookEventRepo.save.mockResolvedValue(record);
+
+      mockTransactionRepo.findOne.mockResolvedValue({
+        id: 'tx-pf-up', userId: 'user-pf-up', invoiceId: 'inv-pf-up', provider: 'mock_pf_up',
+        providerTransactionReference: 'ref_pf_up',
+        paymentPurpose: PaymentPurpose.PERFORMANCE_FEE,
+        amountMinor: '200000', currency: 'USD',
+        providerPayloadSummary: {},
+      });
+      mockAssessmentRepo.findOne.mockResolvedValue({
+        id: 'assess-pf-up', userId: 'user-pf-up', invoiceId: 'inv-pf-up',
+        status: AssessmentStatus.INVOICED, brokerConnectionId: null,
+        feeAmount: '200000', endingRealisedBalance: '12000000', currency: 'USD',
+      });
+      mockPerformanceRepo.findOne.mockResolvedValue({
+        id: 'perf-pf-up', totalFeesCharged: '100000', currentHighWaterMark: '8000000',
+      });
+
+      await service.processWebhook('mock_pf_up', Buffer.from('{}'), {});
+
+      expect(mockPerformanceRepo.update).toHaveBeenCalledWith('perf-pf-up', expect.objectContaining({
+        currentHighWaterMark: '12000000',
+        totalFeesCharged: '300000',
+      }));
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'HIGH_WATER_MARK_UPDATED',
+          metadata: expect.objectContaining({
+            oldHWM: '8000000',
+            newHWM: '12000000',
+            endingRealisedBalance: '12000000',
+            hwmRegulated: false,
+          }),
+        }),
+      );
+    });
   });
 
   describe('processWebhook — amount/currency verification (Sprint 15 audit)', () => {

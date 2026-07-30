@@ -1,6 +1,6 @@
 # iRexPro — Implementation Roadmap
 
-## Current Phase: Phase 1 Sprint 16 Complete — Subscription Checkout Idempotency + Pending Invoice Reuse
+## Current Phase: Phase 1 Sprint 18 Complete — Payment Transaction Reference Uniqueness + Metadata Consistency Hardening
 
 ---
 
@@ -978,3 +978,39 @@ audited/passed in Sprint 15), so no change was made.
 
 Final count: 734 tests, 44 suites, all passing. No pending migrations. No open
 handles. **Sprint 18 is safe to begin.**
+
+---
+
+## Sprint 18 — Payment Transaction Reference Uniqueness + Metadata Consistency Hardening
+
+Sprint 18 is a defence-in-depth + consistency sprint. It hardens the payment-transaction reference uniqueness boundary and the performance-fee high-water-mark safety invariant. No new payment-state transitions were introduced and the webhook-only paid-state invariant is preserved unchanged.
+
+### Objectives delivered
+
+1. **Provider transaction-reference uniqueness** — The DB-level partial unique index `ux_payment_transactions_provider_reference` on `(provider, provider_transaction_reference)` (scoped `WHERE provider_transaction_reference IS NOT NULL AND <> ''`) was already on disk via migration `1751500000000-AddPaymentTransactionReferenceUniqueGuard`. Sprint 18 verified it is correct and added the pre-migration duplicate-check runbook (`docs/runbooks/sprint-18-provider-reference-unique-guard.md`). No duplicate migration was created; no destructive data cleanup was performed.
+
+2. **Duplicate provider-reference handling** — Both checkout flows (`SubscriptionsService.initiateCheckout`, `PerformanceFeePaymentService.initiatePerformanceFeeCheckout`) already caught the 23505 unique-violation (Sprint 18 PART C): release the processing claim back to PENDING, audit at CRITICAL with `reason: 'PROVIDER_REFERENCE_CONFLICT'`, throw a sanitized `ConflictException`. They never mark invoice/transaction/assessment/subscription paid and never leak the raw `QueryFailedError`. Sprint 18 added regression tests for both flows.
+
+3. **Performance-fee checkout metadata consistency** — `transactionId` is now present in BOTH the provider-bound `createCheckoutSession` metadata (already present since Sprint 14) AND the stored `providerPayloadSummary` (added in Sprint 18), for debug-metadata parity with subscription checkout. No payment state transitions changed.
+
+4. **High-water-mark safety** — `WebhookProcessorService.handlePerformanceFeePaymentSucceeded` now updates the HWM using `max(currentHighWaterMark, endingRealisedBalance)` via BigInt comparison. The HWM can never regress. Audit metadata now records `endingRealisedBalance` and a `hwmRegulated` flag. The update still fires only after verified webhook signature → matching amount → matching currency → transaction SUCCEEDED → invoice PAID.
+
+5. **Removed unsafe direct HWM update path** — The orphaned `PerformanceFeeService.markAssessmentPaid()` method (no production callers) was removed entirely. `PerformanceFeeService` now exposes NO method that writes `currentHighWaterMark` or transitions an assessment to PAID. The sole production write site is the verified-webhook path in `WebhookProcessorService`. A structural comment documents why it must not be reintroduced.
+
+6. **Tests** — Added: HWM cannot regress; HWM advances normally on legitimate upward movement; `markAssessmentPaid` not exposed; performance-fee checkout metadata includes `transactionId`; performance-fee `providerPayloadSummary` includes `transactionId`; 23505 safe handling in performance-fee checkout; 23505 safe handling in subscription checkout. Existing webhook-only paid-state invariants remain regression-tested.
+
+7. **Repository hygiene** — 541 tracked `dist/` build artifacts removed from git (`git rm -r --cached apps/api/dist`). `.gitignore` `dist/` entry (already present) now protects the working tree. No source code, migrations, tests, or docs removed.
+
+8. **Documentation** — `CURRENT_STATE.md` updated with Sprint 18 checkpoint + summary. `IMPLEMENTATION_ROADMAP.md` "Current Phase" header updated (was stale at Sprint 16). Pre-migration duplicate-check runbook added at `docs/runbooks/sprint-18-provider-reference-unique-guard.md`.
+
+### Sprint 18 invariants
+
+\- Checkout never marks invoice/transaction/assessment/subscription paid — only a verified provider webhook does.
+\- Only a verified provider webhook may confirm payment.
+\- Amount and currency must match before confirming payment.
+\- High-water mark may update ONLY through the verified performance-fee webhook success path.
+\- High-water mark can never regress (max() semantics).
+\- `PerformanceFeeService` exposes no method that transitions an assessment to PAID or updates the HWM.
+\- DB-level uniqueness on `(provider, provider_transaction_reference)` is enforced; 23505 is caught safely and never leaks.
+\- No demo-data / database-failure fallback in any production path.
+\- All persisted money values remain bigint minor-unit strings.

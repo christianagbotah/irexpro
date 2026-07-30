@@ -4,7 +4,34 @@
 
 \## Current Sprint Checkpoint
 
-Last completed sprint: Sprint 17 audit — Stripe Sandbox Checkout Integration (PASS, no fixes required).
+Last completed sprint: Sprint 18 — Payment Transaction Reference Uniqueness + Metadata Consistency Hardening (PASS).
+
+Previous: Sprint 17 audit — Stripe Sandbox Checkout Integration (PASS, no fixes required).
+
+
+\## Sprint 18 — Payment Transaction Reference Uniqueness + Metadata Consistency Hardening
+
+Sprint 18 hardens the payment-transaction reference uniqueness boundary and the performance-fee high-water-mark safety invariant. It is a defence-in-depth + consistency sprint — no new payment-state transitions were introduced and the webhook-only paid-state invariant is preserved unchanged.
+
+\- DB-level uniqueness guard on `(provider, provider_transaction_reference)` is now enforced via the pre-existing migration `1751500000000-AddPaymentTransactionReferenceUniqueGuard` (partial unique index `ux_payment_transactions_provider_reference`, scoped `WHERE provider_transaction_reference IS NOT NULL AND <> ''`). The migration was already on disk and correct; Sprint 18 verified it, added tests around it, and documented the pre-migration duplicate-check runbook.
+
+\- Both subscription checkout (`SubscriptionsService.initiateCheckout`) and performance-fee checkout (`PerformanceFeePaymentService.initiatePerformanceFeeCheckout`) already caught the 23505 unique-violation from this guard (Sprint 18 PART C): they release the processing claim back to PENDING, audit at CRITICAL severity with `reason: 'PROVIDER_REFERENCE_CONFLICT'`, and throw a sanitized `ConflictException`. They NEVER mark the invoice/transaction/assessment/subscription paid and never leak the raw `QueryFailedError` / constraint name. Sprint 18 added regression tests proving this for both flows.
+
+\- Performance-fee checkout metadata now includes `transactionId` in BOTH the provider-bound `createCheckoutSession` metadata AND the stored `providerPayloadSummary` — consistent with subscription checkout. (The `createCheckoutSession` metadata already had `transactionId` since Sprint 14; Sprint 18 added it to `providerPayloadSummary` for debug-metadata parity and added a regression test.) No payment state transitions were changed.
+
+\- High-water-mark anti-regression hardening: `WebhookProcessorService.handlePerformanceFeePaymentSucceeded` now updates the HWM using `max(currentHighWaterMark, endingRealisedBalance)` via BigInt comparison, so the HWM can never move downward even if a future change to the outstanding-assessment guard, a reconciliation backfill, or a manually-inserted assessment produces an `endingRealisedBalance` below the stored peak. The audit metadata now records `endingRealisedBalance` and a `hwmRegulated` flag so operators can see when the max() guard held the HWM at the old peak.
+
+\- Removed the previously-orphaned `PerformanceFeeService.markAssessmentPaid()` method. It transitioned an assessment to PAID and updated the HWM directly, bypassing the verified payment-webhook path. It had NO production callers (the webhook processor inlines its own HWM logic), but its existence was a latent safety hazard. The invariant "HWM may update only through the verified performance-fee webhook success path" is now enforced structurally — `PerformanceFeeService` exposes NO method that writes `currentHighWaterMark` or transitions an assessment to PAID. The sole production write site is `WebhookProcessorService.handlePerformanceFeePaymentSucceeded`.
+
+\- Repository hygiene: 541 tracked `dist/` build artifacts removed from git tracking (`git rm -r --cached apps/api/dist`). The `.gitignore` `dist/` entry (already present) now protects the working tree. No source code, migrations, tests, or docs were removed.
+
+\- Sprint 18 tests added (all passing): HWM cannot regress after verified payment; HWM advances normally when endingRealisedBalance exceeds the old peak; `markAssessmentPaid` is not exposed by `PerformanceFeeService`; performance-fee checkout metadata includes `transactionId`; performance-fee `providerPayloadSummary` includes `transactionId`; DB unique-violation on `providerTransactionReference` is caught safely in performance-fee checkout (never marks paid, releases claim, audits CRITICAL, sanitized conflict, no error leak); DB unique-violation on `providerTransactionReference` is caught safely in subscription checkout (never marks paid, never activates subscription, releases claim, audits CRITICAL, sanitized conflict).
+
+\- Existing webhook-only paid-state invariants remain intact and regression-tested: checkout never marks paid; only a verified provider webhook confirms payment; amount + currency must match; HWM updates only after confirmed performance-fee payment.
+
+\- Pre-migration runbook added: `docs/runbooks/sprint-18-provider-reference-unique-guard.md` documents the duplicate-check SQL operators must run before applying migration `1751500000000` to any database with existing historical transaction data.
+
+\- No Python files touched. No new migrations created. No new libraries installed.
 
 
 
@@ -149,6 +176,8 @@ Last verified status:
 \- Sprint 17: Stripe sandbox checkout integration (subscription + performance-fee) — webhook-only paid/HWM path preserved; zero business-logic changes required in SubscriptionsService/PerformanceFeePaymentService/WebhookProcessorService
 
 \- Sprint 17 audit: PASS, no fixes required — see Last verified status above for scope and detail
+
+\- Sprint 18: Payment transaction reference uniqueness + metadata consistency hardening — HWM anti-regression (max() semantics), removed orphaned `markAssessmentPaid()`, performance-fee `providerPayloadSummary` now includes `transactionId`, `dist/` untracked from git, pre-migration duplicate-check runbook added. Migration `1751500000000` verified as pre-existing and correct. No new migrations, no new libraries, no Python changes.
 
 
 

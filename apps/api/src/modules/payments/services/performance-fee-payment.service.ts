@@ -77,7 +77,7 @@ export interface PerformanceFeeInvoiceView {
 }
 
 /**
- * PerformanceFeePaymentService (Sprint 14)
+ * PerformanceFeePaymentService (Sprint 14, hardened Sprint 18)
  *
  * Lets an authenticated user (or admin) initiate payment for an existing
  * performance-fee invoice using the existing provider routing system.
@@ -94,6 +94,13 @@ export interface PerformanceFeeInvoiceView {
  *      the PENDING transaction created at invoicing time.
  *   8. Never exposes provider secrets / raw payloads.
  *   9. All persisted money values remain bigint minor-unit strings.
+ *  10. (Sprint 18) Provider-reference uniqueness violations from the DB-level guard
+ *      (migration AddPaymentTransactionReferenceUniqueGuard) are caught, audited at
+ *      CRITICAL severity, released to PENDING, and surfaced as a sanitized
+ *      ConflictException — never marked paid, never leaking the raw DB error.
+ *  11. (Sprint 18) Checkout metadata sent to the provider AND the stored
+ *      providerPayloadSummary both include `transactionId` for debug-metadata
+ *      parity with subscription checkout. No payment state is changed by metadata.
  */
 @Injectable()
 export class PerformanceFeePaymentService {
@@ -268,6 +275,7 @@ export class PerformanceFeePaymentService {
           providerPayloadSummary: {
             assessmentId: assessment.id,
             invoiceId: invoice.id,
+            transactionId: transaction.id,
             type: 'PERFORMANCE_FEE',
             provider: provider.providerId,
             sessionId: sessionResult.sessionId,
