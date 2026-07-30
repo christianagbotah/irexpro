@@ -4,11 +4,30 @@
 
 \## Current Sprint Checkpoint
 
-Current sprint: Sprint 19 — Production Deployment Foundation (IN PROGRESS).
+Current sprint: Sprint 20 — Runtime Bootstrap Fix (IN PROGRESS).
 
-Last completed sprint: Sprint 18 — Payment Transaction Reference Uniqueness + Metadata Consistency Hardening (PASS, merged to `main`, tagged `sprint-18-complete`).
+Last completed sprint: Sprint 19 — Production Deployment Foundation (PASS, merged to `main`, tagged `sprint-19-complete`).
 
-Previous: Sprint 17 audit — Stripe Sandbox Checkout Integration (PASS, no fixes required).
+Previous: Sprint 18 — Payment Transaction Reference Uniqueness + Metadata Consistency Hardening (PASS, merged to `main`, tagged `sprint-18-complete`).
+
+
+\## Sprint 20 — Runtime Bootstrap Fix (in progress)
+
+Sprint 20 fixes a staging runtime bootstrap DI failure discovered during VPS dry-run. On the real Webuzo VPS staging deployment, migrations passed and all 739 tests passed, but the NestJS API failed at runtime under PM2 with:
+
+  Nest can't resolve dependencies of the ExecutionService
+  (TradeRepository, TradingSessionRepository, BrokerService, BrokerAdapterRegistry, ?, AuditService, DataSource, DomainEventBus).
+  Please make sure that the argument CredentialEncryptionService at index [4] is available in the ExecutionModule context.
+
+Root cause: `CredentialEncryptionService` was declared as a provider in `BrokerModule` but was NOT included in `BrokerModule`'s `exports` array. `ExecutionService` (in `ExecutionModule`, which imports `BrokerModule`) injects `CredentialEncryptionService` at constructor index [4]. Because the service was not exported across the module boundary, NestJS could not resolve it at runtime. The existing unit tests did not catch this because each spec builds an isolated `TestingModule` with manually-mocked providers — the real module boundary / export graph was never exercised.
+
+Fix: added `CredentialEncryptionService` to `BrokerModule`'s `exports` array. The service remains a single provider owned by `BrokerModule` — it is NOT re-declared anywhere else. This is the proper NestJS module-boundary fix: no hacks, no manual instantiation, no duplicate providers.
+
+Bootstrap smoke test: added `apps/api/src/bootstrap.spec.ts` — a runtime DI smoke test that compiles the REAL feature-module graph (all 21 modules from AppModule) so that any missing provider export surfaces as a test failure in CI rather than at runtime. The test mocks `@nestjs/typeorm` and `@nestjs/bullmq` at the module level (no-op forRoot, forFeature provides mock repository tokens, registerQueue provides mock queue tokens) to avoid requiring live PostgreSQL/Redis connections, while every real feature module is imported unchanged. The test verifies: (1) the full graph compiles without DI errors, (2) `ExecutionService` is resolvable (the exact resolution that failed on staging), (3) `CredentialEncryptionService` is a single shared instance, (4) `BrokerAdapterRegistry` has both adapters registered.
+
+This test would have caught the staging DI failure before deployment — verified by temporarily reverting the fix and confirming the test fails with the exact staging error message.
+
+No production safety rules were changed: AI never executes broker orders directly, risk gate remains mandatory, payment checkout never marks paid, only verified webhooks confirm payment, no floating-point money, no demo fallback, no localStorage/Fovi-style assumptions, no secrets committed.
 
 
 \## Sprint 19 — Production Deployment Foundation (in progress)

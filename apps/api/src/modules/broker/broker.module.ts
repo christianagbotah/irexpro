@@ -48,7 +48,19 @@ import { AuditModule } from '../audit/audit.module';
     BrokerHealthCheckJob,
     BrokerHealthCheckProducer,
   ],
-  exports: [BrokerService, BrokerAdapterRegistry, PaperBrokerAdapter],
+  exports: [
+    BrokerService,
+    BrokerAdapterRegistry,
+    PaperBrokerAdapter,
+    // CredentialEncryptionService is exported so that ExecutionModule (which
+    // imports BrokerModule) can inject it into ExecutionService, where it is
+    // used to decrypt broker credentials immediately before placing an order.
+    // Without this export, NestJS cannot resolve CredentialEncryptionService in
+    // the ExecutionModule context at runtime (staging bootstrap DI failure,
+    // Sprint 20). The service remains a single provider owned by BrokerModule —
+    // it is NOT re-declared anywhere else.
+    CredentialEncryptionService,
+  ],
 })
 export class BrokerModule implements OnModuleInit {
   constructor(
