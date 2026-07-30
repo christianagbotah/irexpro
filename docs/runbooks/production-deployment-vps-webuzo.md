@@ -275,6 +275,33 @@ signals to NestJS; NestJS verifies it with a constant-time HMAC comparison via
 
 ## 5. Build process
 
+### 5.0 Checkout the production branch
+
+**Production always deploys from the `main` branch, never from a sprint branch.**
+
+- Sprint branches (e.g. `sprint-19-production-deployment`) are for development
+  and review only. They are NOT deployment targets.
+- Sprint work must be merged into `main` before it can be deployed. If a sprint
+  branch's work needs to reach production, merge it into `main` first, then
+  deploy from `main`.
+- Do not deploy from a sprint branch, a feature branch, or a detached HEAD
+  unless you are performing a tagged rollback (see §11.1 Application rollback,
+  which intentionally checks out a `sprint-*-complete` tag).
+- Before building, confirm the working tree is on `main` and up to date with
+  the remote. Record the commit hash so you can roll back to it if the deploy
+  misbehaves.
+
+```bash
+cd /opt/irexpro
+git checkout main
+git pull --ff-only origin main
+git rev-parse HEAD    # record this commit for rollback
+git branch --show-current
+```
+
+`git branch --show-current` must print `main`. If it prints anything else, stop
+and re-run the checkout step before proceeding.
+
 ### 5.1 NestJS API
 
 ```bash
@@ -696,6 +723,7 @@ Print this and tick every box before going live.
 
 ### 12.4 Build + migrate
 
+- [ ] Confirmed `git branch --show-current` reports `main`, not a sprint or feature branch.
 - [ ] `pnpm install --frozen-lockfile` succeeds
 - [ ] `pnpm --filter @irexpro/api build` succeeds, `apps/api/dist/main.js` exists
 - [ ] AI engine venv created, `pip install -e .` succeeds
