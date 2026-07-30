@@ -342,6 +342,13 @@ describe('SubscriptionsService', () => {
           }),
         }),
       );
+      // The raw QueryFailedError / constraint name / 23505 code is never leaked
+      // to the caller — mirrors the performance-fee checkout 23505 leak check.
+      const thrown = await service.initiateCheckout(baseRequest).catch((e: unknown) => e);
+      const thrownStr = thrown instanceof Error
+        ? `${thrown.message} ${JSON.stringify((thrown as { response?: unknown }).response ?? {})}`
+        : String(thrown);
+      expect(thrownStr).not.toMatch(/ux_payment_transactions|QueryFailedError|23505|duplicate key/i);
     });
 
     // ─── Active subscription blocks duplicate checkout ──────────────────────

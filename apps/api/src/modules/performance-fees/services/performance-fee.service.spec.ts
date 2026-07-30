@@ -163,7 +163,7 @@ describe('PerformanceFeeService', () => {
       expect((service as unknown as Record<string, unknown>).markAssessmentPaid).toBeUndefined();
     });
 
-    it('PerformanceFeeService does NOT expose any method that updates the high-water mark', () => {
+    it('PerformanceFeeService does NOT expose markAssessmentPaid, the previously orphaned direct HWM-update method', () => {
       // No public method on this service writes currentHighWaterMark — that
       // write lives solely in WebhookProcessorService.handlePerformanceFeePaymentSucceeded.
       const ownMethods = Object.getOwnPropertyNames(
