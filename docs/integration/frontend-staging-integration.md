@@ -205,3 +205,64 @@ is the only public entry point; it proxies AI-related concerns internally.
 - `apps/web/.env.example`, `apps/admin/.env.example`, `apps/mobile/.env.example`
 - `infrastructure/nginx/irexpro-staging.example.conf` — Nginx routes
 - `docs/runbooks/production-deployment-vps-webuzo.md` §8.4 — deployment notes
+
+---
+
+## 11. Modern UI/UX foundation + forgot-password flow (Sprint 26)
+
+Sprint 26 adds a modern, professional, responsive UI/UX design system across
+web, admin, and mobile, plus safe forgot-password/reset-password UI foundations.
+
+### 11.1 UI/UX foundation added
+
+- **Design system:** enterprise fintech palette (teal/slate for web, amber for
+  admin), spacing scale, shadows, typography, responsive layouts.
+- **UI primitives:** Button, Input, Card, Alert, Badge, LoadingSpinner,
+  EmptyState, AuthLayout (split-screen), DashboardShell (sidebar + header).
+- **Web redesign:** `/login`, `/register`, `/dashboard` — split-screen auth
+  layout, dashboard shell with sidebar.
+- **Admin redesign:** `/admin/login`, `/admin/dashboard` — admin identity with
+  amber accent, stat cards grid, management cards.
+- **Mobile polish:** improved LoginScreen, DashboardScreen, AccountScreen,
+  PaymentsScreen styling.
+
+### 11.2 Forgot-password pages (safe generic messages)
+
+- **Web:** `/forgot-password` — accepts email, shows safe generic message:
+  "If an account exists for this email, password reset instructions will be
+  sent once password recovery is enabled."
+- **Admin:** `/admin/forgot-password` — same safe generic message.
+- **Mobile:** `ForgotPasswordScreen` — same safe generic message.
+- Does NOT disclose whether the email exists.
+
+### 11.3 Reset-password pages (placeholder — no fake reset)
+
+- **Web:** `/reset-password` — shows a "coming soon" notice only. Password
+  fields are disabled. No password is accepted or processed. No success message
+  that implies the password was changed.
+- **Admin:** `/admin/reset-password` — same placeholder notice.
+- These pages will be activated once the backend password reset endpoints are
+  implemented.
+
+### 11.4 Backend endpoints currently missing
+
+The backend does NOT yet have:
+- `POST /auth/forgot-password`
+- `POST /auth/reset-password`
+
+The audit-action enum already has `USER_PASSWORD_RESET_REQUESTED` and
+`USER_PASSWORD_RESET_COMPLETED` (planned, not yet implemented).
+
+### 11.5 Next backend requirement
+
+The next backend sprint must implement secure password reset:
+- `POST /auth/forgot-password` — generates a time-limited reset token, sends
+  reset link via email (or SMS), returns generic success (never reveals whether
+  the email exists).
+- `POST /auth/reset-password` — accepts reset token + new password, verifies
+  token, updates password hash (argon2), invalidates token, audits the action.
+- Reset tokens must NOT be stored in localStorage/sessionStorage.
+- The backend remains the source of truth for all password changes.
+
+Until the backend endpoints are implemented, the frontend reset-password pages
+are placeholders only — they do not accept or process password input.
