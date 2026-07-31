@@ -95,7 +95,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       storeTokens(tokens);
       await fetchMe(tokens.accessToken);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Login failed';
+      // Show backend error message if available; otherwise safe fallback
+      const msg = (err instanceof Error && err.message && !err.message.includes('fetch'))
+        ? err.message
+        : 'Something went wrong. Please try again or contact support.';
       setError(msg);
       throw err;
     } finally {
@@ -115,7 +118,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       storeTokens(tokens);
       await fetchMe(tokens.accessToken);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Registration failed';
+      const msg = (err instanceof Error && err.message && !err.message.includes('fetch'))
+        ? err.message
+        : 'Something went wrong. Please try again or contact support.';
       setError(msg);
       throw err;
     } finally {
