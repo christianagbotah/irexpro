@@ -18,6 +18,12 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * entity definitions, using `IF NOT EXISTS` so it is safe on databases where
  * some tables may already exist (e.g. dev databases where init.sql ran).
  *
+ * UUID generation: uses gen_random_uuid() from the pgcrypto extension (NOT
+ * uuid_generate_v4() from uuid-ossp). This avoids the staging failure where
+ * public.uuid_generate_v4() already exists as a standalone function (from the
+ * emergency fallback in the Sprint 21 runbook) and CREATE EXTENSION "uuid-ossp"
+ * fails because it tries to create uuid_generate_v4() again.
+ *
  * Migration order: timestamp 1750800000000 — runs BEFORE all existing
  * migrations (1750900000000+) so the baseline exists before payment/billing/
  * broker/reconciliation migrations add their indexes and constraints.
@@ -33,7 +39,12 @@ export class CreateBaselineIdentityAndPlatformSchema1750800000000 implements Mig
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     // ── Extensions ──────────────────────────────────────────────────────────
-    await queryRunner.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`);
+    // Use pgcrypto (gen_random_uuid) — NOT uuid-ossp. The staging DB already
+    // has a standalone public.uuid_generate_v4() function (from the Sprint 21
+    // emergency fallback), so CREATE EXTENSION "uuid-ossp" fails with
+    // "function uuid_generate_v4 already exists with same argument types".
+    // pgcrypto's gen_random_uuid() does not conflict and is the modern
+    // PostgreSQL recommended UUID generator (since PG 13+).
     await queryRunner.query(`CREATE EXTENSION IF NOT EXISTS "pgcrypto"`);
 
     // ── Schemas ─────────────────────────────────────────────────────────────
@@ -48,7 +59,7 @@ export class CreateBaselineIdentityAndPlatformSchema1750800000000 implements Mig
     // ── identity.users ──────────────────────────────────────────────────────
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS identity.users (
-        id                    uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+        id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         email                 varchar(255) UNIQUE,
         phone                 varchar(30),
         password_hash         varchar(255) NOT NULL,
@@ -72,7 +83,7 @@ export class CreateBaselineIdentityAndPlatformSchema1750800000000 implements Mig
     // ── identity.user_profiles ──────────────────────────────────────────────
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS identity.user_profiles (
-        id                            uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+        id                            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         user_id                       uuid NOT NULL REFERENCES identity.users(id) ON DELETE CASCADE,
         first_name                    varchar(100),
         last_name                     varchar(100),
@@ -98,7 +109,7 @@ export class CreateBaselineIdentityAndPlatformSchema1750800000000 implements Mig
     // ── identity.roles ──────────────────────────────────────────────────────
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS identity.roles (
-        id          uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+        id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         name        varchar(50) NOT NULL UNIQUE,
         description text,
         created_at  timestamptz NOT NULL DEFAULT NOW()
@@ -108,7 +119,7 @@ export class CreateBaselineIdentityAndPlatformSchema1750800000000 implements Mig
     // ── identity.user_roles ─────────────────────────────────────────────────
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS identity.user_roles (
-        id          uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+        id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         user_id     uuid NOT NULL REFERENCES identity.users(id) ON DELETE CASCADE,
         role_id     uuid NOT NULL REFERENCES identity.roles(id),
         assigned_at timestamptz NOT NULL DEFAULT NOW(),
@@ -121,7 +132,7 @@ export class CreateBaselineIdentityAndPlatformSchema1750800000000 implements Mig
     // ── audit.audit_logs ────────────────────────────────────────────────────
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS audit.audit_logs (
-        id             uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+        id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         actor_user_id  uuid,
         actor_type     varchar(20) NOT NULL DEFAULT 'USER',
         action         varchar(100) NOT NULL,
@@ -141,7 +152,7 @@ export class CreateBaselineIdentityAndPlatformSchema1750800000000 implements Mig
     // ── trading.risk_profiles ───────────────────────────────────────────────
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS trading.risk_profiles (
-        id                      uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+        id                      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         user_id                 uuid NOT NULL UNIQUE,
         kill_switch_active      boolean NOT NULL DEFAULT false,
         kill_switch_reason      text,
@@ -163,7 +174,7 @@ export class CreateBaselineIdentityAndPlatformSchema1750800000000 implements Mig
     // ── trading.risk_violations ─────────────────────────────────────────────
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS trading.risk_violations (
-        id              uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+        id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         user_id         uuid NOT NULL,
         signal_id       uuid,
         rejection_code  varchar(50) NOT NULL,
@@ -178,7 +189,7 @@ export class CreateBaselineIdentityAndPlatformSchema1750800000000 implements Mig
     // ── trading.trades ──────────────────────────────────────────────────────
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS trading.trades (
-        id                        uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+        id                        uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         user_id                   uuid NOT NULL,
         broker_connection_id      uuid NOT NULL,
         signal_id                 uuid,
@@ -210,7 +221,7 @@ export class CreateBaselineIdentityAndPlatformSchema1750800000000 implements Mig
     // ── trading.trading_sessions ────────────────────────────────────────────
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS trading.trading_sessions (
-        id                      uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+        id                      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         user_id                 uuid NOT NULL,
         broker_connection_id    uuid NOT NULL,
         status                  varchar(30) NOT NULL DEFAULT 'ACTIVE',
@@ -229,7 +240,7 @@ export class CreateBaselineIdentityAndPlatformSchema1750800000000 implements Mig
     // ── broker.broker_connections ───────────────────────────────────────────
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS broker.broker_connections (
-        id                    uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+        id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         user_id               uuid NOT NULL,
         broker_id             varchar(50) NOT NULL,
         broker_name           varchar(100) NOT NULL,
@@ -258,7 +269,7 @@ export class CreateBaselineIdentityAndPlatformSchema1750800000000 implements Mig
     // ── broker.broker_accounts ──────────────────────────────────────────────
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS broker.broker_accounts (
-        id                      uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+        id                      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         broker_connection_id    uuid NOT NULL UNIQUE,
         balance                 numeric(18,8) NOT NULL DEFAULT '0',
         equity                  numeric(18,8) NOT NULL DEFAULT '0',
@@ -278,7 +289,7 @@ export class CreateBaselineIdentityAndPlatformSchema1750800000000 implements Mig
     // ── subscriptions.subscription_plans ────────────────────────────────────
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS subscriptions.subscription_plans (
-        id                      uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+        id                      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         name                    varchar(100) NOT NULL,
         code                    varchar(50) NOT NULL UNIQUE,
         description             text,
@@ -297,7 +308,7 @@ export class CreateBaselineIdentityAndPlatformSchema1750800000000 implements Mig
     // ── subscriptions.plan_pricing ──────────────────────────────────────────
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS subscriptions.plan_pricing (
-        id                      uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+        id                      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         subscription_plan_id    uuid NOT NULL REFERENCES subscriptions.subscription_plans(id) ON DELETE CASCADE,
         country_code            varchar(2),
         currency                varchar(3) NOT NULL,
@@ -313,7 +324,7 @@ export class CreateBaselineIdentityAndPlatformSchema1750800000000 implements Mig
     // ── subscriptions.user_subscriptions ────────────────────────────────────
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS subscriptions.user_subscriptions (
-        id                              uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+        id                              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         user_id                         uuid NOT NULL,
         subscription_plan_id            uuid NOT NULL,
         status                          varchar(20) NOT NULL DEFAULT 'TRIAL',
@@ -335,7 +346,7 @@ export class CreateBaselineIdentityAndPlatformSchema1750800000000 implements Mig
     // ── subscriptions.user_payment_profiles ────────────────────────────────
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS subscriptions.user_payment_profiles (
-        id                          uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+        id                          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         user_id                     uuid NOT NULL,
         provider                    varchar(50) NOT NULL,
         provider_customer_reference varchar(255) NOT NULL,
@@ -353,7 +364,7 @@ export class CreateBaselineIdentityAndPlatformSchema1750800000000 implements Mig
     // ── platform.country_configs ────────────────────────────────────────────
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS platform.country_configs (
-        id                          uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+        id                          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         country_code                varchar(2) NOT NULL UNIQUE,
         country_name                varchar(100) NOT NULL,
         region                      varchar(100),
