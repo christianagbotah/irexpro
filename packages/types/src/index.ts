@@ -15,19 +15,25 @@
 // ── Auth ────────────────────────────────────────────────────────────────────
 //
 // These types match the verified backend auth contract (apps/api/src/modules/auth):
-//   POST /auth/register → { accessToken, refreshToken }
-//   POST /auth/login    → { accessToken, refreshToken }
-//   POST /auth/refresh  → body { refreshToken } → { accessToken, refreshToken }
-//   POST /auth/logout   → requires Authorization: Bearer <accessToken>
-//   GET  /auth/me       → requires Authorization: Bearer <accessToken> → AuthUser
+//   POST /auth/register → { accessToken, refreshToken } + sets httpOnly refresh cookie
+//   POST /auth/login    → { accessToken, refreshToken } + sets httpOnly refresh cookie
+//   POST /auth/refresh  → cookie (web/admin) OR body { refreshToken } (mobile) → { accessToken, refreshToken }
+//   POST /auth/logout   → requires Authorization: Bearer → clears refresh cookie
+//   GET  /auth/me       → requires Authorization: Bearer → AuthUser (frontend-safe DTO with roles)
 //
-// The backend is TOKEN-BASED (Bearer access token + refresh token in the body),
-// NOT httpOnly-cookie-based. The frontend is responsible for storing the
-// access token securely (httpOnly cookie is NOT available here; the backend
-// returns tokens in the JSON body). Web apps should use a secure, in-memory
-// store for the access token; mobile apps should use the platform secure
-// storage (expo-secure-store / Keychain / Keystore). Production web/admin must
-// NOT store access tokens in localStorage.
+// Sprint 25 hybrid session strategy:
+//   - Web/admin: access token in memory (NOT localStorage); refresh token in
+//     httpOnly cookie set by the backend. Sessions survive page refresh via
+//     /auth/refresh (cookie sent automatically with credentials:'include').
+//   - Mobile: access + refresh tokens in Expo SecureStore (NOT AsyncStorage).
+//     Sessions survive app restarts. Mobile sends refreshToken in the JSON
+//     body to /auth/refresh.
+//
+// Sprint 25 /auth/me contract: the backend now returns a frontend-safe
+// AuthUserDto (not the raw User entity). It includes roles (from the JWT
+// payload) and firstName/lastName (from the UserProfile relation). Sensitive
+// fields (passwordHash, mfaSecret, deletedAt, profile PII, userRoles) are
+// never included.
 
 export type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'USER';
 
@@ -38,32 +44,22 @@ export type UserStatus =
   | 'CLOSED';
 
 /**
- * The user object returned by GET /auth/me.
- * Matches the backend User entity minus passwordHash and mfaSecret (which the
- * backend strips via destructuring before returning).
+ * The user object returned by GET /auth/me (Sprint 25 — frontend-safe DTO).
+ * Matches the backend AuthUserDto (apps/api/src/modules/auth/dto/auth-user.dto.ts).
+ * Only frontend-safe fields are included; sensitive fields are never present.
  */
 export interface AuthUser {
   id: string;
   email: string;
-  phone: string | null;
-  status: UserStatus;
-  emailVerifiedAt: string | null;
-  phoneVerifiedAt: string | null;
-  lastLoginAt: string | null;
+  firstName: string | null;
+  lastName: string | null;
   countryCode: string | null;
-  timezone: string | null;
-  preferredCurrency: string | null;
+  status: UserStatus;
+  /** Roles from the JWT payload — always present in the Sprint 25 /auth/me response. */
+  roles: UserRole[];
   mfaEnabled: boolean;
+  lastLoginAt: string | null;
   createdAt: string;
-  updatedAt: string;
-  /**
-   * Roles are NOT included in the /auth/me response (the backend returns the
-   * raw User entity without eager-loading userRoles). The frontend may know
-   * roles from the JWT payload claims, or may need a separate roles endpoint.
-   * For now this is optional and may be populated by the app from the decoded
-   * access token if needed.
-   */
-  roles?: UserRole[];
 }
 
 export interface LoginRequest {

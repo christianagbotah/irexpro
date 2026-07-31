@@ -1,42 +1,45 @@
 'use client';
 
-import { createContext, useContext, useCallback, useMemo, useState, ReactNode } from 'react';
+import { createContext, useContext, useCallback, useMemo, useState, useEffect, ReactNode } from 'react';
 import type { AuthUser, AuthTokens, UserRole } from '@irexpro/types';
 import { setAccessToken } from '@/lib/api';
 import { api } from '@/lib/api';
 
 /**
- * Admin auth context — in-memory token storage (NOT localStorage).
+ * Admin auth context — Sprint 25 hybrid strategy.
  *
- * Same token-based model as the web app: /auth/login returns
- * { accessToken, refreshToken } in the JSON body. The access token is held in
- * memory and attached to API requests via getAccessToken.
+ * Session restore on page refresh:
+ *   - The backend sets an httpOnly refresh cookie on login.
+ *   - On mount, the AuthProvider calls api.refresh() (no args) — the browser
+ *     automatically sends the httpOnly cookie via credentials:'include'.
+ *   - If refresh succeeds, the new access token is stored in memory and
+ *     /auth/me is called to populate the user (including roles).
+ *   - If refresh fails, the user stays unauthenticated.
  *
  * Role enforcement: the backend enforces ADMIN/SUPER_ADMIN via RolesGuard on
- * admin endpoints. The frontend can do a soft check (show admin UI only if
- * the user's roles include ADMIN) but the backend is the source of truth —
- * a non-admin user will get 403 from admin endpoints even if the frontend
- * shows the UI. Roles are optional on AuthUser (the /auth/me response does
- * not include roles); the admin app may decode the JWT to read role claims
- * for a soft UI guard. See hasAdminRole below.
+ * admin endpoints. The frontend checks roles[] from /auth/me for a soft UI
+ * guard. The backend is the source of truth.
+ *
+ * Token storage: access token in memory only (NOT localStorage). Refresh
+ * token in httpOnly cookie (JavaScript cannot read it).
  */
 
 interface AuthContextValue {
   user: AuthUser | null;
   accessToken: string | null;
   loading: boolean;
+  restoring: boolean;
   error: string | null;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   clearError: () => void;
-  /** Soft UI guard — true if the user object has an ADMIN or SUPER_ADMIN role. */
   hasAdminRole: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 function checkAdminRole(user: AuthUser | null): boolean {
-  if (!user?.roles || user.roles.length === 0) return true; // assume admin until backend says otherwise (soft guard)
+  if (!user?.roles || user.roles.length === 0) return false;
   return user.roles.some((r: UserRole) => r === 'ADMIN' || r === 'SUPER_ADMIN');
 }
 
@@ -44,6 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [accessToken, setAccessTokenState] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [restoring, setRestoring] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const storeTokens = useCallback((tokens: AuthTokens) => {
@@ -63,6 +67,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw err;
     }
   }, []);
+
+  // Sprint 25: session restore on mount — call /auth/refresh with the
+  // httpOnly cookie (credentials:'include' is set in the api client).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const tokens = await api.refresh();
+        if (cancelled) return;
+        storeTokens(tokens);
+        await fetchMe(tokens.accessToken);
+      } catch {
+        // No cookie, expired, or invalid — user is unauthenticated.
+      } finally {
+        if (!cancelled) setRestoring(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [storeTokens, fetchMe]);
 
   const login = useCallback(async (email: string, password: string) => {
     setLoading(true);
@@ -95,19 +118,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [accessToken]);
 
   const clearError = useCallback(() => setError(null), []);
-
   const hasAdminRole = checkAdminRole(user);
 
   const value = useMemo<AuthContextValue>(() => ({
     user,
     accessToken,
     loading,
+    restoring,
     error,
     login,
     logout,
     clearError,
     hasAdminRole,
-  }), [user, accessToken, loading, error, login, logout, clearError, hasAdminRole]);
+  }), [user, accessToken, loading, restoring, error, login, logout, clearError, hasAdminRole]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

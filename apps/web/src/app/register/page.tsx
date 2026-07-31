@@ -1,18 +1,34 @@
 'use client';
 
-import { useState, FormEvent } from 'react';
+import { useState, FormEvent, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/auth-context';
 
 export default function RegisterPage() {
   const router = useRouter();
-  const { register, loading, error, clearError } = useAuth();
+  const { register, loading, restoring, error, clearError, user, accessToken } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [countryCode, setCountryCode] = useState('');
+
+  // Sprint 25: redirect to dashboard if already authenticated (but not during restore)
+  useEffect(() => {
+    if (!restoring && user && accessToken) {
+      router.replace('/dashboard');
+    }
+  }, [user, accessToken, restoring, router]);
+
+  if (restoring) {
+    return (
+      <main className="page">
+        <h1>Create your account</h1>
+        <p className="muted">Restoring session…</p>
+      </main>
+    );
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();

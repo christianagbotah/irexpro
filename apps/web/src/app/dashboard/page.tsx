@@ -4,7 +4,17 @@ import Link from 'next/link';
 import { useAuth } from '@/context/auth-context';
 
 export default function DashboardPage() {
-  const { user, logout, loading } = useAuth();
+  const { user, logout, loading, restoring } = useAuth();
+
+  // Sprint 25: show restoring state during session restore
+  if (restoring) {
+    return (
+      <main className="page">
+        <h1>Dashboard</h1>
+        <p className="muted">Restoring session…</p>
+      </main>
+    );
+  }
 
   if (loading && !user) {
     return (

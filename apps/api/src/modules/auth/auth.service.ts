@@ -11,6 +11,7 @@ import { Repository, DataSource } from 'typeorm';
 import * as argon2 from 'argon2';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { AuthUserDto } from './dto/auth-user.dto';
 import { User, UserStatus } from '../users/entities/user.entity';
 import { UserProfile } from '../users/entities/user-profile.entity';
 import { UserRole } from '../users/entities/user-role.entity';
@@ -186,6 +187,32 @@ export class AuthService {
 
   async validateUser(id: string): Promise<User | null> {
     return this.userRepo.findOne({ where: { id } });
+  }
+
+  /**
+   * Build a frontend-safe AuthUserDto for the /auth/me endpoint.
+   *
+   * Sprint 25: this replaces the previous approach of returning the raw User
+   * entity minus passwordHash/mfaSecret. It:
+   *   - Loads the user's profile (for firstName/lastName)
+   *   - Uses the roles from the JWT payload (passed by the controller from
+   *     request.user.roles — already set by JwtStrategy.validate)
+   *   - Returns ONLY frontend-safe fields via AuthUserDto.fromUser
+   *
+   * Sensitive fields (passwordHash, mfaSecret, deletedAt, userRoles, profile
+   * PII, provider/broker secrets) are NEVER included.
+   */
+  async getAuthUserDto(userId: string, roles: RoleName[]): Promise<AuthUserDto> {
+    const user = await this.userRepo.findOne({
+      where: { id: userId },
+      relations: ['profile'],
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    return AuthUserDto.fromUser(user, roles, user.profile);
   }
 
   /**

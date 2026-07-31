@@ -4,14 +4,50 @@
 
 \## Current Sprint Checkpoint
 
-Current sprint: Sprint 23 — Staging Frontend/Admin Deployment Verification (IN PROGRESS).
+Current sprint: Sprint 25 — Authentication Security Hardening + Roles Session Contract (IN PROGRESS).
 
-Last completed sprint: Sprint 22 — Staging Frontend/API Integration (PASS, merged to `main`, tagged `sprint-22-complete`).
+Last completed sprint: Sprint 24 — Cross-Platform Auth UI Flow (PASS, merged to `main`, tagged `sprint-24-complete`).
 
-Previous: Sprint 21 — Staging Runbook Hardening (PASS, merged to `main`, tagged `sprint-21-complete`).
+Previous: Sprint 23 — Staging Frontend/Admin Deployment Verification (PASS, merged to `main`, tagged `sprint-23-complete`).
 
 
-\## Sprint 23 — Staging Frontend/Admin Deployment Verification (in progress)
+\## Sprint 25 — Authentication Security Hardening + Roles Session Contract (in progress)
+
+Sprint 25 hardens the authentication contract so web/admin/mobile can safely maintain sessions and the admin portal can reliably identify admin/back-office users. It addresses two Sprint 24 limitations: (1) web/admin sessions were lost on page refresh, and (2) /auth/me did not return frontend-safe roles.
+
+**Chosen session strategy: Hybrid — httpOnly refresh cookie (web/admin) + SecureStore (mobile).**
+
+Rationale: the backend is token-based (Bearer access token + refresh token in JSON body). Sprint 25 amendment adds httpOnly refresh cookie support so web/admin sessions survive page refresh without localStorage. The backend still returns tokens in JSON for mobile compatibility. Both flows work simultaneously:
+- Web/admin: access token in memory (NOT localStorage); refresh token in httpOnly cookie set by the backend. On page refresh, the AuthProvider calls /auth/refresh (cookie sent automatically via credentials:'include') → gets new access token → calls /auth/me → session restored. No localStorage, no sessionStorage.
+- Mobile: tokens persisted in Expo SecureStore (iOS Keychain / Android Keystore). Sessions survive app restarts. Mobile sends refreshToken in the JSON body to /auth/refresh. AsyncStorage is prohibited.
+
+**Backend changes (minimal, fully tested):**
+- `GET /auth/me` now returns a frontend-safe `AuthUserDto` (new file `apps/api/src/modules/auth/dto/auth-user.dto.ts`) that explicitly allowlists only safe fields: `id`, `email`, `firstName`, `lastName`, `countryCode`, `status`, `roles`, `mfaEnabled`, `lastLoginAt`, `createdAt`. Sensitive fields (`passwordHash`, `mfaSecret`, `deletedAt`, `userRoles`, `profile` PII) are never included.
+- `roles` is now always present in the /auth/me response — it comes from the JWT payload (set by `JwtStrategy.validate()` from the user's assigned roles at token-sign time).
+- `firstName`/`lastName` are loaded from the `UserProfile` relation.
+- New `AuthCookieService` (`apps/api/src/modules/auth/auth-cookie.service.ts`) — manages the httpOnly refresh cookie: `setRefreshCookie`, `clearRefreshCookie`, `getRefreshTokenFromCookie`. Cookie settings: httpOnly=true, secure=true in production, sameSite=none in production (cross-origin admin → API), path=/api/v1/auth, maxAge=7 days.
+- `POST /auth/login` and `POST /auth/register` now set the httpOnly refresh cookie on the response (in addition to returning tokens in JSON for mobile).
+- `POST /auth/refresh` now checks the httpOnly cookie first, then falls back to the JSON body `refreshToken`. Both paths work. `RefreshTokenDto.refreshToken` is now optional.
+- `POST /auth/logout` now clears the httpOnly refresh cookie.
+- 17 new tests: 5 in `auth.service.spec.ts` (getAuthUserDto safe fields, roles, sensitive exclusion, not-found, null profile) + 4 in `auth.service.spec.ts` (refreshTokens valid/invalid/not-found/suspended) + 8 in `auth-cookie.service.spec.ts` (set cookie, secure/sameSite settings, clear cookie, get from cookie, cookie name).
+- No payment/webhook/broker/risk/AI/migration logic changed.
+
+**Frontend changes:**
+- `packages/types`: `AuthUser` updated to match the backend DTO — `roles` is now `UserRole[]` (not optional), added `firstName`/`lastName`, removed `phone`/`timezone`/`preferredCurrency`/`updatedAt` (not in the DTO). Doc updated to reflect hybrid strategy.
+- `packages/api-client`: `refresh()` now takes optional `refreshToken?` — when omitted (web/admin), relies on the httpOnly cookie via credentials:'include'. When provided (mobile), sends it in the JSON body.
+- `apps/web`: AuthProvider now restores session on page refresh — on mount, calls `api.refresh()` (no args, cookie flow) → `api.me()` → user populated. Added `restoring` state to prevent UI flash during restore. `/login` and `/register` redirect to `/dashboard` if already authenticated (after restore completes). `/dashboard` shows "Restoring session…" during restore.
+- `apps/admin`: same session restore pattern as web. `hasAdminRole` uses real `roles[]` from `/auth/me`. Dashboard shows "Access denied" if signed in without ADMIN/SUPER_ADMIN role. Admin login redirects if already authenticated admin.
+- `apps/mobile`: `expo-secure-store` added; tokens persisted to SecureStore. Session restore on app launch. Logout clears SecureStore.
+
+**Verification (all passing):**
+- 760 API tests pass (743 existing + 17 new), 46 suites.
+- API build exit 0.
+- Web build exit 0, admin build exit 0.
+- Mobile typecheck exit 0, packages typecheck exit 0.
+- No secrets committed, no .env files committed.
+
+
+\## Sprint 24 — Cross-Platform Auth UI Flow (PASS, merged to `main`)
 
 Sprint 23 documents and hardens the actual staging frontend + admin deployment now that both portals load publicly in the browser on the real Webuzo VPS. The staging VPS now successfully serves:
 

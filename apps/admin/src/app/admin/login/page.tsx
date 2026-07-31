@@ -1,14 +1,30 @@
 'use client';
 
-import { useState, FormEvent } from 'react';
+import { useState, FormEvent, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/auth-context';
 
 export default function AdminLoginPage() {
   const router = useRouter();
-  const { login, loading, error, clearError } = useAuth();
+  const { login, loading, restoring, error, clearError, user, accessToken, hasAdminRole } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+
+  // Sprint 25: redirect to dashboard if already authenticated admin (but not during restore)
+  useEffect(() => {
+    if (!restoring && user && accessToken && hasAdminRole) {
+      router.replace('/admin/dashboard');
+    }
+  }, [user, accessToken, restoring, hasAdminRole, router]);
+
+  if (restoring) {
+    return (
+      <main className="content" style={{ maxWidth: 420, margin: '4rem auto' }}>
+        <h1>Admin login</h1>
+        <p className="muted">Restoring session…</p>
+      </main>
+    );
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
