@@ -84,7 +84,7 @@ export interface IPaymentProvider {
 
 export interface CreateCustomerParams {
   userId: string;
-  email: string;
+  email: string | undefined;
   name?: string;
   countryCode?: string;
   currency?: string;
@@ -99,7 +99,7 @@ export interface ProviderCustomerResult {
 
 export interface CreateCheckoutSessionRequest {
   userId: string;
-  email: string;
+  email: string | undefined;
   planId: string;
   currency: string;
   amountMinor: number;

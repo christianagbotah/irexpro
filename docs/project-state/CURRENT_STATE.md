@@ -4,14 +4,54 @@
 
 \## Current Sprint Checkpoint
 
-Current sprint: Sprint 26 — Modern UI/UX Design System + Forgot Password Flow (IN PROGRESS).
+Current sprint: Sprint 27 — Auth UI Refinement + Phone Registration + Remember Me (IN PROGRESS).
 
-Last completed sprint: Sprint 25 — Authentication Security Hardening + Roles Session Contract (PASS, merged to `main`, tagged `sprint-25-complete`).
+Last completed sprint: Sprint 26 — Modern UI/UX Design System + Forgot Password Flow (PASS, merged to `main`, tagged `sprint-26-complete`).
 
-Previous: Sprint 24 — Cross-Platform Auth UI Flow (PASS, merged to `main`, tagged `sprint-24-complete`).
+Previous: Sprint 25 — Authentication Security Hardening + Roles Session Contract (PASS, merged to `main`, tagged `sprint-25-complete`).
 
 
-\## Sprint 26 — Modern UI/UX Design System + Forgot Password Flow (in progress)
+\## Sprint 27 — Auth UI Refinement + Phone Registration + Remember Me (in progress)
+
+Sprint 27 refines auth UI/UX and safely extends the auth contract for phone registration and remember-me behavior.
+
+**Backend changes:**
+- `LoginDto`: renamed `email` to `identifier` (accepts email OR phone); added optional `rememberMe` boolean.
+- `RegisterDto`: `email` is now optional; added optional `phone` field; added optional `rememberMe`.
+- `AuthService.register()`: validates at least one of email/phone is provided; normalizes phone via `normalizePhone()` utility; checks for duplicate phone (service + DB unique index); stores normalized phone.
+- `AuthService.login()`: resolves identifier as email (contains @) or phone; normalizes phone for lookup.
+- `AuthCookieService.setRefreshCookie()`: accepts `rememberMe` param — when true, sets 7-day maxAge; when false/omitted, sets session cookie (no maxAge).
+- `AuthController`: passes `dto.rememberMe` to `setRefreshCookie` on login and register.
+- `User entity`: `email` column changed to `nullable: true` (was NOT NULL) to support phone-only registration.
+- New migration: `1751700000000-MakeEmailNullableForPhoneRegistration.ts` — alters `identity.users.email` to DROP NOT NULL. Non-destructive, idempotent.
+- New migration: `1751800000000-AddPhoneUniqueIndex.ts` — creates partial unique index `ux_users_phone` on `identity.users(phone)` WHERE `phone IS NOT NULL AND phone <> ''`. Idempotent (IF NOT EXISTS).
+- New utility: `apps/api/src/modules/auth/utils/phone.util.ts` — `normalizePhone()` (E.164-like: strips spaces/dashes/parens, handles local with calling code, handles international with +, handles 00 prefix) + `isEmail()` helper.
+- `JwtPayload.email` changed to `string | null`.
+- `AuthUserDto.email` changed to `string | null`.
+- Payment/subscription interfaces: `CreateCheckoutSessionRequest.email` and `CreateCustomerParams.email` changed to `string | undefined`. Subscription checkout controller and performance-fee payment service pass `email ?? undefined` — NOT empty string. Payment providers receive `undefined` if the user has no email; they handle this gracefully (Stripe/Paystack accept checkout without customer email).
+- 17 new tests: phone-only register, duplicate phone, both, no-creds, rememberMe variants, phone normalization (Ghana local, international, spaces/dashes, 00 prefix, null/empty), isEmail detection.
+- **iRexPro does NOT hold user funds.** Users do not deposit/withdraw money into iRexPro. Trading relies on the user's broker account balance. Broker account funding/withdrawal happens through the broker, not through iRexPro. Payment/subscription modules are for platform billing (subscription fees + performance fees), not for user fund custody.
+
+**Frontend changes:**
+- `packages/types`: `LoginRequest` uses `identifier` + `rememberMe`; `RegisterRequest` has optional `email`/`phone` + `rememberMe`; `AuthUser.email` is `string | null`.
+- `apps/web`: login uses "Email or international phone number" label + remember me checkbox; register has country code selector (Ghana default +233) + phone field + remember me; split auth layout fixed scroll (left static, right scrolls).
+- `apps/admin`: login uses "Email or international phone number" + remember me checkbox; split auth layout fixed scroll.
+- `apps/mobile`: login label updated to "Email or international phone (+233...)".
+- "Stripe & Paystack subscription checkout" replaced with "Secure subscription management".
+- Country code selector: searchable dropdown with 16 countries (GH, NG, GB, US, CA, ZA, KE, CI, TG, BJ, BF, SL, LR, AE, IN, CN). Default: Ghana +233. No external dependency.
+
+**Remember-me strategy:**
+- Web/admin: rememberMe controls httpOnly refresh cookie maxAge only. Access token remains in memory. No localStorage/sessionStorage.
+- rememberMe=false → session cookie (cleared on browser close).
+- rememberMe=true → 7-day persistent cookie.
+- Mobile: continues using SecureStore (unaffected by rememberMe).
+
+No payment/webhook/broker/risk/AI logic changed. No secrets. No .env.
+
+Verification: 783 API tests pass (760 existing + 23 new), 47 suites. All frontend builds/typechecks pass.
+
+
+\## Sprint 26 — Modern UI/UX Design System + Forgot Password Flow (PASS, merged to `main`)
 
 Sprint 26 creates a modern, professional, responsive UI/UX foundation for iRexPro auth and dashboard shells across web, admin, and mobile. It also adds forgot-password/reset-password UI flows safely.
 

@@ -51,7 +51,8 @@ export class AuthController {
     const tokens = await this.authService.register(dto, ipAddress);
     // Sprint 25: set httpOnly refresh cookie for web/admin. Mobile reads the
     // refreshToken from the JSON body. Both flows are supported simultaneously.
-    this.authCookieService.setRefreshCookie(res, tokens.refreshToken);
+    // Sprint 27: pass rememberMe to control cookie maxAge.
+    this.authCookieService.setRefreshCookie(res, tokens.refreshToken, dto.rememberMe);
     return tokens;
   }
 
@@ -70,7 +71,8 @@ export class AuthController {
     const tokens = await this.authService.login(dto, ipAddress);
     // Sprint 25: set httpOnly refresh cookie for web/admin. Mobile reads the
     // refreshToken from the JSON body. Both flows are supported simultaneously.
-    this.authCookieService.setRefreshCookie(res, tokens.refreshToken);
+    // Sprint 27: pass rememberMe to control cookie maxAge.
+    this.authCookieService.setRefreshCookie(res, tokens.refreshToken, dto.rememberMe);
     return tokens;
   }
 

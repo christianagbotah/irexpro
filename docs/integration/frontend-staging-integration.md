@@ -182,6 +182,25 @@ METAAPI_TOKEN               — backend; never frontend
 - **Web/admin:** httpOnly cookies for refresh tokens; access token attached via
   `Authorization: Bearer`. `credentials: 'include'` on fetch. NEVER localStorage.
 - **Mobile:** Bearer token via `getAccessToken`; no cookie credentials.
+- **Remember me (Sprint 27):** `rememberMe` boolean on login/register controls
+  the httpOnly refresh cookie maxAge. `true` → 7-day persistent cookie; `false`
+  → session cookie (cleared on browser close). Access token always in memory.
+  No localStorage/sessionStorage for any token.
+- **Phone registration (Sprint 27):** registration supports email OR phone (at
+  least one required). Login uses `identifier` field (accepts email or phone).
+  Country code selector defaults to Ghana (+233). Phone stored in `User.phone`
+  column (already existed). Email made nullable via migration
+  `1751700000000-MakeEmailNullableForPhoneRegistration`. Phone normalized to
+  E.164-like format via `normalizePhone()` utility (strips spaces/dashes,
+  handles local with calling code, handles international with +, handles 00
+  prefix). DB-level partial unique index `ux_users_phone` on `identity.users(phone)`
+  WHERE `phone IS NOT NULL AND phone <> ''`. Login label says "Email or
+  international phone number" to clarify accepted format.
+- **iRexPro is NOT a wallet app:** users do not deposit/withdraw money into
+  iRexPro. Trading relies on the user's broker account balance. Broker account
+  funding/withdrawal happens through the broker, not through iRexPro.
+  Payment/subscription modules are for platform billing (subscription fees +
+  performance fees), not for user fund custody.
 
 No Fovi-style localStorage auth. No demo DB fallback.
 

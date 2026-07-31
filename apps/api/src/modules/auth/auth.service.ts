@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   Logger,
@@ -12,6 +13,7 @@ import * as argon2 from 'argon2';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { AuthUserDto } from './dto/auth-user.dto';
+import { normalizePhone, isEmail } from './utils/phone.util';
 import { User, UserStatus } from '../users/entities/user.entity';
 import { UserProfile } from '../users/entities/user-profile.entity';
 import { UserRole } from '../users/entities/user-role.entity';
@@ -40,9 +42,30 @@ export class AuthService {
   ) {}
 
   async register(dto: RegisterDto, ipAddress?: string): Promise<{ accessToken: string; refreshToken: string }> {
-    const existing = await this.userRepo.findOne({ where: { email: dto.email.toLowerCase() } });
-    if (existing) {
-      throw new ConflictException('An account with this email already exists');
+    // Sprint 27: validate that at least one of email or phone is provided
+    if (!dto.email && !dto.phone) {
+      throw new BadRequestException('At least one of email or phone is required');
+    }
+
+    // Normalize phone if provided (Sprint 27 amendment)
+    const normalizedPhone = dto.phone
+      ? normalizePhone(dto.phone, this.callingCodeForCountry(dto.countryCode))
+      : null;
+
+    // Check for duplicate email (if provided)
+    if (dto.email) {
+      const existingByEmail = await this.userRepo.findOne({ where: { email: dto.email.toLowerCase() } });
+      if (existingByEmail) {
+        throw new ConflictException('An account with this email already exists');
+      }
+    }
+
+    // Check for duplicate phone (if provided, after normalization)
+    if (normalizedPhone) {
+      const existingByPhone = await this.userRepo.findOne({ where: { phone: normalizedPhone } });
+      if (existingByPhone) {
+        throw new ConflictException('An account with this phone number already exists');
+      }
     }
 
     const passwordHash = await argon2.hash(dto.password, {
@@ -57,7 +80,8 @@ export class AuthService {
 
     try {
       const user = queryRunner.manager.create(User, {
-        email: dto.email.toLowerCase(),
+        email: dto.email ? dto.email.toLowerCase() : null,
+        phone: normalizedPhone,
         passwordHash,
         countryCode: dto.countryCode ?? null,
         status: UserStatus.PENDING_VERIFICATION,
@@ -103,8 +127,16 @@ export class AuthService {
   }
 
   async login(dto: LoginDto, ipAddress?: string): Promise<{ accessToken: string; refreshToken: string }> {
+    // Sprint 27: support email OR phone as identifier.
+    const identifier = dto.identifier.trim();
+    const emailLogin = isEmail(identifier);
+    // For phone login, normalize: clean spaces/dashes, ensure starts with +
+    const phoneLookup = emailLogin ? null : normalizePhone(identifier);
+
     const user = await this.userRepo.findOne({
-      where: { email: dto.email.toLowerCase() },
+      where: emailLogin
+        ? { email: identifier.toLowerCase() }
+        : { phone: phoneLookup ?? '' },
       relations: ['userRoles', 'userRoles.role'],
     });
 
@@ -112,7 +144,7 @@ export class AuthService {
       await this.auditService.log({
         action: AuditAction.USER_LOGIN_FAILED,
         ipAddress,
-        metadata: { email: dto.email, reason: 'user_not_found' },
+        metadata: { identifier: dto.identifier, reason: 'user_not_found' },
       });
       throw new UnauthorizedException('Invalid credentials');
     }
@@ -234,5 +266,20 @@ export class AuthService {
   /** Verifies a password against an argon2 hash. Exposed for testing. */
   async verifyPassword(hash: string, password: string): Promise<boolean> {
     return argon2.verify(hash, password);
+  }
+
+  /**
+   * Maps a 2-letter country code to its calling code for phone normalization.
+   * Sprint 27 amendment: ensures the backend can normalize local phone numbers
+   * even when the frontend only sends the country code (not the calling code).
+   */
+  private callingCodeForCountry(countryCode?: string): string | undefined {
+    if (!countryCode) return undefined;
+    const map: Record<string, string> = {
+      GH: '+233', NG: '+234', GB: '+44', US: '+1', CA: '+1', ZA: '+27',
+      KE: '+254', CI: '+225', TG: '+228', BJ: '+229', BF: '+226',
+      SL: '+232', LR: '+231', AE: '+971', IN: '+91', CN: '+86',
+    };
+    return map[countryCode.toUpperCase()];
   }
 }

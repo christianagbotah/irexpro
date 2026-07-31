@@ -8,7 +8,7 @@ import { User, UserStatus } from '../../users/entities/user.entity';
 
 export interface JwtPayload {
   sub: string;
-  email: string;
+  email: string | null;
   roles: string[];
   iat?: number;
   exp?: number;

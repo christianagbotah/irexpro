@@ -24,7 +24,7 @@ export default function LoginScreen({ onForgotPassword }: { onForgotPassword?: (
     setLoading(true);
     setError(null);
     try {
-      const tokens = await api.login({ email, password });
+      const tokens = await api.login({ identifier: email, password });
       await saveTokens(tokens);
       setAccessToken(tokens.accessToken);
       const me = await api.me();
@@ -46,11 +46,10 @@ export default function LoginScreen({ onForgotPassword }: { onForgotPassword?: (
 
       <TextInput
         style={styles.input}
-        placeholder="Email"
+        placeholder="Email or international phone (+233...)"
         placeholderTextColor="#6b7494"
         value={email}
         onChangeText={setEmail}
-        keyboardType="email-address"
         autoCapitalize="none"
       />
       <TextInput

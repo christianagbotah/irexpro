@@ -21,7 +21,7 @@ import { CreateCheckoutSessionRequest } from '../payments/interfaces/payment-pro
 
 export interface CheckoutRequest {
   userId: string;
-  email: string;
+  email: string | undefined;
   planId: string;
   currency: string;
   countryCode: string;

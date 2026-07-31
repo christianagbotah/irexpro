@@ -29,9 +29,10 @@ interface AuthContextValue {
   loading: boolean;
   restoring: boolean;
   error: string | null;
-  login: (email: string, password: string) => Promise<void>;
+  login: (identifier: string, password: string, rememberMe?: boolean) => Promise<void>;
   register: (email: string, password: string, opts?: {
     countryCode?: string; firstName?: string; lastName?: string;
+    phone?: string; rememberMe?: boolean;
   }) => Promise<void>;
   logout: () => Promise<void>;
   clearError: () => void;
@@ -86,11 +87,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => { cancelled = true; };
   }, [storeTokens, fetchMe]);
 
-  const login = useCallback(async (email: string, password: string) => {
+  const login = useCallback(async (identifier: string, password: string, rememberMe?: boolean) => {
     setLoading(true);
     setError(null);
     try {
-      const tokens = await api.login({ email, password });
+      const tokens = await api.login({ identifier, password, rememberMe });
       storeTokens(tokens);
       await fetchMe(tokens.accessToken);
     } catch (err) {
@@ -105,12 +106,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const register = useCallback(async (
     email: string,
     password: string,
-    opts?: { countryCode?: string; firstName?: string; lastName?: string },
+    opts?: { countryCode?: string; firstName?: string; lastName?: string; phone?: string; rememberMe?: boolean },
   ) => {
     setLoading(true);
     setError(null);
     try {
-      const tokens = await api.register({ email, password, ...opts });
+      const tokens = await api.register({ email: email || undefined, password, ...opts });
       storeTokens(tokens);
       await fetchMe(tokens.accessToken);
     } catch (err) {

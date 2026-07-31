@@ -9,8 +9,9 @@ import { AuthLayout, Button, Input, Alert } from '@/components/ui';
 export default function LoginPage() {
   const router = useRouter();
   const { login, loading, restoring, error, clearError, user, accessToken } = useAuth();
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
 
   useEffect(() => {
     if (!restoring && user && accessToken) {
@@ -29,7 +30,7 @@ export default function LoginPage() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     try {
-      await login(email, password);
+      await login(identifier, password, rememberMe);
       router.push('/dashboard');
     } catch { /* error in context */ }
   }
@@ -39,14 +40,14 @@ export default function LoginPage() {
       <form onSubmit={handleSubmit}>
         {error && <Alert variant="error">{error}</Alert>}
         <Input
-          label="Email"
-          type="email"
-          placeholder="you@example.com"
-          value={email}
-          onChange={(e) => { setEmail(e.target.value); clearError(); }}
+          label="Email or international phone number"
+          type="text"
+          placeholder="you@example.com or +233241234567"
+          value={identifier}
+          onChange={(e) => { setIdentifier(e.target.value); clearError(); }}
           disabled={loading}
           required
-          autoComplete="email"
+          autoComplete="username"
         />
         <Input
           label="Password"
@@ -58,7 +59,17 @@ export default function LoginPage() {
           required
           autoComplete="current-password"
         />
-        <div style={{ textAlign: 'right', marginBottom: '1rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={rememberMe}
+              onChange={(e) => setRememberMe(e.target.checked)}
+              disabled={loading}
+              style={{ width: '16px', height: '16px', accentColor: 'var(--brand)' }}
+            />
+            <span className="text-sm muted">Remember me</span>
+          </label>
           <Link href="/forgot-password" className="text-sm">Forgot password?</Link>
         </div>
         <Button type="submit" block size="lg" loading={loading}>
