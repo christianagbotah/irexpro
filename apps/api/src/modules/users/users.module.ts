@@ -7,11 +7,12 @@ import { Role } from './entities/role.entity';
 import { UserPaymentProfile } from './entities/user-payment-profile.entity';
 import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
+import { BootstrapAdminService } from './bootstrap-admin.service';
 
 @Module({
   imports: [TypeOrmModule.forFeature([User, UserProfile, UserRole, Role, UserPaymentProfile])],
   controllers: [UsersController],
-  providers: [UsersService],
-  exports: [UsersService, TypeOrmModule],
+  providers: [UsersService, BootstrapAdminService],
+  exports: [UsersService, BootstrapAdminService, TypeOrmModule],
 })
 export class UsersModule {}

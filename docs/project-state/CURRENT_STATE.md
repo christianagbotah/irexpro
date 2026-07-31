@@ -11,6 +11,55 @@ Last completed sprint: Sprint 26 — Modern UI/UX Design System + Forgot Passwor
 Previous: Sprint 25 — Authentication Security Hardening + Roles Session Contract (PASS, merged to `main`, tagged `sprint-25-complete`).
 
 
+\## Hotfix — Admin Portal Auth Guard + First Admin Bootstrap
+
+Branch: `hotfix-admin-auth-guard-bootstrap-admin`
+
+### Problem
+1. The admin portal showed the full sidebar/menu on `/admin/login` and all `/admin/*` routes — even when the user was not logged in. The `app/admin/layout.tsx` wrapped EVERY `/admin/*` route (including login) with the sidebar + AdminNav.
+2. There was no secure way to create the first admin account. No default admin credentials exist (by design), and there was no bootstrap command.
+
+### Fix — Part 1: Admin UI guard (route group restructuring)
+Restructured `apps/admin/src/app/admin/` into two Next.js App Router route groups:
+- `(auth)/` — public admin auth routes (`/admin/login`, `/admin/forgot-password`, `/admin/reset-password`). Bare layout, NO sidebar, NO admin nav.
+- `(protected)/` — authenticated admin routes (`/admin/dashboard`, `/admin/users`, `/admin/brokers`, `/admin/payments`, `/admin/subscriptions`, `/admin/audit`). Uses the `AdminProtectedLayout` which implements a 4-state guard:
+  1. `restoring === true` → loading state, no sidebar, no "Not signed in".
+  2. `!user` → clean "Not signed in" card with link to login. No sidebar.
+  3. `user && !hasAdminRole` → "Access denied" card with sign-out button. No sidebar.
+  4. `user && hasAdminRole` → full admin shell (sidebar + nav + content). Only this branch shows the sidebar.
+
+`AdminNav` is also role-aware (returns `null` if `!hasAdminRole`) as defense in depth. The old `app/admin/layout.tsx` was deleted; the old page directories were moved into the route groups.
+
+### Fix — Part 2: Backend admin role enforcement (review, no changes needed)
+Verified all admin endpoints have `@Roles(ADMIN, SUPER_ADMIN)` + `@UseGuards(RolesGuard)`:
+- `GET /admin/users`, `GET /admin/users/:id` (users.controller.ts)
+- `POST /subscriptions/dev/manual-activate` (subscriptions.controller.ts)
+- All `performance-billing`, `broker-reconciliation`, `performance-fees` admin endpoints
+- `JwtAuthGuard` is registered globally as `APP_GUARD`, so all routes require JWT unless `@Public()`.
+- No admin endpoints were missing role guards. No backend changes needed.
+
+### Fix — Part 3: First admin bootstrap (`seed:admin`)
+New: `apps/api/src/modules/users/bootstrap-admin.service.ts` + `apps/api/scripts/bootstrap-admin.ts` + `pnpm --filter @irexpro/api seed:admin`.
+- Reads admin details from env vars ONLY (never from argv): `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_PHONE`, `BOOTSTRAP_ADMIN_PASSWORD`, `BOOTSTRAP_ADMIN_FIRST_NAME`, `BOOTSTRAP_ADMIN_LAST_NAME`, `BOOTSTRAP_ADMIN_COUNTRY_CODE`.
+- Requires at least email OR phone. Requires password ≥12 chars with letters + numbers.
+- Find-or-creates USER/ADMIN/SUPER_ADMIN roles. Find-or-creates the user (by email or phone). If user exists, promotes to SUPER_ADMIN (does NOT change password). If not, creates new SUPER_ADMIN with argon2-hashed password + ACTIVE status.
+- Idempotent: running twice is safe (no duplicate roles or user_roles).
+- NEVER exposed as an HTTP endpoint. NEVER logs the raw password. Transactional (rollback on error).
+- There is NO default admin account. No hardcoded credentials. No public admin registration.
+
+### Fix — Part 4: Admin login behavior
+`/admin/login` accepts email or international phone. Uses the same `/auth/login` endpoint. After login, fetches `/auth/me`. If user lacks ADMIN/SUPER_ADMIN, shows "Access denied" on the login page with a sign-out button (does NOT redirect to dashboard). If user has admin role, redirects to `/admin/dashboard`.
+
+### Tests added (22 new, 825 total across 50 suites)
+- `bootstrap-admin.service.spec.ts` (15 tests): input validation, role find-or-create, first admin creation, password hashing, existing user promotion, idempotency, safe output (no password), transaction rollback.
+- `roles.guard.spec.ts` (7 tests): ADMIN/SUPER_ADMIN allowed, USER rejected (403), no roles rejected, no user rejected, no-@Roles allowed, mixed roles allowed.
+
+### `AuthUser` type change
+Added `phone: string | null` to `AuthUser` (packages/types) and `AuthUserDto` (backend) so the frontend can display the phone for phone-only users. This is a frontend-safe field.
+
+No payment/webhook/broker/risk/AI logic changed. No secrets. No .env. No default admin credentials.
+
+
 \## Sprint 27 — Auth UI Refinement + Phone Registration + Remember Me (in progress)
 
 Sprint 27 refines auth UI/UX and safely extends the auth contract for phone registration and remember-me behavior.

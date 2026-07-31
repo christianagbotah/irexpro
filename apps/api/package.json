@@ -21,7 +21,8 @@
     "migration:run": "pnpm typeorm migration:run -d src/database/data-source.ts",
     "migration:revert": "pnpm typeorm migration:revert -d src/database/data-source.ts",
     "migration:show": "pnpm typeorm migration:show -d src/database/data-source.ts",
-    "seed": "ts-node -r tsconfig-paths/register src/database/seeds/run-seeds.ts"
+    "seed": "ts-node -r tsconfig-paths/register src/database/seeds/run-seeds.ts",
+    "seed:admin": "ts-node -r tsconfig-paths/register scripts/bootstrap-admin.ts"
   },
   "dependencies": {
     "@nestjs/bullmq": "^11.0.4",

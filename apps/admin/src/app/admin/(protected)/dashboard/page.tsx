@@ -2,51 +2,24 @@
 
 import Link from 'next/link';
 import { useAuth } from '@/context/auth-context';
-import { Card, Badge, EmptyState, Alert } from '@/components/ui';
+import { Card, EmptyState } from '@/components/ui';
 
+/**
+ * Admin dashboard — rendered inside the (protected) layout.
+ *
+ * Hotfix: the auth/role guard logic (restoring, !user, !hasAdminRole) has been
+ * moved to the (protected) layout so every protected admin page inherits it.
+ * This page can assume the user is an authenticated admin.
+ */
 export default function AdminDashboardPage() {
-  const { user, loading, restoring, hasAdminRole } = useAuth();
-
-  if (restoring) {
-    return <><h1>Admin dashboard</h1><p className="muted">Restoring session…</p></>;
-  }
-
-  if (loading && !user) {
-    return <><h1>Admin dashboard</h1><p className="muted">Loading…</p></>;
-  }
-
-  if (!user) {
-    return (
-      <>
-        <h1>Admin dashboard</h1>
-        <Card title="Not signed in">
-          <p className="muted">You need to log in with an admin account to view this dashboard.</p>
-          <Link href="/admin/login" className="btn btn--primary mt-4" style={{ display: 'inline-block' }}>Go to admin login</Link>
-        </Card>
-      </>
-    );
-  }
-
-  if (!hasAdminRole) {
-    return (
-      <>
-        <h1>Access denied</h1>
-        <Card title="Insufficient permissions">
-          <Alert variant="error">
-            Your account does not have an admin role. You are signed in as{' '}
-            <code>{user.email}</code> with roles: {user.roles?.join(', ') || 'none'}.
-          </Alert>
-          <p className="muted">The backend RolesGuard will also reject your requests with 403. Contact a super-admin if you believe this is an error.</p>
-        </Card>
-      </>
-    );
-  }
+  const { user } = useAuth();
 
   return (
     <>
       <h1>Admin dashboard</h1>
       <p className="muted" style={{ marginBottom: '1.5rem' }}>
-        Signed in as <code>{user.email}</code> (status: {user.status})
+        Signed in as <code>{user?.email ?? user?.phone}</code>
+        {user?.status ? <> (status: {user.status})</> : null}
       </p>
 
       <div className="stat-grid">

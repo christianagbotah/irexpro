@@ -285,3 +285,94 @@ The next backend sprint must implement secure password reset:
 
 Until the backend endpoints are implemented, the frontend reset-password pages
 are placeholders only — they do not accept or process password input.
+
+
+\## 12. Admin portal access control + first admin bootstrap (hotfix)
+
+### 12.1 Admin sidebar visibility rules
+
+The admin portal uses Next.js App Router route groups to separate public auth
+routes from protected admin routes:
+
+- `(auth)/` group — public admin auth routes. Bare layout, NO sidebar:
+  - `/admin/login`
+  - `/admin/forgot-password`
+  - `/admin/reset-password`
+
+- `(protected)/` group — authenticated admin routes. Uses
+  `AdminProtectedLayout` with a 4-state guard:
+  - `/admin/dashboard`
+  - `/admin/users`
+  - `/admin/brokers`
+  - `/admin/payments`
+  - `/admin/subscriptions`
+  - `/admin/audit`
+
+Guard states (in order):
+1. `restoring === true` → loading state. No sidebar, no "Not signed in".
+2. `!user` → "Not signed in" card with link to `/admin/login`. No sidebar.
+3. `user && !hasAdminRole` → "Access denied" card with sign-out. No sidebar.
+4. `user && hasAdminRole` → full admin shell (sidebar + nav + content).
+
+`AdminNav` is also role-aware (returns `null` if `!hasAdminRole`) as defense
+in depth. The backend `RolesGuard` is the real security boundary.
+
+### 12.2 Admin backend route protection
+
+All admin backend endpoints require JWT auth (`JwtAuthGuard` is global) AND
+`@Roles(ADMIN, SUPER_ADMIN)` + `@UseGuards(RolesGuard)`:
+
+- `GET /admin/users`, `GET /admin/users/:id`
+- `POST /subscriptions/dev/manual-activate`
+- All `performance-billing`, `broker-reconciliation`, `performance-fees` admin endpoints
+
+A normal `USER` role receives 403 Forbidden from the backend regardless of
+what the frontend shows.
+
+### 12.3 No default admin account
+
+There is NO default admin account. No `admin/admin`, no `admin@example.com`
+hardcoded credentials. Admin accounts are NEVER created via a public HTTP
+endpoint. There is no `/admin/register` route.
+
+### 12.4 Creating the first admin on the VPS
+
+Run the bootstrap CLI command on the VPS (requires the API `.env` to be
+present with database + JWT + cookie + broker encryption secrets):
+
+```bash
+cd /path/to/irexpro
+pnpm install
+pnpm --filter @irexpro/api build
+
+# Set bootstrap env vars (in .env or exported in the shell)
+export BOOTSTRAP_ADMIN_EMAIL="admin@yourdomain.com"
+export BOOTSTRAP_ADMIN_PASSWORD="ChangeMeToAStrongPassword123!"  # min 12 chars, letters + numbers
+export BOOTSTRAP_ADMIN_FIRST_NAME="Platform"
+export BOOTSTRAP_ADMIN_LAST_NAME="Admin"
+export BOOTSTRAP_ADMIN_COUNTRY_CODE="GH"
+
+# Run the bootstrap (reads env, never argv)
+pnpm --filter @irexpro/api seed:admin
+```
+
+Required env vars:
+- `BOOTSTRAP_ADMIN_PASSWORD` — min 12 chars, must contain letters + numbers
+- `BOOTSTRAP_ADMIN_EMAIL` OR `BOOTSTRAP_ADMIN_PHONE` — at least one required
+- `JWT_SECRET`, `COOKIE_SECRET`, `BROKER_ENCRYPTION_KEY`, `DB_*` — required by app config
+
+Optional env vars:
+- `BOOTSTRAP_ADMIN_FIRST_NAME`, `BOOTSTRAP_ADMIN_LAST_NAME`, `BOOTSTRAP_ADMIN_COUNTRY_CODE`
+
+Behavior:
+- Creates `USER`, `ADMIN`, `SUPER_ADMIN` roles if missing (find-or-create).
+- If a user with the email/phone already exists, promotes them to `SUPER_ADMIN`
+  (does NOT change their password).
+- If no matching user exists, creates a new `SUPER_ADMIN` user with an
+  argon2-hashed password and `ACTIVE` status.
+- Idempotent: running twice is safe (no duplicate roles or user_roles).
+- NEVER logs the raw password.
+- NEVER exposed as an HTTP endpoint.
+
+After bootstrapping, the admin can sign in at
+`https://irexproadmin.lightworldtech.com/admin/login`.

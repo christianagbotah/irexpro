@@ -1541,3 +1541,91 @@ pm2 status
 | CORS allows web origin | `access-control-allow-origin` matches | ✅ verified |
 | CORS allows admin origin | `access-control-allow-origin` matches | ✅ verified |
 | PM2: 4 staging processes online | api + ai + web + admin | ✅ verified |
+
+
+\## 19. First admin bootstrap (hotfix — admin auth guard + bootstrap)
+
+### 19.1 No default admin account
+
+There is NO default admin account. No `admin/admin`, no `admin@example.com`
+hardcoded credentials. Admin accounts are NEVER created via a public HTTP
+endpoint. There is no `/admin/register` route.
+
+The admin portal sidebar is NOT shown on `/admin/login` or any `/admin/*`
+route when the user is unauthenticated. See
+`docs/integration/frontend-staging-integration.md` §12 for the full guard
+rules.
+
+### 19.2 Creating the first admin on the VPS
+
+After deploying the API (§9) and running migrations (§10), run the bootstrap
+CLI command. This reads admin details from environment variables ONLY — it
+never accepts credentials on the command line.
+
+```bash
+cd /home/irexpro/irexpro
+pnpm install --prod=false
+pnpm --filter @irexpro/api build
+
+# Set bootstrap env vars (append to the API .env or export in the shell)
+# REQUIRED:
+#   BOOTSTRAP_ADMIN_PASSWORD  (min 12 chars, must contain letters + numbers)
+#   BOOTSTRAP_ADMIN_EMAIL or BOOTSTRAP_ADMIN_PHONE  (at least one)
+# OPTIONAL:
+#   BOOTSTRAP_ADMIN_FIRST_NAME, BOOTSTRAP_ADMIN_LAST_NAME, BOOTSTRAP_ADMIN_COUNTRY_CODE
+
+export BOOTSTRAP_ADMIN_EMAIL="admin@yourdomain.com"
+export BOOTSTRAP_ADMIN_PASSWORD="ChangeMeToAStrongPassword123!"
+export BOOTSTRAP_ADMIN_FIRST_NAME="Platform"
+export BOOTSTRAP_ADMIN_LAST_NAME="Admin"
+export BOOTSTRAP_ADMIN_COUNTRY_CODE="GH"
+
+pnpm --filter @irexpro/api seed:admin
+```
+
+Expected output (safe summary — no password printed):
+```
+Bootstrap admin result:
+  User ID : <uuid>
+  Email   : admin@yourdomain.com
+  Phone   : (none)
+  Action  : created
+✓ New SUPER_ADMIN user created. They can now sign in at /admin/login.
+The raw password was NOT logged and is NOT stored in plaintext.
+```
+
+### 19.3 Idempotency
+
+The bootstrap command is idempotent. Running it twice is safe:
+- Roles (`USER`, `ADMIN`, `SUPER_ADMIN`) are find-or-create — no duplicates.
+- `user_roles` are find-or-create — no duplicates.
+- If the user already has `SUPER_ADMIN`, the command prints
+  `Action: already_super_admin` and makes no changes.
+- If the user exists but does NOT have `SUPER_ADMIN`, it promotes them
+  (does NOT change their password).
+
+### 19.4 Verifying the admin can sign in
+
+1. Open `https://irexproadmin.lightworldtech.com/admin/login`.
+2. The login page should show NO sidebar (clean split layout).
+3. Sign in with the bootstrap admin email/phone + password.
+4. After login, `/auth/me` returns roles including `SUPER_ADMIN`.
+5. Redirect to `/admin/dashboard` — the sidebar should now be visible.
+6. Refresh the browser — the session should restore via the httpOnly refresh
+   cookie (no localStorage/sessionStorage tokens).
+
+### 19.5 Admin access denied for non-admin users
+
+If a normal `USER` (no `ADMIN`/`SUPER_ADMIN` role) signs in at `/admin/login`:
+- The login page shows "Access denied" with their roles and a sign-out button.
+- The sidebar is NOT shown.
+- The backend `RolesGuard` will also reject any admin API call with 403.
+
+### 19.6 Admin sidebar visibility rules (summary)
+
+| State | Sidebar shown? | Content |
+|---|---|---|
+| Restoring session (refresh pending) | No | "Restoring session…" |
+| Not signed in | No | "Not signed in" + login link |
+| Signed in, no admin role | No | "Access denied" + sign out |
+| Signed in, ADMIN or SUPER_ADMIN | Yes | Full admin dashboard |

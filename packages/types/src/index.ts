@@ -51,6 +51,7 @@ export type UserStatus =
 export interface AuthUser {
   id: string;
   email: string | null;
+  phone: string | null;
   firstName: string | null;
   lastName: string | null;
   countryCode: string | null;
