@@ -2,7 +2,11 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { BadRequestException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
-import { BootstrapAdminService, BootstrapAdminInput } from './bootstrap-admin.service';
+import {
+  BootstrapAdminService,
+  BootstrapAdminInput,
+  validateBootstrapInput,
+} from './bootstrap-admin.service';
 import { User, UserStatus } from './entities/user.entity';
 import { UserProfile } from './entities/user-profile.entity';
 import { UserRole } from './entities/user-role.entity';
@@ -133,6 +137,57 @@ describe('BootstrapAdminService', () => {
       expect(result.action).toBe('created');
       expect(result.phone).toBe('+233241234567');
       expect(result.email).toBeNull();
+    });
+  });
+
+  // ── Hotfix: standalone validateBootstrapInput (no ValidationPipe needed) ────
+
+  describe('validateBootstrapInput (standalone, no ValidationPipe)', () => {
+    it('should throw BadRequestException if neither email nor phone is provided', () => {
+      expect(() => validateBootstrapInput({ password: 'StrongAdminPass123!' }))
+        .toThrow(BadRequestException);
+    });
+
+    it('should throw BadRequestException if password is too short', () => {
+      expect(() => validateBootstrapInput({ email: 'a@b.com', password: 'Short1!' }))
+        .toThrow(BadRequestException);
+    });
+
+    it('should throw BadRequestException if password has no letters', () => {
+      expect(() => validateBootstrapInput({ email: 'a@b.com', password: '123456789012' }))
+        .toThrow(BadRequestException);
+    });
+
+    it('should throw BadRequestException if password has no numbers', () => {
+      expect(() => validateBootstrapInput({ email: 'a@b.com', password: 'NoNumbersHere!!' }))
+        .toThrow(BadRequestException);
+    });
+
+    it('should NOT throw for valid email + strong password', () => {
+      expect(() =>
+        validateBootstrapInput({ email: 'admin@example.com', password: 'StrongAdminPass123!' }),
+      ).not.toThrow();
+    });
+
+    it('should NOT throw for valid phone + strong password (no email)', () => {
+      expect(() =>
+        validateBootstrapInput({ phone: '+233241234567', password: 'StrongAdminPass123!' }),
+      ).not.toThrow();
+    });
+
+    it('should NOT throw for valid email + phone + strong password', () => {
+      expect(() =>
+        validateBootstrapInput({
+          email: 'admin@example.com',
+          phone: '+233241234567',
+          password: 'StrongAdminPass123!',
+        }),
+      ).not.toThrow();
+    });
+
+    it('should throw if password is empty string', () => {
+      expect(() => validateBootstrapInput({ email: 'a@b.com', password: '' }))
+        .toThrow(BadRequestException);
     });
   });
 
