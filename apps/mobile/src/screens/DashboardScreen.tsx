@@ -1,7 +1,9 @@
 import { StyleSheet, Text, View } from 'react-native';
-import type { AuthUser } from '@irexpro/types';
+import { useAuth } from '@/context/auth-context';
 
-export default function DashboardScreen({ user }: { user: AuthUser | null }) {
+export default function DashboardScreen() {
+  const { user } = useAuth();
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Dashboard</Text>

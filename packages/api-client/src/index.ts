@@ -1,13 +1,16 @@
 import {
   ApiError,
-  AuthSession,
+  AuthTokens,
   AuthUser,
   CheckoutResult,
   HealthResponse,
   Invoice,
   LoginRequest,
+  LogoutResponse,
   PaymentProviderInfo,
   PaymentTransaction,
+  RefreshRequest,
+  RegisterRequest,
   SubscriptionPlan,
   UserSubscription,
 } from '@irexpro/types';
@@ -19,8 +22,17 @@ import {
  * or "http://127.0.0.1:3010/api/v1"). It MUST be supplied by each app from its
  * own env config — the shared client NEVER hardcodes localhost or any domain.
  *
- * `includeCredentials` enables cookie-based auth (httpOnly refresh token) on
- * web. Mobile apps typically pass false and attach a Bearer token via headers.
+ * `getAccessToken` is an optional getter used to attach the `Authorization:
+ * Bearer <token>` header to authenticated requests. Each app supplies its own
+ * token-storage strategy (in-memory for web/admin production, secure storage
+ * for mobile). The shared client never reads env directly and never stores
+ * tokens itself.
+ *
+ * The backend is token-based (NOT httpOnly-cookie-based): /auth/login and
+ * /auth/register return `{ accessToken, refreshToken }` in the JSON body. The
+ * app is responsible for storing these securely and passing the access token
+ * back via `getAccessToken`. `includeCredentials` is kept for same-origin
+ * cookie scenarios but is not the primary auth mechanism.
  */
 export interface CreateApiClientOptions {
   baseUrl: string;
@@ -35,11 +47,17 @@ export interface ApiClient {
   // Health
   health(): Promise<HealthResponse>;
 
-  // Auth
-  login(body: LoginRequest): Promise<AuthSession>;
+  // Auth — matches the verified backend (apps/api/src/modules/auth/auth.controller.ts)
+  /** POST /auth/register → { accessToken, refreshToken } */
+  register(body: RegisterRequest): Promise<AuthTokens>;
+  /** POST /auth/login → { accessToken, refreshToken } */
+  login(body: LoginRequest): Promise<AuthTokens>;
+  /** POST /auth/refresh (body { refreshToken }) → { accessToken, refreshToken } */
+  refresh(refreshToken: string): Promise<AuthTokens>;
+  /** POST /auth/logout (requires Authorization: Bearer) → { message } */
+  logout(): Promise<LogoutResponse>;
+  /** GET /auth/me (requires Authorization: Bearer) → current user */
   me(): Promise<AuthUser>;
-  refresh(): Promise<AuthSession>;
-  logout(): Promise<void>;
 
   // Subscriptions / plans
   listPlans(): Promise<SubscriptionPlan[]>;
@@ -142,18 +160,28 @@ export function createApiClient(options: CreateApiClientOptions): ApiClient {
 
     health: () => request<HealthResponse>('/health'),
 
-    login: (body) =>
-      request<AuthSession>('/auth/login', {
+    register: (body) =>
+      request<AuthTokens>('/auth/register', {
         method: 'POST',
         body: JSON.stringify(body),
       }),
 
+    login: (body) =>
+      request<AuthTokens>('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+
+    refresh: (refreshToken: string) =>
+      request<AuthTokens>('/auth/refresh', {
+        method: 'POST',
+        body: JSON.stringify({ refreshToken } satisfies RefreshRequest),
+      }),
+
+    logout: () =>
+      request<LogoutResponse>('/auth/logout', { method: 'POST' }),
+
     me: () => request<AuthUser>('/auth/me'),
-
-    refresh: () =>
-      request<AuthSession>('/auth/refresh', { method: 'POST' }),
-
-    logout: () => request<void>('/auth/logout', { method: 'POST' }),
 
     listPlans: () => request<SubscriptionPlan[]>('/subscriptions/plans'),
 
