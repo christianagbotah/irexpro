@@ -119,6 +119,11 @@ describe('AuthService', () => {
       expect(result).toHaveProperty('accessToken');
       expect(result).toHaveProperty('refreshToken');
       expect(mockAuditService.log).toHaveBeenCalledTimes(1);
+      // Hotfix: register must create users as ACTIVE (no verification flow yet)
+      expect(mockQueryRunner.manager.create).toHaveBeenCalledWith(
+        User,
+        expect.objectContaining({ status: UserStatus.ACTIVE }),
+      );
     });
 
     // ── Sprint 27: phone registration ──────────────────────────────────────────
@@ -202,7 +207,9 @@ describe('AuthService', () => {
     });
   });
 
-  // ── Sprint 25: refresh token flow (mobile JSON body compatibility) ──────────
+  // ── Sprint 25: refresh token flow (mobile JSON body + web/admin cookie) ──────────
+  // Hotfix: extended to cover null-email, empty-roles, PENDING_VERIFICATION,
+  // CLOSED status, sub-based lookup, and expired-token (401 not 500).
 
   describe('refreshTokens (Sprint 25 — mobile JSON body + web/admin cookie)', () => {
     it('should return new tokens when given a valid refresh token (mobile flow)', async () => {
@@ -219,9 +226,9 @@ describe('AuthService', () => {
 
       expect(result).toHaveProperty('accessToken');
       expect(result).toHaveProperty('refreshToken');
-      expect(mockJwtService.verify).toHaveBeenCalledWith('valid-refresh-token', {
-        secret: undefined, // mockConfigService returns undefined for 'jwt.secret'
-      });
+      // Hotfix: verify() is called WITHOUT { secret } — the JwtModule already
+      // has the secret configured in AuthModule.registerAsync.
+      expect(mockJwtService.verify).toHaveBeenCalledWith('valid-refresh-token');
     });
 
     it('should throw UnauthorizedException for an invalid refresh token', async () => {
@@ -244,7 +251,7 @@ describe('AuthService', () => {
       ).rejects.toThrow(UnauthorizedException);
     });
 
-    it('should throw UnauthorizedException if user status is not ACTIVE', async () => {
+    it('should throw UnauthorizedException if user status is SUSPENDED', async () => {
       const mockPayload = { sub: 'user-id', email: 'test@example.com', roles: [] };
       mockJwtService.verify.mockReturnValueOnce(mockPayload);
       mockUserRepo.findOne.mockResolvedValueOnce({
@@ -256,6 +263,139 @@ describe('AuthService', () => {
       await expect(
         service.refreshTokens('some-token'),
       ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('should throw UnauthorizedException if user status is CLOSED', async () => {
+      const mockPayload = { sub: 'user-id', email: 'test@example.com', roles: [] };
+      mockJwtService.verify.mockReturnValueOnce(mockPayload);
+      mockUserRepo.findOne.mockResolvedValueOnce({
+        id: 'user-id',
+        status: UserStatus.CLOSED,
+        userRoles: [],
+      });
+
+      await expect(
+        service.refreshTokens('some-token'),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    // ── Hotfix: refresh works for phone-only users (email is null) ──────────
+
+    it('should refresh successfully when user email is null (phone-only user)', async () => {
+      const mockPayload = { sub: 'phone-user-id', email: null, roles: [RoleName.USER] };
+      mockJwtService.verify.mockReturnValueOnce(mockPayload);
+      mockUserRepo.findOne.mockResolvedValueOnce({
+        id: 'phone-user-id',
+        email: null,
+        phone: '+233241234567',
+        status: UserStatus.ACTIVE,
+        userRoles: [{ role: { name: RoleName.USER } }],
+      });
+
+      const result = await service.refreshTokens('phone-user-refresh-token');
+
+      expect(result).toHaveProperty('accessToken');
+      expect(result).toHaveProperty('refreshToken');
+    });
+
+    // ── Hotfix: refresh works when roles array is empty ─────────────────────
+
+    it('should refresh successfully when roles array is empty', async () => {
+      const mockPayload = { sub: 'user-id', email: 'test@example.com', roles: [] };
+      mockJwtService.verify.mockReturnValueOnce(mockPayload);
+      mockUserRepo.findOne.mockResolvedValueOnce({
+        id: 'user-id',
+        email: 'test@example.com',
+        status: UserStatus.ACTIVE,
+        userRoles: [], // no roles loaded — generateTokens falls back to [USER]
+      });
+
+      const result = await service.refreshTokens('empty-roles-refresh-token');
+
+      expect(result).toHaveProperty('accessToken');
+      expect(result).toHaveProperty('refreshToken');
+    });
+
+    // ── Hotfix: refresh loads user by sub (not by email) ────────────────────
+
+    it('should load the user by payload.sub (not by email)', async () => {
+      const mockPayload = { sub: 'sub-user-id', email: 'old@example.com', roles: [] };
+      mockJwtService.verify.mockReturnValueOnce(mockPayload);
+      mockUserRepo.findOne.mockResolvedValueOnce({
+        id: 'sub-user-id',
+        email: 'new@example.com', // email may have changed — lookup is by sub/id
+        status: UserStatus.ACTIVE,
+        userRoles: [{ role: { name: RoleName.USER } }],
+      });
+
+      const result = await service.refreshTokens('token');
+
+      expect(mockUserRepo.findOne).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'sub-user-id' },
+        }),
+      );
+      expect(result).toHaveProperty('accessToken');
+    });
+
+    // ── Hotfix: PENDING_VERIFICATION users can refresh (no activation flow) ─
+
+    it('should allow refresh for PENDING_VERIFICATION users (no activation flow exists)', async () => {
+      const mockPayload = { sub: 'user-id', email: 'test@example.com', roles: [] };
+      mockJwtService.verify.mockReturnValueOnce(mockPayload);
+      mockUserRepo.findOne.mockResolvedValueOnce({
+        id: 'user-id',
+        email: 'test@example.com',
+        status: UserStatus.PENDING_VERIFICATION,
+        userRoles: [{ role: { name: RoleName.USER } }],
+      });
+
+      const result = await service.refreshTokens('pending-user-token');
+
+      expect(result).toHaveProperty('accessToken');
+      expect(result).toHaveProperty('refreshToken');
+    });
+
+    // ── Hotfix: expired token returns 401 (not 500) ─────────────────────────
+
+    it('should throw UnauthorizedException (not 500) for an expired token', async () => {
+      mockJwtService.verify.mockImplementationOnce(() => {
+        const err = new Error('jwt expired');
+        (err as Error & { name: string }).name = 'TokenExpiredError';
+        throw err;
+      });
+
+      await expect(
+        service.refreshTokens('expired-token'),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    // ── Hotfix: refresh does not expose sensitive fields ────────────────────
+
+    it('should not include passwordHash or mfaSecret in the generated token payload', async () => {
+      const mockPayload = { sub: 'user-id', email: 'test@example.com', roles: [] };
+      mockJwtService.verify.mockReturnValueOnce(mockPayload);
+      mockUserRepo.findOne.mockResolvedValueOnce({
+        id: 'user-id',
+        email: 'test@example.com',
+        status: UserStatus.ACTIVE,
+        passwordHash: 'super_secret_hash',
+        mfaSecret: 'super_secret_mfa',
+        userRoles: [{ role: { name: RoleName.USER } }],
+      });
+
+      await service.refreshTokens('token');
+
+      // sign() should be called with a payload that does NOT contain
+      // passwordHash or mfaSecret — only sub, email, roles.
+      const calls = mockJwtService.sign.mock.calls as unknown as Array<
+        [Record<string, unknown>, unknown]
+      >;
+      expect(calls.length).toBeGreaterThan(0);
+      const signedPayload = calls[0][0];
+      expect(signedPayload).not.toHaveProperty('passwordHash');
+      expect(signedPayload).not.toHaveProperty('mfaSecret');
+      expect(signedPayload.sub).toBe('user-id');
     });
   });
 
