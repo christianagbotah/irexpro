@@ -660,6 +660,68 @@ pm2 status
 > state cleanly. The processes themselves were never actually down — it was a
 > systemd bookkeeping artifact.
 
+### 7.1.2 Staging PM2 processes (Sprint 23 — verified)
+
+The verified staging host runs **four** PM2 processes — the API, the AI engine,
+the client web app, and the admin portal. Use distinct PM2 process names with a
+`-staging` suffix so they are easy to distinguish from any future production
+processes on the same box.
+
+```bash
+cd /opt/irexpro          # or /home/lightworld/webapps/irexpro-staging on the verified host
+
+# 1. NestJS API (port 3010) — reads APP_PORT from apps/api/.env
+pm2 start apps/api/dist/main.js --name irexpro-api-staging --cwd apps/api
+
+# 2. Python AI engine (port 8011, internal only) — app.main:app entrypoint
+pm2 start services/ai-engine/.venv/bin/uvicorn \
+  --name irexpro-ai-staging \
+  --cwd services/ai-engine \
+  -- app.main:app --host 127.0.0.1 --port 8011 --workers 1
+
+# 3. Client/trader web app (port 3005) — Next.js production server
+pm2 start "node_modules/.bin/next start -p 3005" \
+  --name irexpro-web-staging \
+  --cwd apps/web
+
+# 4. Admin/back-office portal (port 3006) — Next.js production server
+pm2 start "node_modules/.bin/next start -p 3006" \
+  --name irexpro-admin-staging \
+  --cwd apps/admin
+
+# Save the process list so PM2 restores all four on boot
+pm2 save
+
+# Verify all four are online
+pm2 status
+```
+
+Expected `pm2 status` output (4 processes):
+
+```
+┌────┬──────────────────────────┬─────────────┬──────────┐
+│ id │ name                     │ status      │ restarts │
+├────┼──────────────────────────┼─────────────┼──────────┤
+│ 0  │ irexpro-api-staging      │ online      │ 0        │
+│ 1  │ irexpro-ai-staging       │ online      │ 0        │
+│ 2  │ irexpro-web-staging      │ online      │ 0        │
+│ 3  │ irexpro-admin-staging    │ online      │ 0        │
+└────┴──────────────────────────┴─────────────┴──────────┘
+```
+
+After starting all four, run the full PM2 + systemd startup sequence from
+§7.1.1 (`pm2 startup` → `systemctl daemon-reload` → `systemctl reset-failed
+pm2-root` → `systemctl restart pm2-root` → `systemctl status pm2-root`) so the
+process list survives a reboot.
+
+> **Port → process map (verified staging):**
+> - `3010` → `irexpro-api-staging` (NestJS API, reads `APP_PORT` from `.env`)
+> - `8011` → `irexpro-ai-staging` (AI engine, `--port 8011` arg overrides `.env`)
+> - `3005` → `irexpro-web-staging` (Next.js web, `-p 3005`)
+> - `3006` → `irexpro-admin-staging` (Next.js admin, `-p 3006`)
+>
+> The AI engine binds to `127.0.0.1` only — it is never publicly proxied.
+
 ### 7.2 systemd alternative
 
 If you prefer systemd over PM2, reference unit files are at:
@@ -802,47 +864,62 @@ sudo nginx -t && sudo systemctl reload nginx
 curl -sI https://irexpro.lightworldtech.com/api/v1/health    # expect 200
 ```
 
-### 8.4 Frontend deployment (Sprint 22, revised — cross-platform)
+### 8.4 Frontend + admin deployment (Sprint 23 — verified two-domain staging)
 
-iRexPro is a cross-platform system with three frontend apps and two shared
-packages, all scaffolded as buildable workspace packages:
+Sprint 23 verified the staging frontend + admin deployment on the real Webuzo
+VPS. Both portals now load publicly in the browser. The staging topology uses
+**two public domains**: the main domain serves the client/trader web app + the
+API, and a separate admin subdomain serves the admin portal.
 
-| App/package | Type | Port | Public? |
+**Verified staging topology (Sprint 23):**
+
+| Service | Internal port | Public URL | Public? |
 |---|---|---|---|
-| `apps/web` | Next.js 14 client/trader web app | `3005` | Yes — via Nginx `location /` |
-| `apps/admin` | Next.js 14 admin/back-office portal | `3006` | Yes — via Nginx `/admin` or separate subdomain |
-| `apps/mobile` | Expo + React Native (iOS + Android) | n/a | N/A — device app, calls public API |
-| `packages/types` | Shared frontend-safe TS types | n/a | n/a |
-| `packages/api-client` | Shared typed fetch client | n/a | n/a |
+| `apps/web` (Next.js client/trader) | `3005` | `https://irexpro.lightworldtech.com` | Yes |
+| `apps/admin` (Next.js admin portal) | `3006` | `https://irexproadmin.lightworldtech.com` | Yes |
+| `apps/api` (NestJS API) | `3010` | `https://irexpro.lightworldtech.com/api/v1` | Yes (under `/api/v1/`) |
+| `services/ai-engine` (Python FastAPI) | `8011` | `http://127.0.0.1:8011/api/v1` | **No — internal only** |
+| `apps/mobile` (Expo) | n/a | n/a (device app) | Calls public API only |
 
-All frontend apps bind to `127.0.0.1` only in production — Nginx proxies public
-443 to them. Do NOT reuse the API port (`3010`) or the AI engine port (`8011`)
-for any frontend.
+All frontend apps + the API bind to `127.0.0.1` only — Nginx proxies public 443
+to them. The AI engine binds to `127.0.0.1:8011` and is **never** publicly
+proxied. Do NOT reuse the API port (`3010`) or the AI engine port (`8011`) for
+any frontend.
 
-**Nginx route structure (same domain, no duplicate `location ^~ /` blocks):**
+**Nginx route structure — main domain (`irexpro.lightworldtech.com`):**
 
 | Nginx location | Proxies to | Purpose |
 |---|---|---|
-| `location ^~ /api/v1/` | `127.0.0.1:3010` (NestJS API) | Public API — takes precedence |
-| `location ^~ /_next/static/` | `127.0.0.1:3005` (Next.js web) | Web static assets — cache aggressively |
-| `location /` | `127.0.0.1:3005` (Next.js web) | Web catch-all |
+| `location ^~ /api/v1/` | `http://127.0.0.1:3010` (NestJS API) | Public API — takes precedence |
+| `location ^~ /_next/static/` | `http://127.0.0.1:3005` (Next.js web) | Web static assets — cache aggressively |
+| `location /` | `http://127.0.0.1:3005` (Next.js web) | Web catch-all |
 
-The admin portal can be served either:
-- **(a)** on the same domain under `/admin` — add a `location ^~ /admin/` block
-  proxying to `127.0.0.1:3006`, OR
-- **(b)** on a separate admin subdomain later (e.g. `admin.irexpro.com`) with
-  its own server block.
+**Nginx route structure — admin domain (`irexproadmin.lightworldtech.com`):**
 
-The AI engine (`127.0.0.1:8011`) has **no public location block** — it is
-internal-only. Web, admin, and mobile must NEVER call it directly. See
-`infrastructure/nginx/irexpro-staging.example.conf` for the full verified config.
+| Nginx location | Proxies to | Purpose |
+|---|---|---|
+| `location ^~ /_next/static/` | `http://127.0.0.1:3006` (Next.js admin) | Admin static assets — cache aggressively |
+| `location /` | `http://127.0.0.1:3006` (Next.js admin) | Admin catch-all |
 
-**Frontend env (staging):**
+The admin portal calls the same public API (`https://irexpro.lightworldtech.com/api/v1`)
+from the browser; it does NOT proxy the API on the admin domain. The AI engine
+has **no public location block on either domain** — it is internal-only. See
+`infrastructure/nginx/irexpro-staging.example.conf` for the full verified config
+(both server blocks).
 
-`apps/web/.env.local` and `apps/admin/.env.local`:
+**Frontend env (staging) — do NOT commit `.env.local`; only document:**
+
+`apps/web/.env.local`:
 ```
 NEXT_PUBLIC_API_BASE_URL=https://irexpro.lightworldtech.com/api/v1
 NEXT_PUBLIC_APP_URL=https://irexpro.lightworldtech.com
+NEXT_PUBLIC_APP_ENV=staging
+```
+
+`apps/admin/.env.local`:
+```
+NEXT_PUBLIC_API_BASE_URL=https://irexpro.lightworldtech.com/api/v1
+NEXT_PUBLIC_APP_URL=https://irexproadmin.lightworldtech.com
 NEXT_PUBLIC_APP_ENV=staging
 ```
 
@@ -852,11 +929,17 @@ EXPO_PUBLIC_API_BASE_URL=https://irexpro.lightworldtech.com/api/v1
 EXPO_PUBLIC_APP_ENV=staging
 ```
 
+Note: `apps/admin`'s `NEXT_PUBLIC_APP_URL` is the **admin** domain
+(`irexproadmin.lightworldtech.com`), while its `NEXT_PUBLIC_API_BASE_URL` is the
+**main** domain (`irexpro.lightworldtech.com/api/v1`) — the admin portal calls
+the same public API as the client web app, cross-origin. CORS must allow both
+origins (see §8.5).
+
 The frontend reads the API base URL from its env var — never hardcode
 `localhost` or any domain in frontend source. See
 `docs/integration/frontend-staging-integration.md` for the full contract.
 
-**Frontend build + start:**
+**Frontend + admin build + start:**
 ```bash
 cd /opt/irexpro
 pnpm --filter @irexpro/web build       # next build (web, port 3005)
@@ -883,6 +966,28 @@ paid — payment truth is backend-only via verified webhooks. See
   `BROKER_ENCRYPTION_KEY`, `DB_PASSWORD`, `JWT_SECRET`, `PAYSTACK_SECRET_KEY`,
   `STRIPE_SECRET_KEY`, `METAAPI_TOKEN`, etc.) in frontend/mobile env vars.
 - Reference the AI engine from web/admin/mobile code — it is internal-only.
+
+### 8.5 CORS alignment — two staging domains (Sprint 23)
+
+Because the admin portal runs on a **separate subdomain**
+(`irexproadmin.lightworldtech.com`) from the API
+(`irexpro.lightworldtech.com`), the admin portal's browser requests to the API
+are **cross-origin**. The API's `CORS_ORIGINS` must include both origins:
+
+```
+CORS_ORIGINS=https://irexpro.lightworldtech.com,https://irexproadmin.lightworldtech.com
+```
+
+- The client web app (`irexpro.lightworldtech.com`) is same-origin with the API
+  (both on the main domain), but listing it is harmless and keeps the allowlist
+  explicit.
+- The admin app (`irexproadmin.lightworldtech.com`) is cross-origin with the
+  API — it MUST be listed or admin browser requests will be blocked by CORS.
+- During local frontend dev you may temporarily add `http://localhost:3005`
+  and `http://localhost:3006`. Remove localhost origins before going to
+  production.
+
+See `apps/api/.env.example` for the documented staging value.
 
 ---
 
@@ -1317,3 +1422,122 @@ after building and BEFORE starting the API under PM2 (see §5.1.1). The
 bootstrap smoke test is part of that suite. If it fails, do NOT proceed to PM2
 startup — fix the DI wiring first. This catches an entire class of runtime
 bootstrap failures that `nest build` (type-check only) cannot detect.
+
+---
+
+## 18. Public staging verification checklist (Sprint 23 — verified)
+
+This checklist verifies the staging frontend + admin + API are publicly
+reachable and the AI engine remains private. Every command below was run
+against the verified staging host. Run them after deployment and after any
+Nginx/PM2 restart.
+
+### 18.1 Public web portal (client/trader)
+
+```bash
+# Home page loads (HTTP 200, HTML)
+curl -sI https://irexpro.lightworldtech.com | head -1
+# Expected: HTTP/2 200
+
+# Login page loads
+curl -sI https://irexpro.lightworldtech.com/login | head -1
+# Expected: HTTP/2 200
+
+# Dashboard route loads (may redirect to /login if unauthenticated — still 200/302)
+curl -sI https://irexpro.lightworldtech.com/dashboard | head -1
+# Expected: HTTP/2 200 or HTTP/2 307 (redirect to /login)
+```
+
+### 18.2 Public admin portal
+
+```bash
+# Admin home loads (redirects to /admin/dashboard or /admin/login)
+curl -sI https://irexproadmin.lightworldtech.com | head -1
+# Expected: HTTP/2 200 or HTTP/2 307
+
+# Admin login page loads
+curl -sI https://irexproadmin.lightworldtech.com/admin/login | head -1
+# Expected: HTTP/2 200
+
+# Admin dashboard route loads (may redirect to /admin/login if unauthenticated)
+curl -sI https://irexproadmin.lightworldtech.com/admin/dashboard | head -1
+# Expected: HTTP/2 200 or HTTP/2 307
+```
+
+### 18.3 Public API health
+
+```bash
+# API health endpoint — must return 200 + JSON
+curl -s https://irexpro.lightworldtech.com/api/v1/health | python3 -m json.tool
+# Expected: { "status": "ok", "database": "connected", ... }
+
+# Headers (expect 200 + content-type application/json)
+curl -sI https://irexpro.lightworldtech.com/api/v1/health | head -3
+# Expected: HTTP/2 200
+#           content-type: application/json; charset=utf-8
+```
+
+### 18.4 AI engine — private (must NOT be publicly reachable)
+
+```bash
+# Local AI health — must succeed ONLY on the host (127.0.0.1)
+curl -s http://127.0.0.1:8011/api/v1/health | python3 -m json.tool
+# Expected: AI engine health JSON
+
+# Public AI health — must FAIL (AI engine is not publicly proxied)
+curl -sI https://irexpro.lightworldtech.com/api/v1/ai-health 2>&1 | head -1
+# Expected: HTTP/2 404 (there is no public route to the AI engine)
+#           OR a connection refused / 502 if someone accidentally added a proxy.
+#           If you get 200, STOP — the AI engine is accidentally public.
+```
+
+### 18.5 CORS verification (both staging domains)
+
+The API must allow both the client web origin and the admin origin. Verify with
+an OPTIONS preflight request from each origin:
+
+```bash
+# Client web origin → API
+curl -sI -X OPTIONS https://irexpro.lightworldtech.com/api/v1/auth/login \
+  -H 'Origin: https://irexpro.lightworldtech.com' \
+  -H 'Access-Control-Request-Method: POST' \
+  -H 'Access-Control-Request-Headers: content-type' | grep -i 'access-control-allow-origin'
+# Expected: access-control-allow-origin: https://irexpro.lightworldtech.com
+
+# Admin origin → API (cross-origin — this is the critical CORS check)
+curl -sI -X OPTIONS https://irexpro.lightworldtech.com/api/v1/auth/login \
+  -H 'Origin: https://irexproadmin.lightworldtech.com' \
+  -H 'Access-Control-Request-Method: POST' \
+  -H 'Access-Control-Request-Headers: content-type' | grep -i 'access-control-allow-origin'
+# Expected: access-control-allow-origin: https://irexproadmin.lightworldtech.com
+```
+
+If the admin origin check does NOT return the `access-control-allow-origin`
+header (or returns a different origin), the API's `CORS_ORIGINS` is missing
+`https://irexproadmin.lightworldtech.com` — add it (see §8.5) and restart the
+API.
+
+### 18.6 PM2 process status
+
+```bash
+pm2 status
+# Expected: 4 processes online:
+#   irexpro-api-staging, irexpro-ai-staging, irexpro-web-staging, irexpro-admin-staging
+```
+
+### 18.7 Staging go-live summary (Sprint 23)
+
+| Check | Expected | Status |
+|---|---|---|
+| `https://irexpro.lightworldtech.com` | 200 (web home) | ✅ verified |
+| `https://irexpro.lightworldtech.com/login` | 200 (web login) | ✅ verified |
+| `https://irexpro.lightworldtech.com/dashboard` | 200 or 307 | ✅ verified |
+| `https://irexproadmin.lightworldtech.com` | 200 or 307 | ✅ verified |
+| `https://irexproadmin.lightworldtech.com/admin/login` | 200 (admin login) | ✅ verified |
+| `https://irexproadmin.lightworldtech.com/admin/dashboard` | 200 or 307 | ✅ verified |
+| `https://irexpro.lightworldtech.com/api/v1/health` | 200 + JSON | ✅ verified |
+| `http://127.0.0.1:8011/api/v1/health` (local only) | AI engine JSON | ✅ verified |
+| AI engine NOT publicly reachable | 404/502 on public attempt | ✅ verified |
+| CORS allows web origin | `access-control-allow-origin` matches | ✅ verified |
+| CORS allows admin origin | `access-control-allow-origin` matches | ✅ verified |
+| PM2: 4 staging processes online | api + ai + web + admin | ✅ verified |

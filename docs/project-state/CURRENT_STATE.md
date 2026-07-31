@@ -4,14 +4,51 @@
 
 \## Current Sprint Checkpoint
 
-Current sprint: Sprint 22 — Staging Frontend/API Integration (IN PROGRESS).
+Current sprint: Sprint 23 — Staging Frontend/Admin Deployment Verification (IN PROGRESS).
 
-Last completed sprint: Sprint 21 — Staging Runbook Hardening (PASS, merged to `main`, tagged `sprint-21-complete`).
+Last completed sprint: Sprint 22 — Staging Frontend/API Integration (PASS, merged to `main`, tagged `sprint-22-complete`).
 
-Previous: Sprint 20 — Runtime Bootstrap Fix (PASS, merged to `main`, tagged `sprint-20-complete`).
+Previous: Sprint 21 — Staging Runbook Hardening (PASS, merged to `main`, tagged `sprint-21-complete`).
 
 
-\## Sprint 22 — Staging Frontend/API Integration (in progress, revised)
+\## Sprint 23 — Staging Frontend/Admin Deployment Verification (in progress)
+
+Sprint 23 documents and hardens the actual staging frontend + admin deployment now that both portals load publicly in the browser on the real Webuzo VPS. The staging VPS now successfully serves:
+
+- Web portal (client/trader): `https://irexpro.lightworldtech.com` (apps/web, port 3005)
+- Admin portal (back-office): `https://irexproadmin.lightworldtech.com` (apps/admin, port 3006)
+- Public API: `https://irexpro.lightworldtech.com/api/v1` (apps/api, port 3010)
+- API health: `https://irexpro.lightworldtech.com/api/v1/health`
+- AI engine (private/internal only): `http://127.0.0.1:8011/api/v1` — never publicly proxied
+
+Sprint 23 is a **documentation and deployment-example hardening sprint only**. It does NOT change backend business logic, payment logic, webhook behavior, broker execution logic, risk gate logic, AI execution logic, database migrations, secrets, or commit any `.env` files. No Fovi architecture. No demo DB fallbacks. AI engine remains private.
+
+Deliverables:
+
+1. **Runbook §8.4 rewritten** (`docs/runbooks/production-deployment-vps-webuzo.md`) — verified two-domain staging topology: main domain (`irexpro.lightworldtech.com`) serves web + API; admin domain (`irexproadmin.lightworldtech.com`) serves admin portal. Nginx route tables for both domains. AI engine has no public location block on either domain.
+
+2. **Runbook §8.5 added** — CORS alignment for two staging domains. Because admin is cross-origin with the API, `CORS_ORIGINS` must include both: `https://irexpro.lightworldtech.com,https://irexproadmin.lightworldtech.com`.
+
+3. **Runbook §7.1.2 added** — staging PM2 process commands for four processes: `irexpro-api-staging` (port 3010), `irexpro-ai-staging` (port 8011, internal), `irexpro-web-staging` (port 3005), `irexpro-admin-staging` (port 3006). Includes `pm2 save` + `pm2 status` and a port→process map.
+
+4. **Runbook §18 added** — public staging verification checklist with curl checks for: web home/login/dashboard, admin home/login/dashboard, public API health, local AI health (must succeed) + public AI health (must fail — AI is private), and CORS OPTIONS preflight checks for both origins.
+
+5. **Nginx example updated** (`infrastructure/nginx/irexpro-staging.example.conf`) — now documents two server blocks: main domain (`/api/v1/` → 3010, `/_next/static/` → 3005, `/` → 3005) and admin domain (`/_next/static/` → 3006, `/` → 3006). No public proxy to 8011 on either domain.
+
+6. **Backend `.env.example` CORS updated** — documents the staging-verified two-domain `CORS_ORIGINS` value.
+
+7. **`apps/admin/.env.example` updated** — `NEXT_PUBLIC_APP_URL` now points at the verified admin subdomain (`https://irexproadmin.lightworldtech.com`), with a note that the API's CORS must include the admin origin.
+
+PM2 process names and ports (verified staging):
+- `irexpro-api-staging` → port 3010 (NestJS API, public via Nginx `/api/v1/`)
+- `irexpro-ai-staging` → port 8011 (AI engine, internal only — never public)
+- `irexpro-web-staging` → port 3005 (Next.js client web, public via main domain)
+- `irexpro-admin-staging` → port 3006 (Next.js admin, public via admin subdomain)
+
+No production safety rules were changed: AI never executes broker orders directly, risk gate remains mandatory, payment checkout never marks paid, only verified webhooks confirm payment, no floating-point money, no demo fallback, no localStorage/Fovi-style assumptions, no secrets committed, AI engine never publicly exposed. NestJS tests remain at 743 passing across 45 suites (unchanged — no backend source logic changed).
+
+
+\## Sprint 22 — Staging Frontend/API Integration (PASS, merged to `main`)
 
 Sprint 22 (revised) creates a proper cross-platform frontend foundation that is buildable, type-safe, and aligned with the verified staging API. iRexPro is a cross-platform system: a client/trader web app, an admin/back-office portal, a native mobile app, and two shared packages. All are scaffolded as real, buildable pnpm workspace packages — not placeholders.
 
@@ -321,7 +358,9 @@ Last verified status (Sprint 18):
 
 \- Sprint 21: Staging runbook hardening — hardened the production deployment runbook with 11 verified findings from the real Webuzo VPS staging dry-run on AlmaLinux 9.8 (PG 18, PM2, Nginx + Cloudflare): uuid-ossp/`libossp-uuid.so.16` fix, `DB_USER` (not `DB_USERNAME`), API port `3010` / AI engine port `8011`, health endpoints at `/api/v1/health` (not `/health`), AI engine entrypoint `app.main:app`, AI engine remains private (no public Nginx proxy), CORS guidance (origin only, no path for AI engine), Nginx `^~ /api/v1/` structure with no duplicate location blocks, PM2/systemd `reset-failed` startup sequence, a Verified Staging Dry-Run Checklist (§16), and a Sprint 20 DI-failure pre-deploy gate (§17). Added `infrastructure/nginx/irexpro-staging.example.conf`. PM2 ecosystem comments + AI engine port updated to staging-verified `8011`. Documentation + infrastructure only — no production logic, migrations, or payment/risk/execution/AI changes. 743 NestJS tests still passing across 45 suites. Merged to `main`, tagged `sprint-21-complete`.
 
-\- Sprint 22 (in progress, revised): Cross-platform staging frontend/API integration — scaffolded a buildable cross-platform frontend foundation: `apps/web` (Next.js 14 client/trader, port 3005, routes /, /login, /dashboard, /payments/*), `apps/admin` (Next.js 14 admin portal, port 3006, /admin/* routes), `apps/mobile` (Expo + React Native, 4 screens), `packages/types` (shared frontend-safe TS types), `packages/api-client` (shared typed fetch client, env-driven base URL). All build/typecheck: web build ✅, admin build ✅, mobile typecheck ✅, packages typecheck ✅. Env examples for all three apps document never-in-frontend secrets (AI_ENGINE_URL, NESTJS_INTERNAL_API_KEY, BROKER_ENCRYPTION_KEY, DB_PASSWORD, JWT_SECRET, PAYSTACK_SECRET_KEY, STRIPE_SECRET_KEY, METAAPI_TOKEN). Payment redirect pages are display-only — never mark paid; payment truth is backend-only via verified webhooks. AI engine never referenced from frontend/mobile. No backend source logic, migrations, payment-state transitions, webhook rules, broker/risk/execution/AI logic, or secrets changed. 743 NestJS tests still passing across 45 suites; backend build exit 0.
+\- Sprint 22: Cross-platform staging frontend/API integration — scaffolded a buildable cross-platform frontend foundation: `apps/web` (Next.js 14 client/trader, port 3005, routes /, /login, /dashboard, /payments/*), `apps/admin` (Next.js 14 admin portal, port 3006, /admin/* routes), `apps/mobile` (Expo + React Native, 4 screens), `packages/types` (shared frontend-safe TS types), `packages/api-client` (shared typed fetch client, env-driven base URL). All build/typecheck: web build ✅, admin build ✅, mobile typecheck ✅, packages typecheck ✅. Env examples for all three apps document never-in-frontend secrets. Payment redirect pages are display-only — never mark paid; payment truth is backend-only via verified webhooks. AI engine never referenced from frontend/mobile. No backend source logic, migrations, payment-state transitions, webhook rules, broker/risk/execution/AI logic, or secrets changed. 743 NestJS tests still passing across 45 suites; backend build exit 0. Merged to `main`, tagged `sprint-22-complete`.
+
+\- Sprint 23 (in progress): Staging frontend/admin deployment verification — documented and hardened the actual staging deployment now that both portals load publicly. Verified two-domain topology: web at `https://irexpro.lightworldtech.com` (port 3005), admin at `https://irexproadmin.lightworldtech.com` (port 3006), API at `https://irexpro.lightworldtech.com/api/v1` (port 3010), AI engine private at `127.0.0.1:8011`. Runbook §8.4 rewritten for two domains; §8.5 added for cross-origin CORS (both domains in CORS_ORIGINS); §7.1.2 added for four staging PM2 processes (irexpro-api-staging, irexpro-ai-staging, irexpro-web-staging, irexpro-admin-staging); §18 added for public verification checklist (curl checks for web/admin/API health + AI-private check + CORS OPTIONS preflight for both origins). Nginx example updated with main + admin server blocks (no public proxy to 8011). Backend + admin `.env.example` CORS/URL docs aligned to staging. Documentation + deployment-example hardening only — no backend business logic, payment logic, webhook behavior, broker/risk/execution/AI logic, migrations, secrets, or `.env` files changed. AI engine remains private. 743 NestJS tests still passing across 45 suites; all frontend builds/typechecks pass.
 
 
 
