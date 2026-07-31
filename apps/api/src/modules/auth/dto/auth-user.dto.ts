@@ -26,6 +26,9 @@ export class AuthUserDto {
   @ApiPropertyOptional({ example: 'user@example.com', description: 'Null if registered with phone only' })
   email: string | null;
 
+  @ApiPropertyOptional({ example: '+233241234567', description: 'Null if registered with email only' })
+  phone: string | null;
+
   @ApiPropertyOptional({ example: 'John' })
   firstName: string | null;
 
@@ -60,6 +63,7 @@ export class AuthUserDto {
     const dto = new AuthUserDto();
     dto.id = user.id;
     dto.email = user.email;
+    dto.phone = user.phone;
     dto.firstName = profile?.firstName ?? null;
     dto.lastName = profile?.lastName ?? null;
     dto.countryCode = user.countryCode;
