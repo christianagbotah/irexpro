@@ -11,6 +11,9 @@ build/
 .turbo/
 coverage/
 .cache/
+.expo/
+.expo-shared/
+*.tsbuildinfo
 
 # Environment files - never commit real secrets
 .env

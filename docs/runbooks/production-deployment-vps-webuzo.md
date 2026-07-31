@@ -802,6 +802,88 @@ sudo nginx -t && sudo systemctl reload nginx
 curl -sI https://irexpro.lightworldtech.com/api/v1/health    # expect 200
 ```
 
+### 8.4 Frontend deployment (Sprint 22, revised — cross-platform)
+
+iRexPro is a cross-platform system with three frontend apps and two shared
+packages, all scaffolded as buildable workspace packages:
+
+| App/package | Type | Port | Public? |
+|---|---|---|---|
+| `apps/web` | Next.js 14 client/trader web app | `3005` | Yes — via Nginx `location /` |
+| `apps/admin` | Next.js 14 admin/back-office portal | `3006` | Yes — via Nginx `/admin` or separate subdomain |
+| `apps/mobile` | Expo + React Native (iOS + Android) | n/a | N/A — device app, calls public API |
+| `packages/types` | Shared frontend-safe TS types | n/a | n/a |
+| `packages/api-client` | Shared typed fetch client | n/a | n/a |
+
+All frontend apps bind to `127.0.0.1` only in production — Nginx proxies public
+443 to them. Do NOT reuse the API port (`3010`) or the AI engine port (`8011`)
+for any frontend.
+
+**Nginx route structure (same domain, no duplicate `location ^~ /` blocks):**
+
+| Nginx location | Proxies to | Purpose |
+|---|---|---|
+| `location ^~ /api/v1/` | `127.0.0.1:3010` (NestJS API) | Public API — takes precedence |
+| `location ^~ /_next/static/` | `127.0.0.1:3005` (Next.js web) | Web static assets — cache aggressively |
+| `location /` | `127.0.0.1:3005` (Next.js web) | Web catch-all |
+
+The admin portal can be served either:
+- **(a)** on the same domain under `/admin` — add a `location ^~ /admin/` block
+  proxying to `127.0.0.1:3006`, OR
+- **(b)** on a separate admin subdomain later (e.g. `admin.irexpro.com`) with
+  its own server block.
+
+The AI engine (`127.0.0.1:8011`) has **no public location block** — it is
+internal-only. Web, admin, and mobile must NEVER call it directly. See
+`infrastructure/nginx/irexpro-staging.example.conf` for the full verified config.
+
+**Frontend env (staging):**
+
+`apps/web/.env.local` and `apps/admin/.env.local`:
+```
+NEXT_PUBLIC_API_BASE_URL=https://irexpro.lightworldtech.com/api/v1
+NEXT_PUBLIC_APP_URL=https://irexpro.lightworldtech.com
+NEXT_PUBLIC_APP_ENV=staging
+```
+
+`apps/mobile/.env`:
+```
+EXPO_PUBLIC_API_BASE_URL=https://irexpro.lightworldtech.com/api/v1
+EXPO_PUBLIC_APP_ENV=staging
+```
+
+The frontend reads the API base URL from its env var — never hardcode
+`localhost` or any domain in frontend source. See
+`docs/integration/frontend-staging-integration.md` for the full contract.
+
+**Frontend build + start:**
+```bash
+cd /opt/irexpro
+pnpm --filter @irexpro/web build       # next build (web, port 3005)
+pnpm --filter @irexpro/web start       # next start -p 3005 (binds 127.0.0.1)
+pnpm --filter @irexpro/admin build     # next build (admin, port 3006)
+pnpm --filter @irexpro/admin start     # next start -p 3006 (binds 127.0.0.1)
+```
+
+The mobile app is built/released via Expo/EAS (`pnpm --filter @irexpro/mobile start`
+for dev). It does not run on the VPS.
+
+**Payment redirect pages:** `apps/web` serves three display-only routes that
+payment providers redirect users back to: `/payments/success`,
+`/payments/cancel`, `/payments/callback`. These pages NEVER mark payments as
+paid — payment truth is backend-only via verified webhooks. See
+`docs/integration/frontend-staging-integration.md` §5.
+
+**Do NOT:**
+- Add a public Nginx `location` block for the AI engine (port `8011`).
+- Globally hide `Content-Security-Policy` (the frontend manages its own CSP).
+- Store auth tokens in `localStorage` (use httpOnly cookies — see
+  `docs/architecture/14-security-architecture.md`).
+- Put any backend secret (`AI_ENGINE_URL`, `NESTJS_INTERNAL_API_KEY`,
+  `BROKER_ENCRYPTION_KEY`, `DB_PASSWORD`, `JWT_SECRET`, `PAYSTACK_SECRET_KEY`,
+  `STRIPE_SECRET_KEY`, `METAAPI_TOKEN`, etc.) in frontend/mobile env vars.
+- Reference the AI engine from web/admin/mobile code — it is internal-only.
+
 ---
 
 ## 9. Health-check verification
@@ -1110,6 +1192,10 @@ affected flow must fail visibly, not silently degrade into a demo state.
 
 - `apps/api/.env.example` — API env template (no real secrets)
 - `services/ai-engine/.env.example` — AI engine env template (no real secrets)
+- `apps/web/.env.example` — frontend env template (Sprint 22, no secrets)
+- `apps/web/src/lib/api-client.ts` — frontend API client reference (Sprint 22, env-driven base URL)
+- `apps/web/src/app/payments/` — payment redirect page references (Sprint 22, display-only)
+- `docs/integration/frontend-staging-integration.md` — frontend ↔ API integration contract (Sprint 22)
 - `apps/api/src/config/validation.schema.ts` — Joi env validation (enforces required + min lengths)
 - `apps/api/src/database/data-source.ts` — TypeORM CLI DataSource for migrations
 - `apps/api/src/health/health.service.ts` — `GET /api/v1/health` implementation (global prefix `api/v1` set in `main.ts`)

@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "iRexPro",
+    "slug": "irexpro-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "irexpro",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#0b1020"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.irexpro.mobile"
+    },
+    "android": {
+      "package": "com.irexpro.mobile",
+      "adaptiveIcon": {
+        "backgroundColor": "#0b1020"
+      }
+    },
+    "extra": {
+      "eas": {
+        "projectId": ""
+      }
+    }
+  }
+}

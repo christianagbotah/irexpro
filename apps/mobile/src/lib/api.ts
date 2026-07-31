@@ -1,0 +1,32 @@
+import type { ApiClient } from '@irexpro/api-client';
+import { createApiClient } from '@irexpro/api-client';
+
+/**
+ * Shared API client for the mobile app.
+ *
+ * Reads EXPO_PUBLIC_API_BASE_URL from env (Expo inlines EXPO_PUBLIC_* vars at
+ * build time). NEVER hardcodes localhost or a domain. The mobile app never
+ * calls the AI engine — it is internal-only.
+ *
+ * Mobile typically does NOT use cookie credentials; it attaches the access
+ * token via the Authorization header via getAccessToken.
+ */
+const baseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
+
+if (!baseUrl) {
+  throw new Error(
+    'EXPO_PUBLIC_API_BASE_URL is not set. Copy apps/mobile/.env.example to .env.',
+  );
+}
+
+let cachedAccessToken: string | null = null;
+
+export function setAccessToken(token: string | null): void {
+  cachedAccessToken = token;
+}
+
+export const api: ApiClient = createApiClient({
+  baseUrl,
+  includeCredentials: false,
+  getAccessToken: () => cachedAccessToken,
+});

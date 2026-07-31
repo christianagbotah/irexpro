@@ -4,14 +4,56 @@
 
 \## Current Sprint Checkpoint
 
-Current sprint: Sprint 21 — Staging Runbook Hardening (IN PROGRESS).
+Current sprint: Sprint 22 — Staging Frontend/API Integration (IN PROGRESS).
 
-Last completed sprint: Sprint 20 — Runtime Bootstrap Fix (PASS, merged to `main`, tagged `sprint-20-complete`).
+Last completed sprint: Sprint 21 — Staging Runbook Hardening (PASS, merged to `main`, tagged `sprint-21-complete`).
 
-Previous: Sprint 19 — Production Deployment Foundation (PASS, merged to `main`, tagged `sprint-19-complete`).
+Previous: Sprint 20 — Runtime Bootstrap Fix (PASS, merged to `main`, tagged `sprint-20-complete`).
 
 
-\## Sprint 21 — Staging Runbook Hardening (in progress)
+\## Sprint 22 — Staging Frontend/API Integration (in progress, revised)
+
+Sprint 22 (revised) creates a proper cross-platform frontend foundation that is buildable, type-safe, and aligned with the verified staging API. iRexPro is a cross-platform system: a client/trader web app, an admin/back-office portal, a native mobile app, and two shared packages. All are scaffolded as real, buildable pnpm workspace packages — not placeholders.
+
+Sprint 22 is a **frontend + documentation sprint only**. It does NOT change backend production logic, migrations, payment state transitions, webhook payment confirmation rules, broker execution rules, risk gate logic, AI trading/execution flow, or secrets. No `.env` files committed. No secrets in frontend/mobile env. No backend source logic changed.
+
+Verified staging backend endpoints (from Sprint 21):
+- Public API base: `https://irexpro.lightworldtech.com/api/v1`
+- Local API: `http://127.0.0.1:3010/api/v1`
+- AI engine (internal only): `http://127.0.0.1:8011/api/v1` — never exposed to frontend/mobile.
+
+Cross-platform workspace structure created:
+
+\- `apps/web` — Next.js 14 client/trader web app (App Router, TypeScript, port 3005). Buildable. Routes: `/`, `/login`, `/dashboard`, `/payments/success`, `/payments/cancel`, `/payments/callback`. Reads `NEXT_PUBLIC_API_BASE_URL` from env. Payment pages are display-only — never mark paid.
+
+\- `apps/admin` — Next.js 14 admin/back-office portal (App Router, TypeScript, port 3006). Buildable. Routes: `/` (redirect), `/admin` (redirect), `/admin/login`, `/admin/dashboard`, `/admin/users`, `/admin/subscriptions`, `/admin/payments`, `/admin/brokers`, `/admin/audit`. Reads `NEXT_PUBLIC_API_BASE_URL` from env. Admin RBAC enforced by backend.
+
+\- `apps/mobile` — Expo + React Native foundation for iOS and Android (TypeScript). Typechecks cleanly. Screens: Login, Dashboard, Account, Payments. Reads `EXPO_PUBLIC_API_BASE_URL` from env. Live trading and broker execution NOT implemented (foundation only).
+
+\- `packages/types` (`@irexpro/types`) — shared frontend-safe TypeScript types (Auth, Subscription, Payment, Invoice, Broker view, Health, ApiError). No backend entities or secrets. Typechecks cleanly. All money values are integer minor-unit strings.
+
+\- `packages/api-client` (`@irexpro/api-client`) — shared typed fetch client factory (`createApiClient`). Takes base URL as a parameter — never reads env directly, never hardcodes localhost. Supports `credentials: 'include'` for web (httpOnly cookies) and Bearer-token mode for mobile. Typechecks cleanly.
+
+Env examples created (no secrets): `apps/web/.env.example`, `apps/admin/.env.example`, `apps/mobile/.env.example`. Each explicitly documents the backend-only secrets that must NEVER appear in frontend/mobile env: `AI_ENGINE_URL`, `NESTJS_INTERNAL_API_KEY`, `BROKER_ENCRYPTION_KEY`, `DB_PASSWORD`, `JWT_SECRET`, `PAYSTACK_SECRET_KEY`, `STRIPE_SECRET_KEY`, `METAAPI_TOKEN`, and others.
+
+Backend `.env.example` aligned: `CORS_ORIGINS`, `PAYSTACK_CALLBACK_URL`, `STRIPE_SUCCESS_URL`, `STRIPE_CANCEL_URL` now document staging-verified values. Runbook §8.4 rewritten for cross-platform deployment (web 3005, admin 3006, AI engine 8011 private, admin on `/admin` or separate subdomain). Integration spec at `docs/integration/frontend-staging-integration.md` covers the full cross-platform contract.
+
+Verification (all passing):
+\- `pnpm install` — all workspace packages install cleanly.
+\- `pnpm --filter @irexpro/web build` — Next.js build succeeds, 7 routes generated.
+\- `pnpm --filter @irexpro/admin build` — Next.js build succeeds, 10 routes generated.
+\- `pnpm --filter @irexpro/mobile typecheck` — TypeScript typecheck passes (exit 0).
+\- `pnpm --filter @irexpro/types typecheck` — passes (exit 0).
+\- `pnpm --filter @irexpro/api-client typecheck` — passes (exit 0).
+\- `pnpm --filter @irexpro/api test` — 743 tests pass, 45 suites (unchanged from Sprint 20).
+\- `pnpm --filter @irexpro/api build` — NestJS build exit 0.
+
+No production safety rules were changed: AI never executes broker orders directly, risk gate remains mandatory, payment checkout never marks paid (payment redirect pages are display-only), only verified webhooks confirm payment, no floating-point money, no demo fallback, no localStorage/Fovi-style assumptions (httpOnly cookies for web, Bearer token for mobile), no secrets committed, AI engine never referenced from frontend/mobile.
+
+
+
+
+\## Sprint 21 — Staging Runbook Hardening (PASS, merged to `main`)
 
 Sprint 21 hardens the production deployment runbook with findings from a real Webuzo VPS staging dry-run on AlmaLinux 9.8 (PostgreSQL 18, PM2, Nginx + Cloudflare). The dry-run used VPS app path `/home/lightworld/webapps/irexpro-staging`, public staging API `https://irexpro.lightworldtech.com/api/v1`, NestJS API local `http://127.0.0.1:3010/api/v1`, and AI engine local-only `http://127.0.0.1:8011/api/v1`.
 
@@ -277,7 +319,9 @@ Last verified status (Sprint 18):
 
 \- Sprint 20: Runtime bootstrap DI fix — `CredentialEncryptionService` exported from `BrokerModule` so `ExecutionService` can resolve it at runtime; added `apps/api/src/bootstrap.spec.ts` runtime DI smoke test that compiles the real feature-module graph (all 21 modules). The staging dry-run discovered that migrations + 739 unit tests passed but the API crashed under PM2 with a DI resolution failure; Sprint 20 fixed the wiring and added the smoke test so this class of failure is caught in CI. 743 tests passing across 45 suites. Merged to `main`, tagged `sprint-20-complete`.
 
-\- Sprint 21 (in progress): Staging runbook hardening — hardened the production deployment runbook with 11 verified findings from the real Webuzo VPS staging dry-run on AlmaLinux 9.8 (PG 18, PM2, Nginx + Cloudflare): uuid-ossp/`libossp-uuid.so.16` fix, `DB_USER` (not `DB_USERNAME`), API port `3010` / AI engine port `8011`, health endpoints at `/api/v1/health` (not `/health`), AI engine entrypoint `app.main:app`, AI engine remains private (no public Nginx proxy), CORS guidance (origin only, no path for AI engine), Nginx `^~ /api/v1/` structure with no duplicate location blocks, PM2/systemd `reset-failed` startup sequence, a Verified Staging Dry-Run Checklist (§16), and a Sprint 20 DI-failure pre-deploy gate (§17). Added `infrastructure/nginx/irexpro-staging.example.conf`. PM2 ecosystem comments + AI engine port updated to staging-verified `8011`. Documentation + infrastructure only — no production logic, migrations, or payment/risk/execution/AI changes. 743 NestJS tests still passing across 45 suites.
+\- Sprint 21: Staging runbook hardening — hardened the production deployment runbook with 11 verified findings from the real Webuzo VPS staging dry-run on AlmaLinux 9.8 (PG 18, PM2, Nginx + Cloudflare): uuid-ossp/`libossp-uuid.so.16` fix, `DB_USER` (not `DB_USERNAME`), API port `3010` / AI engine port `8011`, health endpoints at `/api/v1/health` (not `/health`), AI engine entrypoint `app.main:app`, AI engine remains private (no public Nginx proxy), CORS guidance (origin only, no path for AI engine), Nginx `^~ /api/v1/` structure with no duplicate location blocks, PM2/systemd `reset-failed` startup sequence, a Verified Staging Dry-Run Checklist (§16), and a Sprint 20 DI-failure pre-deploy gate (§17). Added `infrastructure/nginx/irexpro-staging.example.conf`. PM2 ecosystem comments + AI engine port updated to staging-verified `8011`. Documentation + infrastructure only — no production logic, migrations, or payment/risk/execution/AI changes. 743 NestJS tests still passing across 45 suites. Merged to `main`, tagged `sprint-21-complete`.
+
+\- Sprint 22 (in progress, revised): Cross-platform staging frontend/API integration — scaffolded a buildable cross-platform frontend foundation: `apps/web` (Next.js 14 client/trader, port 3005, routes /, /login, /dashboard, /payments/*), `apps/admin` (Next.js 14 admin portal, port 3006, /admin/* routes), `apps/mobile` (Expo + React Native, 4 screens), `packages/types` (shared frontend-safe TS types), `packages/api-client` (shared typed fetch client, env-driven base URL). All build/typecheck: web build ✅, admin build ✅, mobile typecheck ✅, packages typecheck ✅. Env examples for all three apps document never-in-frontend secrets (AI_ENGINE_URL, NESTJS_INTERNAL_API_KEY, BROKER_ENCRYPTION_KEY, DB_PASSWORD, JWT_SECRET, PAYSTACK_SECRET_KEY, STRIPE_SECRET_KEY, METAAPI_TOKEN). Payment redirect pages are display-only — never mark paid; payment truth is backend-only via verified webhooks. AI engine never referenced from frontend/mobile. No backend source logic, migrations, payment-state transitions, webhook rules, broker/risk/execution/AI logic, or secrets changed. 743 NestJS tests still passing across 45 suites; backend build exit 0.
 
 
 

@@ -1,0 +1,13 @@
+# dependencies
+/node_modules
+/.expo
+/dist
+/web-build
+
+# env
+.env*
+!.env.example
+
+# misc
+.DS_Store
+*.tsbuildinfo
