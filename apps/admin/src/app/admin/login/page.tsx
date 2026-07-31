@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, FormEvent, useEffect } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/auth-context';
+import { AuthLayout, Button, Input, Alert } from '@/components/ui';
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -10,7 +12,6 @@ export default function AdminLoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  // Sprint 25: redirect to dashboard if already authenticated admin (but not during restore)
   useEffect(() => {
     if (!restoring && user && accessToken && hasAdminRole) {
       router.replace('/admin/dashboard');
@@ -18,12 +19,7 @@ export default function AdminLoginPage() {
   }, [user, accessToken, restoring, hasAdminRole, router]);
 
   if (restoring) {
-    return (
-      <main className="content" style={{ maxWidth: 420, margin: '4rem auto' }}>
-        <h1>Admin login</h1>
-        <p className="muted">Restoring session…</p>
-      </main>
-    );
+    return <AuthLayout title="Admin login"><p className="loading-text">Restoring session…</p></AuthLayout>;
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -31,61 +27,25 @@ export default function AdminLoginPage() {
     try {
       await login(email, password);
       router.push('/admin/dashboard');
-    } catch {
-      /* error is set in context */
-    }
+    } catch { /* error in context */ }
   }
 
   return (
-    <main className="content" style={{ maxWidth: 420, margin: '4rem auto' }}>
-      <h1>Admin login</h1>
-      <form className="card" onSubmit={handleSubmit}>
-        <p>
-          <label>
-            Email
-            <br />
-            <input
-              name="email"
-              type="email"
-              required
-              autoComplete="email"
-              value={email}
-              onChange={(e) => { setEmail(e.target.value); clearError(); }}
-              disabled={loading}
-            />
-          </label>
-        </p>
-        <p>
-          <label>
-            Password
-            <br />
-            <input
-              name="password"
-              type="password"
-              required
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => { setPassword(e.target.value); clearError(); }}
-              disabled={loading}
-            />
-          </label>
-        </p>
-        {error && (
-          <p className="error" role="alert">
-            {error}
-          </p>
-        )}
-        <p>
-          <button className="btn" type="submit" disabled={loading}>
-            {loading ? 'Logging in…' : 'Log in'}
-          </button>
-        </p>
-        <p className="muted">
-          Admin access requires ADMIN or SUPER_ADMIN role. The backend enforces
-          RBAC via RolesGuard on all admin endpoints — a non-admin user will
-          receive 403 even if this form accepts their credentials.
-        </p>
+    <AuthLayout title="Admin login" subtitle="Sign in to the iRexPro back-office portal">
+      <form onSubmit={handleSubmit}>
+        {error && <Alert variant="error">{error}</Alert>}
+        <Input label="Email" type="email" placeholder="admin@irexpro.com" value={email} onChange={(e) => { setEmail(e.target.value); clearError(); }} disabled={loading} required autoComplete="email" />
+        <Input label="Password" type="password" placeholder="••••••••" value={password} onChange={(e) => { setPassword(e.target.value); clearError(); }} disabled={loading} required autoComplete="current-password" />
+        <div style={{ textAlign: 'right', marginBottom: '1rem' }}>
+          <Link href="/admin/forgot-password" className="text-sm">Forgot password?</Link>
+        </div>
+        <Button type="submit" block size="lg" loading={loading}>
+          {loading ? 'Signing in…' : 'Sign in'}
+        </Button>
       </form>
-    </main>
+      <Alert variant="info">
+        Admin access requires ADMIN or SUPER_ADMIN role. The backend enforces RBAC via RolesGuard.
+      </Alert>
+    </AuthLayout>
   );
 }

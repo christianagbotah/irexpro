@@ -4,6 +4,7 @@ import { useState, FormEvent, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/auth-context';
+import { AuthLayout, Button, Input, Alert } from '@/components/ui';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -11,20 +12,17 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  // Sprint 25: redirect to dashboard if already authenticated (but not during restore)
   useEffect(() => {
     if (!restoring && user && accessToken) {
       router.replace('/dashboard');
     }
   }, [user, accessToken, restoring, router]);
 
-  // Show loading state during session restore (avoid flash of login form)
   if (restoring) {
     return (
-      <main className="page">
-        <h1>Log in</h1>
-        <p className="muted">Restoring session…</p>
-      </main>
+      <AuthLayout title="Log in">
+        <p className="loading-text">Restoring session…</p>
+      </AuthLayout>
     );
   }
 
@@ -33,64 +31,44 @@ export default function LoginPage() {
     try {
       await login(email, password);
       router.push('/dashboard');
-    } catch {
-      /* error is set in context */
-    }
+    } catch { /* error in context */ }
   }
 
   return (
-    <main className="page">
-      <h1>Log in</h1>
-      <form className="card" onSubmit={handleSubmit}>
-        <p>
-          <label>
-            Email
-            <br />
-            <input
-              name="email"
-              type="email"
-              required
-              autoComplete="email"
-              value={email}
-              onChange={(e) => { setEmail(e.target.value); clearError(); }}
-              disabled={loading}
-            />
-          </label>
-        </p>
-        <p>
-          <label>
-            Password
-            <br />
-            <input
-              name="password"
-              type="password"
-              required
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => { setPassword(e.target.value); clearError(); }}
-              disabled={loading}
-            />
-          </label>
-        </p>
-        {error && (
-          <p className="error" role="alert">
-            {error}
-          </p>
-        )}
-        <p>
-          <button className="btn" type="submit" disabled={loading}>
-            {loading ? 'Logging in…' : 'Log in'}
-          </button>
-        </p>
-        <p className="muted">
-          Don&apos;t have an account?{' '}
-          <Link href="/register">Register</Link>
-        </p>
-        <p className="muted">
-          Auth is handled by the backend at <code>/api/v1/auth/login</code>.
-          Tokens are held in memory only — never in localStorage.
-        </p>
+    <AuthLayout title="Welcome back" subtitle="Log in to your iRexPro account">
+      <form onSubmit={handleSubmit}>
+        {error && <Alert variant="error">{error}</Alert>}
+        <Input
+          label="Email"
+          type="email"
+          placeholder="you@example.com"
+          value={email}
+          onChange={(e) => { setEmail(e.target.value); clearError(); }}
+          disabled={loading}
+          required
+          autoComplete="email"
+        />
+        <Input
+          label="Password"
+          type="password"
+          placeholder="••••••••"
+          value={password}
+          onChange={(e) => { setPassword(e.target.value); clearError(); }}
+          disabled={loading}
+          required
+          autoComplete="current-password"
+        />
+        <div style={{ textAlign: 'right', marginBottom: '1rem' }}>
+          <Link href="/forgot-password" className="text-sm">Forgot password?</Link>
+        </div>
+        <Button type="submit" block size="lg" loading={loading}>
+          {loading ? 'Logging in…' : 'Log in'}
+        </Button>
       </form>
-    </main>
+      <div className="auth-divider">or</div>
+      <div className="auth-links">
+        Don&apos;t have an account? <Link href="/register">Create one</Link>
+      </div>
+    </AuthLayout>
   );
 }

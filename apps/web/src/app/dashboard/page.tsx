@@ -1,77 +1,57 @@
 'use client';
 
-import Link from 'next/link';
 import { useAuth } from '@/context/auth-context';
+import { DashboardShell, Card, Badge, EmptyState, LoadingSpinner } from '@/components/ui';
 
 export default function DashboardPage() {
   const { user, logout, loading, restoring } = useAuth();
 
-  // Sprint 25: show restoring state during session restore
   if (restoring) {
-    return (
-      <main className="page">
-        <h1>Dashboard</h1>
-        <p className="muted">Restoring session…</p>
-      </main>
-    );
-  }
-
-  if (loading && !user) {
-    return (
-      <main className="page">
-        <h1>Dashboard</h1>
-        <p className="muted">Loading…</p>
-      </main>
-    );
+    return <div style={{ padding: '3rem' }}><LoadingSpinner text="Restoring session…" /></div>;
   }
 
   if (!user) {
     return (
-      <main className="page">
-        <h1>Dashboard</h1>
-        <div className="card">
-          <h2>Not signed in</h2>
-          <p className="muted">
-            You need to log in to view your trading dashboard.
-          </p>
-          <p>
-            <Link href="/login" className="btn">
-              Go to login
-            </Link>
-          </p>
-        </div>
-      </main>
+      <div style={{ padding: '3rem', maxWidth: '600px', margin: '0 auto' }}>
+        <Card title="Not signed in">
+          <p className="muted">You need to log in to view your trading dashboard.</p>
+          <a href="/login" className="btn btn--primary mt-4" style={{ display: 'inline-block' }}>Go to login</a>
+        </Card>
+      </div>
     );
   }
 
+  const fullName = user.firstName || user.lastName ? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() : user.email;
+
   return (
-    <main className="page">
-      <h1>Dashboard</h1>
-      <div className="card">
-        <h2>Welcome, {user.email}</h2>
-        <p className="muted">
-          Status: <code>{user.status}</code>
-          {user.countryCode && <> · Country: {user.countryCode}</>}
-        </p>
-        <p>
-          <button
-            className="btn"
-            type="button"
-            onClick={() => logout()}
-            disabled={loading}
-          >
-            {loading ? 'Logging out…' : 'Log out'}
-          </button>
-        </p>
+    <DashboardShell user={user} onLogout={logout} activeRoute="/dashboard">
+      <div style={{ marginBottom: '1.5rem' }}>
+        <h1>Dashboard</h1>
+        <p className="muted">Welcome back, {fullName}</p>
       </div>
-      <div className="card">
-        <h2>Broker connection</h2>
-        <p className="muted">Connect a regulated broker account to begin AI auto-trading.</p>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
+        <Card title="Account Status">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+            <Badge variant={user.status === 'ACTIVE' ? 'success' : 'warning'}>{user.status}</Badge>
+          </div>
+          <p className="text-sm muted">Email: {user.email}</p>
+          {user.countryCode && <p className="text-sm muted">Country: {user.countryCode}</p>}
+          {user.mfaEnabled && <p className="text-sm muted">MFA: Enabled</p>}
+        </Card>
+
+        <Card title="Broker Connection">
+          <EmptyState icon="🔌" title="No broker connected" description="Connect a regulated broker account to begin AI auto-trading." />
+        </Card>
+
+        <Card title="Subscription">
+          <EmptyState icon="📋" title="No active subscription" description="Choose a plan to activate AI auto-trading." />
+        </Card>
       </div>
-      <div className="card">
-        <h2>Subscription</h2>
-        <p className="muted">Choose a subscription plan to activate AI auto-trading.</p>
-      </div>
-    </main>
+
+      <Card title="Recent Activity" className="mt-6">
+        <EmptyState icon="📈" title="No trading activity yet" description="Your AI trading signals and execution history will appear here once you start trading." />
+      </Card>
+    </DashboardShell>
   );
 }

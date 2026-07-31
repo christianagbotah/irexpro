@@ -13,7 +13,7 @@ import { api, setAccessToken } from '@/lib/api';
 import { saveTokens } from '@/lib/secure-storage';
 import { useAuth } from '@/context/auth-context';
 
-export default function LoginScreen() {
+export default function LoginScreen({ onForgotPassword }: { onForgotPassword?: () => void }) {
   const { setSession } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -25,7 +25,6 @@ export default function LoginScreen() {
     setError(null);
     try {
       const tokens = await api.login({ email, password });
-      // Sprint 25: persist tokens to SecureStore (NOT AsyncStorage)
       await saveTokens(tokens);
       setAccessToken(tokens.accessToken);
       const me = await api.me();
@@ -65,6 +64,10 @@ export default function LoginScreen() {
 
       {error && <Text style={styles.error}>{error}</Text>}
 
+      <Pressable style={styles.forgotLink} onPress={onForgotPassword}>
+        <Text style={styles.forgotLinkText}>Forgot password?</Text>
+      </Pressable>
+
       <Pressable style={styles.button} onPress={handleLogin} disabled={loading}>
         {loading ? (
           <ActivityIndicator color="#06231f" />
@@ -94,4 +97,6 @@ const styles = StyleSheet.create({
   buttonText: { color: '#06231f', fontWeight: '700', fontSize: 16 },
   error: { color: '#f87171', fontSize: 14, marginBottom: 12 },
   muted: { color: '#6b7494', fontSize: 12, lineHeight: 18 },
+  forgotLink: { alignSelf: 'flex-end', marginBottom: 16 },
+  forgotLinkText: { color: '#14b8a6', fontSize: 14, fontWeight: '500' },
 });

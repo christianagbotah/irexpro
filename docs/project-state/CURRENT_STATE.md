@@ -4,14 +4,58 @@
 
 \## Current Sprint Checkpoint
 
-Current sprint: Sprint 25 — Authentication Security Hardening + Roles Session Contract (IN PROGRESS).
+Current sprint: Sprint 26 — Modern UI/UX Design System + Forgot Password Flow (IN PROGRESS).
 
-Last completed sprint: Sprint 24 — Cross-Platform Auth UI Flow (PASS, merged to `main`, tagged `sprint-24-complete`).
+Last completed sprint: Sprint 25 — Authentication Security Hardening + Roles Session Contract (PASS, merged to `main`, tagged `sprint-25-complete`).
 
-Previous: Sprint 23 — Staging Frontend/Admin Deployment Verification (PASS, merged to `main`, tagged `sprint-23-complete`).
+Previous: Sprint 24 — Cross-Platform Auth UI Flow (PASS, merged to `main`, tagged `sprint-24-complete`).
 
 
-\## Sprint 25 — Authentication Security Hardening + Roles Session Contract (in progress)
+\## Sprint 26 — Modern UI/UX Design System + Forgot Password Flow (in progress)
+
+Sprint 26 creates a modern, professional, responsive UI/UX foundation for iRexPro auth and dashboard shells across web, admin, and mobile. It also adds forgot-password/reset-password UI flows safely.
+
+**Backend forgot/reset endpoint discovery:** the backend does NOT have `POST /auth/forgot-password` or `POST /auth/reset-password` endpoints. The auth controller only has register/login/refresh/logout/me. The audit-action enum already has `USER_PASSWORD_RESET_REQUESTED` and `USER_PASSWORD_RESET_COMPLETED` — so the backend is planned but not yet implemented. Sprint 26 creates polished UI pages only with safe generic messages. The next sprint requirement is to implement the backend password reset endpoints.
+
+**UI components added:**
+- `apps/web/src/components/ui/index.tsx` — Button, Input, Card, Alert, Badge, LoadingSpinner, EmptyState, AuthLayout (split-screen), DashboardShell (sidebar + header)
+- `apps/admin/src/components/ui/index.tsx` — same primitives with admin amber accent
+- `apps/web/src/app/globals.css` — full design system (enterprise fintech teal/slate palette, spacing scale, shadows, typography)
+- `apps/admin/src/app/globals.css` — same with admin amber accent
+
+**Web pages redesigned/added:**
+- `/login` — split-screen AuthLayout with brand panel + login form, forgot-password link
+- `/register` — split-screen with registration form
+- `/dashboard` — DashboardShell (sidebar + header) with account status card, broker connection, subscription, recent activity
+- `/forgot-password` — new — safe generic message ("If an account exists…")
+- `/reset-password` — new — password + confirm with safe message
+
+**Admin pages redesigned/added:**
+- `/admin/login` — split-screen with admin brand panel + login form, forgot-password link
+- `/admin/dashboard` — stat cards grid (users, subscriptions, revenue, brokers) + management cards with links
+- `/admin/forgot-password` — new — safe generic message
+- `/admin/reset-password` — new — password + confirm with safe message
+- Admin sidebar redesigned with active state, user display, logout
+
+**Mobile improvements:**
+- LoginScreen — added "Forgot password?" link
+- ForgotPasswordScreen — new screen with safe generic message
+- App.tsx — supports forgot-password screen state
+
+**Security rules for password reset UI:**
+- Does not expose whether an email exists (generic message)
+- Does not expose reset tokens in logs
+- Does not store reset tokens in localStorage/sessionStorage
+- Does not perform frontend-only password changes
+- Backend remains source of truth
+- Next backend requirement: implement POST /auth/forgot-password and POST /auth/reset-password
+
+No payment/webhook/broker/risk/AI/migration logic changed. No secrets. No .env files.
+
+Verification: 760 API tests pass (46 suites, unchanged from Sprint 25). Web build exit 0 (10 routes). Admin build exit 0 (12 routes). Mobile typecheck exit 0. All shared package typechecks exit 0. API build exit 0.
+
+
+\## Sprint 25 — Authentication Security Hardening + Roles Session Contract (PASS, merged to `main`)
 
 Sprint 25 hardens the authentication contract so web/admin/mobile can safely maintain sessions and the admin portal can reliably identify admin/back-office users. It addresses two Sprint 24 limitations: (1) web/admin sessions were lost on page refresh, and (2) /auth/me did not return frontend-safe roles.
 
