@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -8,10 +9,30 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { api, setAccessToken } from '@/lib/api';
+import { useAuth } from '@/context/auth-context';
 
-export default function LoginScreen({ onLoggedIn }: { onLoggedIn: () => void }) {
+export default function LoginScreen() {
+  const { setSession } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleLogin() {
+    setLoading(true);
+    setError(null);
+    try {
+      const tokens = await api.login({ email, password });
+      setAccessToken(tokens.accessToken);
+      const me = await api.me();
+      setSession(me, tokens.accessToken);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Login failed');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <KeyboardAvoidingView
@@ -39,13 +60,20 @@ export default function LoginScreen({ onLoggedIn }: { onLoggedIn: () => void }) 
         secureTextEntry
       />
 
-      <Pressable style={styles.button} onPress={onLoggedIn}>
-        <Text style={styles.buttonText}>Log in</Text>
+      {error && <Text style={styles.error}>{error}</Text>}
+
+      <Pressable style={styles.button} onPress={handleLogin} disabled={loading}>
+        {loading ? (
+          <ActivityIndicator color="#06231f" />
+        ) : (
+          <Text style={styles.buttonText}>Log in</Text>
+        )}
       </Pressable>
 
       <Text style={styles.muted}>
         Auth is handled by the backend at /api/v1/auth/login. The mobile app
-        never stores raw passwords and never uses localStorage.
+        holds the access token in memory (foundation). Production should use
+        expo-secure-store — see the integration spec.
       </Text>
     </KeyboardAvoidingView>
   );
@@ -61,5 +89,6 @@ const styles = StyleSheet.create({
   },
   button: { backgroundColor: '#14b8a6', borderRadius: 10, padding: 14, alignItems: 'center', marginBottom: 16 },
   buttonText: { color: '#06231f', fontWeight: '700', fontSize: 16 },
+  error: { color: '#f87171', fontSize: 14, marginBottom: 12 },
   muted: { color: '#6b7494', fontSize: 12, lineHeight: 18 },
 });

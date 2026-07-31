@@ -13,30 +13,95 @@
  */
 
 // ── Auth ────────────────────────────────────────────────────────────────────
+//
+// These types match the verified backend auth contract (apps/api/src/modules/auth):
+//   POST /auth/register → { accessToken, refreshToken }
+//   POST /auth/login    → { accessToken, refreshToken }
+//   POST /auth/refresh  → body { refreshToken } → { accessToken, refreshToken }
+//   POST /auth/logout   → requires Authorization: Bearer <accessToken>
+//   GET  /auth/me       → requires Authorization: Bearer <accessToken> → AuthUser
+//
+// The backend is TOKEN-BASED (Bearer access token + refresh token in the body),
+// NOT httpOnly-cookie-based. The frontend is responsible for storing the
+// access token securely (httpOnly cookie is NOT available here; the backend
+// returns tokens in the JSON body). Web apps should use a secure, in-memory
+// store for the access token; mobile apps should use the platform secure
+// storage (expo-secure-store / Keychain / Keystore). Production web/admin must
+// NOT store access tokens in localStorage.
 
+export type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'USER';
+
+export type UserStatus =
+  | 'PENDING_VERIFICATION'
+  | 'ACTIVE'
+  | 'SUSPENDED'
+  | 'CLOSED';
+
+/**
+ * The user object returned by GET /auth/me.
+ * Matches the backend User entity minus passwordHash and mfaSecret (which the
+ * backend strips via destructuring before returning).
+ */
 export interface AuthUser {
   id: string;
   email: string;
-  roles: UserRole[];
-  countryCode?: string | null;
+  phone: string | null;
+  status: UserStatus;
+  emailVerifiedAt: string | null;
+  phoneVerifiedAt: string | null;
+  lastLoginAt: string | null;
+  countryCode: string | null;
+  timezone: string | null;
+  preferredCurrency: string | null;
+  mfaEnabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+  /**
+   * Roles are NOT included in the /auth/me response (the backend returns the
+   * raw User entity without eager-loading userRoles). The frontend may know
+   * roles from the JWT payload claims, or may need a separate roles endpoint.
+   * For now this is optional and may be populated by the app from the decoded
+   * access token if needed.
+   */
+  roles?: UserRole[];
 }
-
-export type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'USER';
 
 export interface LoginRequest {
   email: string;
   password: string;
 }
 
-export interface AuthTokens {
-  accessToken: string;
-  /** Refresh token is normally httpOnly cookie; this field may be empty on web. */
-  refreshToken?: string;
+export interface RegisterRequest {
+  email: string;
+  password: string;
+  countryCode?: string;
+  firstName?: string;
+  lastName?: string;
 }
 
+export interface RefreshRequest {
+  refreshToken: string;
+}
+
+/** The token pair returned by /auth/login, /auth/register, and /auth/refresh. */
+export interface AuthTokens {
+  accessToken: string;
+  refreshToken: string;
+}
+
+export interface LogoutResponse {
+  message: string;
+}
+
+/**
+ * Convenience: an authenticated session = the access token + the current user.
+ * The frontend assembles this by calling /auth/login (or /auth/refresh) then
+ * /auth/me with the returned access token.
+ */
 export interface AuthSession {
   user: AuthUser;
   accessToken: string;
+  refreshToken: string;
 }
 
 // ── Subscriptions / plans ───────────────────────────────────────────────────
