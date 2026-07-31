@@ -159,4 +159,197 @@ describe('AuthService', () => {
       ).rejects.toThrow(UnauthorizedException);
     });
   });
+
+  // ── Sprint 25: refresh token flow (mobile JSON body compatibility) ──────────
+
+  describe('refreshTokens (Sprint 25 — mobile JSON body + web/admin cookie)', () => {
+    it('should return new tokens when given a valid refresh token (mobile flow)', async () => {
+      const mockPayload = { sub: 'user-id', email: 'test@example.com', roles: [RoleName.USER] };
+      mockJwtService.verify.mockReturnValueOnce(mockPayload);
+      mockUserRepo.findOne.mockResolvedValueOnce({
+        id: 'user-id',
+        email: 'test@example.com',
+        status: UserStatus.ACTIVE,
+        userRoles: [{ role: { name: RoleName.USER } }],
+      });
+
+      const result = await service.refreshTokens('valid-refresh-token');
+
+      expect(result).toHaveProperty('accessToken');
+      expect(result).toHaveProperty('refreshToken');
+      expect(mockJwtService.verify).toHaveBeenCalledWith('valid-refresh-token', {
+        secret: undefined, // mockConfigService returns undefined for 'jwt.secret'
+      });
+    });
+
+    it('should throw UnauthorizedException for an invalid refresh token', async () => {
+      mockJwtService.verify.mockImplementationOnce(() => {
+        throw new Error('invalid token');
+      });
+
+      await expect(
+        service.refreshTokens('invalid-token'),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('should throw UnauthorizedException if user is not found', async () => {
+      const mockPayload = { sub: 'nonexistent', email: 'x@example.com', roles: [] };
+      mockJwtService.verify.mockReturnValueOnce(mockPayload);
+      mockUserRepo.findOne.mockResolvedValueOnce(null);
+
+      await expect(
+        service.refreshTokens('some-token'),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('should throw UnauthorizedException if user status is not ACTIVE', async () => {
+      const mockPayload = { sub: 'user-id', email: 'test@example.com', roles: [] };
+      mockJwtService.verify.mockReturnValueOnce(mockPayload);
+      mockUserRepo.findOne.mockResolvedValueOnce({
+        id: 'user-id',
+        status: UserStatus.SUSPENDED,
+        userRoles: [],
+      });
+
+      await expect(
+        service.refreshTokens('some-token'),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+  });
+
+  // ── Sprint 25: /auth/me frontend-safe AuthUserDto ───────────────────────────
+
+  describe('getAuthUserDto (Sprint 25 — frontend-safe /auth/me)', () => {
+    it('should return a frontend-safe DTO with roles and profile fields', async () => {
+      const mockUser = {
+        id: 'user-123',
+        email: 'trader@example.com',
+        countryCode: 'GH',
+        status: UserStatus.ACTIVE,
+        mfaEnabled: false,
+        lastLoginAt: new Date('2026-01-15T10:00:00Z'),
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        passwordHash: 'secret_hash',
+        mfaSecret: 'secret_mfa',
+        deletedAt: null,
+        profile: {
+          firstName: 'John',
+          lastName: 'Doe',
+        },
+      };
+      mockUserRepo.findOne.mockResolvedValueOnce(mockUser);
+
+      const dto = await service.getAuthUserDto('user-123', [RoleName.USER]);
+
+      // Safe fields are present
+      expect(dto.id).toBe('user-123');
+      expect(dto.email).toBe('trader@example.com');
+      expect(dto.firstName).toBe('John');
+      expect(dto.lastName).toBe('Doe');
+      expect(dto.countryCode).toBe('GH');
+      expect(dto.status).toBe('ACTIVE');
+      expect(dto.roles).toEqual([RoleName.USER]);
+      expect(dto.mfaEnabled).toBe(false);
+      expect(dto.lastLoginAt).toBe('2026-01-15T10:00:00.000Z');
+      expect(dto.createdAt).toBe('2026-01-01T00:00:00.000Z');
+
+      // Sensitive fields are NOT present on the DTO
+      expect(dto).not.toHaveProperty('passwordHash');
+      expect(dto).not.toHaveProperty('mfaSecret');
+      expect(dto).not.toHaveProperty('deletedAt');
+      expect(dto).not.toHaveProperty('userRoles');
+      expect(dto).not.toHaveProperty('profile');
+    });
+
+    it('should include ADMIN role when the user has an admin role', async () => {
+      const mockUser = {
+        id: 'admin-123',
+        email: 'admin@example.com',
+        countryCode: 'US',
+        status: UserStatus.ACTIVE,
+        mfaEnabled: true,
+        lastLoginAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        passwordHash: 'secret_hash',
+        mfaSecret: 'secret_mfa',
+        deletedAt: null,
+        profile: { firstName: 'Admin', lastName: 'User' },
+      };
+      mockUserRepo.findOne.mockResolvedValueOnce(mockUser);
+
+      const dto = await service.getAuthUserDto('admin-123', [
+        RoleName.ADMIN,
+        RoleName.SUPER_ADMIN,
+      ]);
+
+      expect(dto.roles).toContain(RoleName.ADMIN);
+      expect(dto.roles).toContain(RoleName.SUPER_ADMIN);
+      expect(dto.roles).not.toContain(RoleName.USER);
+    });
+
+    it('should NOT include passwordHash, mfaSecret, deletedAt, or profile PII', async () => {
+      const mockUser = {
+        id: 'user-456',
+        email: 'user@example.com',
+        countryCode: null,
+        status: UserStatus.PENDING_VERIFICATION,
+        mfaEnabled: false,
+        lastLoginAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        passwordHash: 'very_secret_hash',
+        mfaSecret: 'very_secret_mfa',
+        deletedAt: new Date('2026-01-02T00:00:00Z'),
+        profile: {
+          firstName: null,
+          lastName: null,
+          dateOfBirth: '1990-01-01',
+          addressLine1: '123 Secret St',
+          kycStatus: 'PENDING',
+          riskDisclosureAccepted: false,
+        },
+      };
+      mockUserRepo.findOne.mockResolvedValueOnce(mockUser);
+
+      const dto = await service.getAuthUserDto('user-456', [RoleName.USER]);
+
+      // The DTO must not carry any of these
+      const serialized = JSON.stringify(dto);
+      expect(serialized).not.toContain('passwordHash');
+      expect(serialized).not.toContain('mfaSecret');
+      expect(serialized).not.toContain('deletedAt');
+      expect(serialized).not.toContain('dateOfBirth');
+      expect(serialized).not.toContain('addressLine1');
+      expect(serialized).not.toContain('kycStatus');
+      expect(serialized).not.toContain('riskDisclosureAccepted');
+    });
+
+    it('should throw UnauthorizedException if user is not found', async () => {
+      mockUserRepo.findOne.mockResolvedValueOnce(null);
+      await expect(
+        service.getAuthUserDto('nonexistent-id', [RoleName.USER]),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('should handle null profile gracefully (firstName/lastName = null)', async () => {
+      const mockUser = {
+        id: 'user-789',
+        email: 'noprofile@example.com',
+        countryCode: 'NG',
+        status: UserStatus.ACTIVE,
+        mfaEnabled: false,
+        lastLoginAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        passwordHash: 'hash',
+        mfaSecret: null,
+        deletedAt: null,
+        profile: null,
+      };
+      mockUserRepo.findOne.mockResolvedValueOnce(mockUser);
+
+      const dto = await service.getAuthUserDto('user-789', [RoleName.USER]);
+
+      expect(dto.firstName).toBeNull();
+      expect(dto.lastName).toBeNull();
+    });
+  });
 });

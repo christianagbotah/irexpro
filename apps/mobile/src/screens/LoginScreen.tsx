@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { api, setAccessToken } from '@/lib/api';
+import { saveTokens } from '@/lib/secure-storage';
 import { useAuth } from '@/context/auth-context';
 
 export default function LoginScreen() {
@@ -24,6 +25,8 @@ export default function LoginScreen() {
     setError(null);
     try {
       const tokens = await api.login({ email, password });
+      // Sprint 25: persist tokens to SecureStore (NOT AsyncStorage)
+      await saveTokens(tokens);
       setAccessToken(tokens.accessToken);
       const me = await api.me();
       setSession(me, tokens.accessToken);

@@ -52,8 +52,13 @@ export interface ApiClient {
   register(body: RegisterRequest): Promise<AuthTokens>;
   /** POST /auth/login → { accessToken, refreshToken } */
   login(body: LoginRequest): Promise<AuthTokens>;
-  /** POST /auth/refresh (body { refreshToken }) → { accessToken, refreshToken } */
-  refresh(refreshToken: string): Promise<AuthTokens>;
+  /**
+   * POST /auth/refresh → { accessToken, refreshToken }
+   * Sprint 25 hybrid: if refreshToken is provided (mobile), it goes in the JSON
+   * body. If omitted (web/admin), the request relies on the httpOnly refresh
+   * cookie sent automatically via credentials:'include'.
+   */
+  refresh(refreshToken?: string): Promise<AuthTokens>;
   /** POST /auth/logout (requires Authorization: Bearer) → { message } */
   logout(): Promise<LogoutResponse>;
   /** GET /auth/me (requires Authorization: Bearer) → current user */
@@ -172,10 +177,13 @@ export function createApiClient(options: CreateApiClientOptions): ApiClient {
         body: JSON.stringify(body),
       }),
 
-    refresh: (refreshToken: string) =>
+    refresh: (refreshToken?: string) =>
       request<AuthTokens>('/auth/refresh', {
         method: 'POST',
-        body: JSON.stringify({ refreshToken } satisfies RefreshRequest),
+        // Sprint 25: if refreshToken is provided (mobile), send it in the body.
+        // If omitted (web/admin), send empty body — the httpOnly cookie is sent
+        // automatically via credentials:'include' set in the request() function.
+        body: refreshToken ? JSON.stringify({ refreshToken } satisfies RefreshRequest) : undefined,
       }),
 
     logout: () =>

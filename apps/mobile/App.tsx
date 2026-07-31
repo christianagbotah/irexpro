@@ -36,8 +36,18 @@ export default function App() {
 }
 
 function AppShell() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const [tab, setTab] = useState<Tab>('dashboard');
+
+  if (loading && !user) {
+    return (
+      <View style={styles.shell}>
+        <View style={styles.loading}>
+          <Text style={styles.loadingText}>Restoring session…</Text>
+        </View>
+      </View>
+    );
+  }
 
   if (!user) {
     return <LoginScreen />;
@@ -70,6 +80,8 @@ function TabButton({ label, active, onPress }: { label: string; active: boolean;
 const styles = StyleSheet.create({
   shell: { flex: 1, backgroundColor: '#0b1020' },
   content: { flex: 1 },
+  loading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { color: '#9aa7c7', fontSize: 16 },
   tabBar: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#243049', paddingBottom: 16 },
   tab: { flex: 1, paddingVertical: 14, alignItems: 'center' },
   tabActive: { borderTopWidth: 2, borderTopColor: '#14b8a6' },

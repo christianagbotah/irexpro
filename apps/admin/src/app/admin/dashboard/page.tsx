@@ -4,7 +4,17 @@ import Link from 'next/link';
 import { useAuth } from '@/context/auth-context';
 
 export default function AdminDashboardPage() {
-  const { user, loading, hasAdminRole } = useAuth();
+  const { user, loading, restoring, hasAdminRole } = useAuth();
+
+  // Sprint 25: show restoring state during session restore
+  if (restoring) {
+    return (
+      <>
+        <h1>Admin dashboard</h1>
+        <p className="muted">Restoring session…</p>
+      </>
+    );
+  }
 
   if (loading && !user) {
     return (
@@ -28,6 +38,27 @@ export default function AdminDashboardPage() {
             <Link href="/admin/login" className="btn">
               Go to admin login
             </Link>
+          </p>
+        </div>
+      </>
+    );
+  }
+
+  // Sprint 25: access denied if signed in but lacks admin role
+  if (!hasAdminRole) {
+    return (
+      <>
+        <h1>Access denied</h1>
+        <div className="card">
+          <h2>Insufficient permissions</h2>
+          <p className="error">
+            Your account does not have an admin role. You are signed in as{' '}
+            <code>{user.email}</code> with roles: {user.roles?.join(', ') || 'none'}.
+          </p>
+          <p className="muted">
+            The backend RolesGuard will also reject your requests to admin
+            endpoints with 403. Contact a super-admin if you believe this is an
+            error.
           </p>
         </div>
       </>
