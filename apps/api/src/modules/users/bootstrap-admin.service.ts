@@ -9,6 +9,38 @@ import { Role, RoleName } from './entities/role.entity';
 import { normalizePhone } from '../auth/utils/phone.util';
 
 /**
+ * Standalone input validation for the admin bootstrap CLI.
+ *
+ * Hotfix: extracted from BootstrapAdminService.validateInput() so the CLI
+ * script (apps/api/scripts/bootstrap-admin.ts) can validate env-provided input
+ * BEFORE booting the NestJS application context — fail fast on bad config.
+ *
+ * This does NOT use a NestJS ValidationPipe. INestApplicationContext (returned
+ * by NestFactory.createApplicationContext) does not support useGlobalPipes(),
+ * and validation belongs in explicit functions/services, not the HTTP pipeline.
+ *
+ * @throws BadRequestException if the input is invalid
+ */
+export function validateBootstrapInput(input: BootstrapAdminInput): void {
+  if (!input.email && !input.phone) {
+    throw new BadRequestException(
+      'Bootstrap requires at least one of BOOTSTRAP_ADMIN_EMAIL or BOOTSTRAP_ADMIN_PHONE',
+    );
+  }
+  if (!input.password || input.password.length < 12) {
+    throw new BadRequestException(
+      'Bootstrap requires BOOTSTRAP_ADMIN_PASSWORD of at least 12 characters',
+    );
+  }
+  // Strong password check: at least one letter and one number
+  if (!/[a-zA-Z]/.test(input.password) || !/[0-9]/.test(input.password)) {
+    throw new BadRequestException(
+      'BOOTSTRAP_ADMIN_PASSWORD must contain at least one letter and one number',
+    );
+  }
+}
+
+/**
  * BootstrapAdminService — secure one-time first-admin creation.
  *
  * Hotfix: there is no default admin account and no public admin registration.
@@ -56,7 +88,10 @@ export class BootstrapAdminService {
    * @returns a safe summary object (no password, no hash)
    */
   async bootstrapSuperAdmin(input: BootstrapAdminInput): Promise<BootstrapAdminResult> {
-    this.validateInput(input);
+    // Delegate to the standalone validator. This keeps validation in one place
+    // (used by both the CLI script and this service) and does NOT rely on a
+    // NestJS ValidationPipe (which is unavailable in application contexts).
+    validateBootstrapInput(input);
 
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
@@ -109,25 +144,6 @@ export class BootstrapAdminService {
       throw err;
     } finally {
       await queryRunner.release();
-    }
-  }
-
-  private validateInput(input: BootstrapAdminInput): void {
-    if (!input.email && !input.phone) {
-      throw new BadRequestException(
-        'Bootstrap requires at least one of BOOTSTRAP_ADMIN_EMAIL or BOOTSTRAP_ADMIN_PHONE',
-      );
-    }
-    if (!input.password || input.password.length < 12) {
-      throw new BadRequestException(
-        'Bootstrap requires BOOTSTRAP_ADMIN_PASSWORD of at least 12 characters',
-      );
-    }
-    // Strong password check: at least one letter and one number
-    if (!/[a-zA-Z]/.test(input.password) || !/[0-9]/.test(input.password)) {
-      throw new BadRequestException(
-        'BOOTSTRAP_ADMIN_PASSWORD must contain at least one letter and one number',
-      );
     }
   }
 
