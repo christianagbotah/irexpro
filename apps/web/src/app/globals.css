@@ -81,7 +81,8 @@ code { font-family: var(--font-mono); font-size: 0.9em; }
 /* ── Auth Layout (split-screen login/register) ──────────────────────────────── */
 .auth-layout {
   display: flex;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .auth-layout__brand {
@@ -93,6 +94,8 @@ code { font-family: var(--font-mono); font-size: 0.9em; }
   background: linear-gradient(135deg, #0a0e1a 0%, #0d2520 50%, #0a1a18 100%);
   position: relative;
   overflow: hidden;
+  height: 100vh;
+  flex-shrink: 0;
 }
 
 .auth-layout__brand::before {
@@ -180,6 +183,8 @@ code { font-family: var(--font-mono); font-size: 0.9em; }
   align-items: center;
   justify-content: center;
   padding: var(--space-8);
+  height: 100vh;
+  overflow-y: auto;
 }
 
 .auth-layout__form-container {
@@ -188,11 +193,12 @@ code { font-family: var(--font-mono); font-size: 0.9em; }
 }
 
 @media (max-width: 900px) {
-  .auth-layout { flex-direction: column; }
-  .auth-layout__brand { min-height: 180px; padding: var(--space-6); }
+  .auth-layout { flex-direction: column; height: auto; min-height: 100vh; overflow: visible; }
+  .auth-layout__brand { min-height: 140px; height: auto; padding: var(--space-6); flex-shrink: 0; }
   .auth-layout__features { display: none; }
-  .auth-layout__headline { font-size: 1.3rem; }
-  .auth-layout__form-side { padding: var(--space-6); }
+  .auth-layout__headline { font-size: 1.2rem; }
+  .auth-layout__subheadline { font-size: 0.9rem; }
+  .auth-layout__form-side { height: auto; overflow: visible; padding: var(--space-6); }
 }
 
 /* ── Dashboard Shell (header + sidebar) ────────────────────────────────────── */

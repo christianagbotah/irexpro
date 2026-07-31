@@ -32,6 +32,7 @@ describe('AuthCookieService (Sprint 25 — hybrid httpOnly cookie)', () => {
   describe('setRefreshCookie', () => {
     it('should set an httpOnly cookie with the refresh token', () => {
       const res = { cookie: jest.fn() } as unknown as Response;
+      // Sprint 27: without rememberMe, cookie is a session cookie (no maxAge)
       service.setRefreshCookie(res, 'test-refresh-token');
 
       expect(res.cookie).toHaveBeenCalledWith(
@@ -40,9 +41,31 @@ describe('AuthCookieService (Sprint 25 — hybrid httpOnly cookie)', () => {
         expect.objectContaining({
           httpOnly: true,
           path: '/api/v1/auth',
+        }),
+      );
+    });
+
+    it('should set maxAge=7d when rememberMe is true', () => {
+      const res = { cookie: jest.fn() } as unknown as Response;
+      service.setRefreshCookie(res, 'token', true);
+
+      expect(res.cookie).toHaveBeenCalledWith(
+        AuthCookieService.COOKIE_NAME,
+        'token',
+        expect.objectContaining({
+          httpOnly: true,
           maxAge: 7 * 24 * 60 * 60 * 1000,
         }),
       );
+    });
+
+    it('should NOT set maxAge when rememberMe is false (session cookie)', () => {
+      const res = { cookie: jest.fn() } as unknown as Response;
+      service.setRefreshCookie(res, 'token', false);
+
+      const callArgs = (res.cookie as jest.Mock).mock.calls[0];
+      const options = callArgs[2];
+      expect(options.maxAge).toBeUndefined();
     });
 
     it('should set secure=true and sameSite=none in production', () => {

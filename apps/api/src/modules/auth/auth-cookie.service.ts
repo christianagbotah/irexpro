@@ -33,20 +33,26 @@ export class AuthCookieService {
     return this.configService.get<string>('app.env', 'development') === 'production';
   }
 
-  private getCookieOptions() {
+  private getCookieOptions(rememberMe?: boolean) {
     const isProd = this.isProduction();
+    // Sprint 27: rememberMe controls cookie maxAge.
+    //   - rememberMe = false (default): session cookie (no maxAge → cleared on browser close)
+    //   - rememberMe = true: 7-day persistent cookie (matches JWT_REFRESH_EXPIRY default)
+    const maxAge = rememberMe
+      ? 7 * 24 * 60 * 60 * 1000 // 7 days
+      : undefined; // session cookie — cleared when browser closes
     return {
       httpOnly: true,
       secure: isProd,
       sameSite: isProd ? ('none' as const) : ('lax' as const),
       path: '/api/v1/auth',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days — matches JWT_REFRESH_EXPIRY default
+      ...(maxAge !== undefined && { maxAge }),
     };
   }
 
   /** Set the httpOnly refresh cookie on the response. */
-  setRefreshCookie(res: Response, refreshToken: string): void {
-    res.cookie(AuthCookieService.COOKIE_NAME, refreshToken, this.getCookieOptions());
+  setRefreshCookie(res: Response, refreshToken: string, rememberMe?: boolean): void {
+    res.cookie(AuthCookieService.COOKIE_NAME, refreshToken, this.getCookieOptions(rememberMe));
   }
 
   /** Clear the httpOnly refresh cookie on the response. */

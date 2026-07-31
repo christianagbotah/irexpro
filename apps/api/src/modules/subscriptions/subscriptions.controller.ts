@@ -77,7 +77,7 @@ export class SubscriptionsController {
   ) {
     return this.subscriptionsService.initiateCheckout({
       userId: user.id,
-      email: user.email,
+      email: user.email ?? undefined,
       planId: dto.planId,
       currency: dto.currency,
       countryCode: dto.countryCode ?? 'US',

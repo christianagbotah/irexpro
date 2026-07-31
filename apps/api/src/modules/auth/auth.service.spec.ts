@@ -3,7 +3,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
-import { ConflictException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, UnauthorizedException } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { User, UserStatus } from '../users/entities/user.entity';
 import { UserProfile } from '../users/entities/user-profile.entity';
@@ -120,13 +120,55 @@ describe('AuthService', () => {
       expect(result).toHaveProperty('refreshToken');
       expect(mockAuditService.log).toHaveBeenCalledTimes(1);
     });
+
+    // ── Sprint 27: phone registration ──────────────────────────────────────────
+
+    it('should throw BadRequestException if neither email nor phone is provided', async () => {
+      await expect(
+        service.register({ password: 'SecureP@ssw0rd!' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should register a user with phone only (no email)', async () => {
+      mockUserRepo.findOne.mockResolvedValueOnce(null); // no duplicate phone
+      mockRoleRepo.findOne.mockResolvedValueOnce({ id: 'role-id', name: RoleName.USER });
+      mockQueryRunner.manager.create.mockReturnValue({ id: 'phone-user-id', phone: '+233241234567' });
+      mockQueryRunner.manager.save.mockResolvedValue({ id: 'phone-user-id' });
+
+      const result = await service.register({ phone: '+233241234567', password: 'SecureP@ssw0rd!' });
+      expect(result).toHaveProperty('accessToken');
+      expect(result).toHaveProperty('refreshToken');
+    });
+
+    it('should throw ConflictException if phone already exists', async () => {
+      mockUserRepo.findOne.mockResolvedValueOnce({ id: 'existing-phone-user', phone: '+233241234567' });
+      await expect(
+        service.register({ phone: '+233241234567', password: 'SecureP@ssw0rd!' }),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('should register a user with both email and phone', async () => {
+      mockUserRepo.findOne
+        .mockResolvedValueOnce(null) // no duplicate email
+        .mockResolvedValueOnce(null); // no duplicate phone
+      mockRoleRepo.findOne.mockResolvedValueOnce({ id: 'role-id', name: RoleName.USER });
+      mockQueryRunner.manager.create.mockReturnValue({ id: 'both-user-id' });
+      mockQueryRunner.manager.save.mockResolvedValue({ id: 'both-user-id' });
+
+      const result = await service.register({
+        email: 'both@example.com',
+        phone: '+233241234567',
+        password: 'SecureP@ssw0rd!',
+      });
+      expect(result).toHaveProperty('accessToken');
+    });
   });
 
   describe('login', () => {
     it('should throw UnauthorizedException for unknown email', async () => {
       mockUserRepo.findOne.mockResolvedValueOnce(null);
       await expect(
-        service.login({ email: 'unknown@example.com', password: 'Pass@1234!' }),
+        service.login({ identifier: 'unknown@example.com', password: 'Pass@1234!' }),
       ).rejects.toThrow(UnauthorizedException);
     });
 
@@ -142,7 +184,7 @@ describe('AuthService', () => {
         userRoles: [],
       });
       await expect(
-        service.login({ email: 'test@example.com', password: 'WrongP@ss1!' }),
+        service.login({ identifier: 'test@example.com', password: 'WrongP@ss1!' }),
       ).rejects.toThrow(UnauthorizedException);
     }, 10_000);
 
@@ -155,7 +197,7 @@ describe('AuthService', () => {
         userRoles: [],
       });
       await expect(
-        service.login({ email: 'test@example.com', password: 'Pass@1234!' }),
+        service.login({ identifier: 'test@example.com', password: 'Pass@1234!' }),
       ).rejects.toThrow(UnauthorizedException);
     });
   });

@@ -114,7 +114,7 @@ export function AuthLayout({ title, subtitle, children }: AuthLayoutProps) {
           <ul className="auth-layout__features">
             <li>AI signal generation with risk-gated execution</li>
             <li>High-water-mark performance fee billing</li>
-            <li>Stripe & Paystack subscription checkout</li>
+            <li>Secure subscription management</li>
             <li>Encrypted broker credentials (AES-256-GCM)</li>
           </ul>
         </div>
@@ -132,7 +132,7 @@ export function AuthLayout({ title, subtitle, children }: AuthLayoutProps) {
 
 // ── DashboardShell ────────────────────────────────────────────────────────────
 interface DashboardShellProps {
-  user: { email: string; firstName?: string | null; lastName?: string | null } | null;
+  user: { email: string | null; firstName?: string | null; lastName?: string | null } | null;
   onLogout: () => void;
   activeRoute?: string;
   children: ReactNode;

@@ -220,7 +220,7 @@ export class PerformanceFeePaymentService {
       try {
         sessionResult = await provider.createCheckoutSession({
           userId: invoice.userId,
-          email: owner.email,
+          email: owner.email ?? undefined,
           planId: `perf-fee:${assessment.id}`,
           currency,
           amountMinor: this.toAmountMinor(invoice.totalAmount),

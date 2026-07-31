@@ -50,7 +50,7 @@ export type UserStatus =
  */
 export interface AuthUser {
   id: string;
-  email: string;
+  email: string | null;
   firstName: string | null;
   lastName: string | null;
   countryCode: string | null;
@@ -63,16 +63,19 @@ export interface AuthUser {
 }
 
 export interface LoginRequest {
-  email: string;
+  identifier: string;
   password: string;
+  rememberMe?: boolean;
 }
 
 export interface RegisterRequest {
-  email: string;
+  email?: string;
+  phone?: string;
   password: string;
   countryCode?: string;
   firstName?: string;
   lastName?: string;
+  rememberMe?: boolean;
 }
 
 export interface RefreshRequest {

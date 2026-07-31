@@ -23,8 +23,8 @@ export class AuthUserDto {
   @ApiProperty({ example: 'a1b2c3d4-...' })
   id: string;
 
-  @ApiProperty({ example: 'user@example.com' })
-  email: string;
+  @ApiPropertyOptional({ example: 'user@example.com', description: 'Null if registered with phone only' })
+  email: string | null;
 
   @ApiPropertyOptional({ example: 'John' })
   firstName: string | null;
