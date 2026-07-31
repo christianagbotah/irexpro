@@ -84,7 +84,14 @@ export class AuthService {
         phone: normalizedPhone,
         passwordHash,
         countryCode: dto.countryCode ?? null,
-        status: UserStatus.PENDING_VERIFICATION,
+        // Hotfix: create users as ACTIVE because no email/phone verification
+        // flow is implemented yet. PENDING_VERIFICATION was a permanent
+        // dead-end (no code transitions users to ACTIVE), which caused
+        // /auth/refresh to reject every newly registered user with 401.
+        // When a verification flow is added in a future sprint, revert this
+        // to PENDING_VERIFICATION and have the verification endpoint set
+        // ACTIVE upon successful verification.
+        status: UserStatus.ACTIVE,
       });
       await queryRunner.manager.save(user);
 
@@ -185,25 +192,35 @@ export class AuthService {
   }
 
   async refreshTokens(refreshToken: string): Promise<{ accessToken: string; refreshToken: string }> {
+    let payload: JwtPayload;
     try {
-      const payload = this.jwtService.verify<JwtPayload>(refreshToken, {
-        secret: this.configService.get<string>('jwt.secret'),
-      });
-
-      const user = await this.userRepo.findOne({
-        where: { id: payload.sub },
-        relations: ['userRoles', 'userRoles.role'],
-      });
-
-      if (!user || user.status !== UserStatus.ACTIVE) {
-        throw new UnauthorizedException('Invalid refresh token');
-      }
-
-      const roles = user.userRoles?.map((ur) => ur.role.name) ?? [RoleName.USER];
-      return this.generateTokens(user, roles);
+      // Hotfix: do NOT pass { secret } explicitly. The JwtModule is already
+      // configured with the secret in AuthModule.registerAsync, and
+      // jwtService.verify(token) uses that secret automatically. Passing an
+      // explicit secret is redundant and can mask config-loading issues.
+      payload = this.jwtService.verify<JwtPayload>(refreshToken);
     } catch {
+      // Token is malformed, tampered, or expired — reject cleanly with 401.
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
+
+    const user = await this.userRepo.findOne({
+      where: { id: payload.sub },
+      relations: ['userRoles', 'userRoles.role'],
+    });
+
+    // Hotfix (ROOT CAUSE): block only SUSPENDED/CLOSED users — NOT
+    // PENDING_VERIFICATION. This matches login() and JwtStrategy.validate(),
+    // which both allow PENDING_VERIFICATION. The previous check
+    // (`user.status !== ACTIVE`) rejected every newly registered user because
+    // register() created them as PENDING_VERIFICATION and no activation flow
+    // existed. If you can login, you should be able to refresh.
+    if (!user || user.status === UserStatus.SUSPENDED || user.status === UserStatus.CLOSED) {
+      throw new UnauthorizedException('Invalid or expired refresh token');
+    }
+
+    const roles = user.userRoles?.map((ur) => ur.role.name) ?? [RoleName.USER];
+    return this.generateTokens(user, roles);
   }
 
   private generateTokens(user: User, roles: string[]): { accessToken: string; refreshToken: string } {
