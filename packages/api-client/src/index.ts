@@ -181,9 +181,12 @@ export function createApiClient(options: CreateApiClientOptions): ApiClient {
       request<AuthTokens>('/auth/refresh', {
         method: 'POST',
         // Sprint 25: if refreshToken is provided (mobile), send it in the body.
-        // If omitted (web/admin), send empty body — the httpOnly cookie is sent
-        // automatically via credentials:'include' set in the request() function.
-        body: refreshToken ? JSON.stringify({ refreshToken } satisfies RefreshRequest) : undefined,
+        // If omitted (web/admin), send empty JSON body {} — the httpOnly cookie
+        // is sent automatically via credentials:'include'. Sending '{}' instead
+        // of undefined ensures NestJS ValidationPipe can parse the body.
+        body: refreshToken
+          ? JSON.stringify({ refreshToken } satisfies RefreshRequest)
+          : JSON.stringify({}),
       }),
 
     logout: () =>

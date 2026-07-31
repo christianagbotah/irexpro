@@ -219,9 +219,40 @@ describe('AuthService', () => {
 
       expect(result).toHaveProperty('accessToken');
       expect(result).toHaveProperty('refreshToken');
-      expect(mockJwtService.verify).toHaveBeenCalledWith('valid-refresh-token', {
-        secret: undefined, // mockConfigService returns undefined for 'jwt.secret'
+      // Hotfix: verify is called WITHOUT explicit { secret: ... } — the JwtModule
+      // already has the secret configured. Passing { secret: undefined } was the
+      // root cause of the staging refresh 401.
+      expect(mockJwtService.verify).toHaveBeenCalledWith('valid-refresh-token');
+    });
+
+    it('should work when user email is null (phone-only user)', async () => {
+      const mockPayload = { sub: 'phone-user-id', email: null, roles: [RoleName.USER] };
+      mockJwtService.verify.mockReturnValueOnce(mockPayload);
+      mockUserRepo.findOne.mockResolvedValueOnce({
+        id: 'phone-user-id',
+        email: null,
+        phone: '+233241234567',
+        status: UserStatus.ACTIVE,
+        userRoles: [{ role: { name: RoleName.USER } }],
       });
+
+      const result = await service.refreshTokens('valid-refresh-token');
+      expect(result).toHaveProperty('accessToken');
+      expect(result).toHaveProperty('refreshToken');
+    });
+
+    it('should work when roles array is empty', async () => {
+      const mockPayload = { sub: 'user-id', email: 'test@example.com', roles: [] };
+      mockJwtService.verify.mockReturnValueOnce(mockPayload);
+      mockUserRepo.findOne.mockResolvedValueOnce({
+        id: 'user-id',
+        email: 'test@example.com',
+        status: UserStatus.ACTIVE,
+        userRoles: [],
+      });
+
+      const result = await service.refreshTokens('valid-refresh-token');
+      expect(result).toHaveProperty('accessToken');
     });
 
     it('should throw UnauthorizedException for an invalid refresh token', async () => {

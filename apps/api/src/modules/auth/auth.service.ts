@@ -186,9 +186,12 @@ export class AuthService {
 
   async refreshTokens(refreshToken: string): Promise<{ accessToken: string; refreshToken: string }> {
     try {
-      const payload = this.jwtService.verify<JwtPayload>(refreshToken, {
-        secret: this.configService.get<string>('jwt.secret'),
-      });
+      // Do NOT pass { secret: ... } to verify — the JwtModule is already
+      // configured with the secret in AuthModule. Passing it explicitly
+      // can override it with undefined if ConfigService returns undefined
+      // for the nested key path, causing verification to always fail.
+      // This was the root cause of the staging refresh 401.
+      const payload = this.jwtService.verify<JwtPayload>(refreshToken);
 
       const user = await this.userRepo.findOne({
         where: { id: payload.sub },
