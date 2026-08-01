@@ -1629,3 +1629,88 @@ If a normal `USER` (no `ADMIN`/`SUPER_ADMIN` role) signs in at `/admin/login`:
 | Not signed in | No | "Not signed in" + login link |
 | Signed in, no admin role | No | "Access denied" + sign out |
 | Signed in, ADMIN or SUPER_ADMIN | Yes | Full admin dashboard |
+
+
+\## 20. Password reset delivery configuration (Sprint 28)
+
+### 20.1 Password reset endpoints
+
+The backend now has secure password reset endpoints:
+- `POST /api/v1/auth/forgot-password` — accepts `{ identifier }` (email or phone). Always returns a generic message.
+- `POST /api/v1/auth/reset-password` — accepts `{ token, password }` (email) or `{ identifier, code, password }` (phone).
+
+These endpoints are functional. However, DELIVERY of the reset token/code requires email and/or SMS provider configuration. Without delivery, the token hash is stored in the DB but the user never receives the raw token.
+
+### 20.2 Email delivery (reset link)
+
+To enable email reset link delivery, add these env vars to the API `.env` on the VPS:
+
+```bash
+WEB_BASE_URL=https://irexpro.lightworldtech.com
+EMAIL_SMTP_URL=smtps://user:pass@smtp.example.com:465
+EMAIL_FROM_ADDRESS=no-reply@irexpro.lightworldtech.com
+```
+
+Then wire a real email provider (e.g. nodemailer) in
+`apps/api/src/modules/auth/password-reset-delivery.service.ts` (`deliverEmail` method).
+
+The reset link sent to users will be:
+`https://irexpro.lightworldtech.com/reset-password?token=<raw-token>`
+
+### 20.3 Phone/SMS delivery (reset code)
+
+Phone code delivery requires a live SMS provider. All SMS providers
+(Twilio/Hubtel/Arkesel) are currently placeholders. To enable SMS delivery:
+
+1. Implement a live SMS provider in the notifications module (e.g.
+   `TwilioSmsProvider.sendSms()` — currently throws `NotImplementedException`).
+2. Wire it in `PasswordResetDeliveryService.deliverPhone()` via
+   `SmsProviderRegistry.selectProvider()`.
+
+Until SMS is live, phone-only users cannot recover via SMS. They should contact
+support or an admin can use a future admin password-reset endpoint.
+
+### 20.4 Security model
+
+- Raw token/code is NEVER stored — only SHA-256 hash.
+- Raw token/code is NEVER logged.
+- Token expiry: 15 min (email), 10 min (phone).
+- Single-use: a token cannot be used twice.
+- Prior unused tokens are invalidated when a new one is issued.
+- No account enumeration — the forgot-password endpoint always returns the same
+  generic message.
+
+### 20.5 Session invalidation limitation
+
+Refresh tokens are currently stateless JWTs. After a password reset, existing
+refresh tokens are NOT automatically revoked. The password change IS effective
+immediately for new login attempts. A Redis-based token blacklist is a future
+enhancement.
+
+### 20.6 Testing password reset on staging
+
+```bash
+# 1. Request a reset (always returns generic message)
+curl -s -X POST https://irexpro.lightworldtech.com/api/v1/auth/forgot-password \
+  -H "Content-Type: application/json" \
+  -d '{"identifier":"testuser1@example.com"}'
+# Expected: {"message":"If an account exists for this identifier, password reset instructions have been sent."}
+
+# 2. If EMAIL_SMTP_URL is NOT set, the token is not delivered.
+#    Check the API logs for: "Password reset email NOT sent: no email provider configured"
+#    The token hash IS stored in identity.password_reset_tokens.
+
+# 3. If EMAIL_SMTP_URL IS set, the user receives an email with a reset link.
+
+# 4. Reset the password using the token from the email link
+curl -s -X POST https://irexpro.lightworldtech.com/api/v1/auth/reset-password \
+  -H "Content-Type: application/json" \
+  -d '{"token":"<raw-token-from-email>","password":"NewStrongPassword123!"}'
+# Expected: {"message":"Password has been reset successfully."}
+
+# 5. Login with the new password
+curl -s -X POST https://irexpro.lightworldtech.com/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"identifier":"testuser1@example.com","password":"NewStrongPassword123!"}'
+# Expected: 200 + { accessToken, refreshToken }
+```

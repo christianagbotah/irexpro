@@ -4,11 +4,84 @@
 
 \## Current Sprint Checkpoint
 
-Current sprint: Sprint 27 — Auth UI Refinement + Phone Registration + Remember Me (IN PROGRESS).
+Current sprint: Sprint 28 — Secure Password Reset Backend Flow (IN PROGRESS).
 
-Last completed sprint: Sprint 26 — Modern UI/UX Design System + Forgot Password Flow (PASS, merged to `main`, tagged `sprint-26-complete`).
+Last completed sprint: Sprint 27 — Auth UI Refinement + Phone Registration + Remember Me (PASS, merged to `main`).
 
-Previous: Sprint 25 — Authentication Security Hardening + Roles Session Contract (PASS, merged to `main`, tagged `sprint-25-complete`).
+Previous: Sprint 26 — Modern UI/UX Design System + Forgot Password Flow (PASS, merged to `main`, tagged `sprint-26-complete`).
+
+
+\## Sprint 28 — Secure Password Reset Backend Flow (in progress)
+
+Sprint 28 implements secure forgot-password and reset-password functionality, then wires the existing placeholder frontend pages to real backend endpoints.
+
+### Backend changes
+
+**New entity + migration:**
+- `apps/api/src/modules/auth/entities/password-reset-token.entity.ts` — `PasswordResetToken` entity (schema: `identity.password_reset_tokens`). Fields: `id`, `userId`, `tokenHash`, `channel` (EMAIL/PHONE), `destinationHash` (nullable), `expiresAt`, `usedAt`, `requestedAt`, `requestedIp`, `userAgent`, `attemptCount`, `createdAt`, `updatedAt`. Indexes on `userId`, `tokenHash`, `expiresAt`.
+- `apps/api/src/database/migrations/1751900000000-CreatePasswordResetTokens.ts` — non-destructive migration (CREATE TABLE IF NOT EXISTS + CREATE INDEX IF NOT EXISTS). Uses `gen_random_uuid()` from pgcrypto.
+
+**New services:**
+- `apps/api/src/modules/auth/password-reset.service.ts` — `PasswordResetService` with `requestReset()`, `resetWithToken()`, `resetWithCode()`. Generates high-entropy tokens (32 bytes hex for email, 6-digit code for phone), hashes with SHA-256 (only hash stored), enforces 15-min email / 10-min phone expiry, single-use (`usedAt`), invalidates prior unused tokens on new request, max 5 failed phone code attempts, hashes new password with argon2, audits request + completion (no raw token/code in audit metadata).
+- `apps/api/src/modules/auth/password-reset-delivery.service.ts` — `PasswordResetDeliveryService` with clean provider abstraction. Email flow: builds reset link `${WEB_BASE_URL}/reset-password?token=...`. Phone flow: delegates to SMS provider registry. Safe "not configured" behavior: if no email/SMS provider is configured, logs a safe operational warning (no raw token) and returns `delivered: false`.
+
+**New DTOs:**
+- `forgot-password.dto.ts` — `identifier` (email or phone).
+- `reset-password.dto.ts` — supports email token flow `{ token, password }` and phone code flow `{ identifier, code, password }`. Password validation: min 12 chars, must contain letters + numbers.
+
+**New endpoints:**
+- `POST /auth/forgot-password` — accepts `{ identifier }`, always returns generic message. Does NOT reveal account existence. Audits `USER_PASSWORD_RESET_REQUESTED`.
+- `POST /auth/reset-password` — accepts `{ token, password }` (email) or `{ identifier, code, password }` (phone). Returns success message. Returns 401 for invalid/expired/used token. Returns 400 for weak password. Audits `USER_PASSWORD_RESET_COMPLETED`.
+
+**Config additions:**
+- `app.webBaseUrl` (env: `WEB_BASE_URL`) — base URL for web app reset links.
+- `email.smtpUrl` (env: `EMAIL_SMTP_URL`) — SMTP URL for email provider (optional).
+- `email.fromAddress` (env: `EMAIL_FROM_ADDRESS`) — from address for reset emails.
+
+**Security controls:**
+- Raw token/code is NEVER stored — only SHA-256 hash.
+- Raw token/code is NEVER logged — only safe metadata in audit logs.
+- Raw token/code is NEVER returned in API responses — delivered only via email link or SMS.
+- Token expiry enforced (15 min email, 10 min phone).
+- Single-use enforced (`usedAt` set on successful reset; reuse rejected).
+- Prior unused tokens invalidated when a new one is issued.
+- Phone code: max 5 failed attempts before invalidation.
+- No account enumeration — forgot-password always returns the same generic message.
+- Password hashed with argon2 (same as register/login).
+
+**Session invalidation limitation:**
+Refresh tokens are currently stateless JWTs (no server-side session store). After a password reset, existing refresh tokens are NOT automatically revoked. This is a known limitation. A Redis-based token blacklist is a future enhancement. The password change IS effective immediately for new login attempts.
+
+### Frontend changes
+
+**packages/types:** Added `ForgotPasswordRequest`, `ForgotPasswordResponse`, `ResetPasswordRequest`, `ResetPasswordResponse` types.
+
+**packages/api-client:** Added `forgotPassword(body)` and `resetPassword(body)` methods.
+
+**Web (apps/web):**
+- `forgot-password/page.tsx` — wired to real backend. Accepts email or phone. Shows generic success message always.
+- `reset-password/page.tsx` — wired to real backend. Reads `?token=...` from URL (email flow). Supports phone code flow toggle. Validates password match + strength. Links back to login after success.
+
+**Admin (apps/admin):**
+- `(auth)/forgot-password/page.tsx` — wired to real backend (same endpoint as web).
+- `(auth)/reset-password/page.tsx` — wired to real backend (same endpoint as web). Links back to `/admin/login`.
+- Admin reset does NOT bypass security — same endpoints, same validation.
+
+**Mobile (apps/mobile):**
+- `ForgotPasswordScreen.tsx` — wired to real backend via shared API client. Accepts email or phone. Shows generic success message. Deep link reset (opening reset link in-app) is a next step.
+
+### Email delivery decision
+Email reset link flow is implemented. The reset link is `${WEB_BASE_URL}/reset-password?token=<raw-token>`. However, NO email provider is wired yet (nodemailer/SendGrid/etc. not integrated). When `EMAIL_SMTP_URL` is not set, the delivery service logs a safe operational warning and returns `delivered: false`. The API still returns the generic success message. To enable email delivery, set `EMAIL_SMTP_URL` and `WEB_BASE_URL` in `.env` and wire a real email provider in `PasswordResetDeliveryService.deliverEmail()`.
+
+### Phone/SMS recovery decision
+Phone code flow is implemented (6-digit code, 10-min expiry, max 5 attempts). However, all SMS providers (Twilio/Hubtel/Arkesel) are currently placeholders that throw `NotImplementedException`. When a live SMS provider is configured, wire it in `PasswordResetDeliveryService.deliverPhone()` via the `SmsProviderRegistry`. Until then, phone-only users cannot recover via SMS — they should contact support.
+
+### Tests added (21 new, 868 total across 52 suites)
+- `password-reset.service.spec.ts` (21 tests): generic response for existing/non-existing/suspended users, phone-only user recovery, prior token invalidation, hash-only storage, no raw token in audit, valid token reset, argon2 password hashing, invalid/expired/used token rejection, phone code reset, empty identifier rejection, no account enumeration, high-entropy token (64 hex chars), 6-digit phone code, 15-min email expiry, 10-min phone expiry, no sensitive data in result.
+
+No payment/webhook/broker/risk/AI logic changed. No secrets. No .env. No default admin credentials.
+
+
 
 
 \## Hotfix — Admin Portal Auth Guard + First Admin Bootstrap

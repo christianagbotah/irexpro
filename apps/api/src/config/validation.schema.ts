@@ -74,4 +74,9 @@ export const validationSchema = Joi.object({
   STRIPE_BASE_URL: Joi.string().default('https://api.stripe.com'),
   STRIPE_SUCCESS_URL: Joi.string().optional().allow(''),
   STRIPE_CANCEL_URL: Joi.string().optional().allow(''),
+
+  // Sprint 28 — password reset delivery (all optional; safe "not configured" behavior)
+  WEB_BASE_URL: Joi.string().optional().allow(''),
+  EMAIL_SMTP_URL: Joi.string().optional().allow(''),
+  EMAIL_FROM_ADDRESS: Joi.string().optional().allow(''),
 });

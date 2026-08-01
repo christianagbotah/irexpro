@@ -1,14 +1,17 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
   HttpCode,
   HttpStatus,
+  Ip,
   Post,
   Req,
   Res,
   UnauthorizedException,
   UseGuards,
+  Headers,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -19,9 +22,12 @@ import {
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { AuthCookieService } from './auth-cookie.service';
+import { PasswordResetService } from './password-reset.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { AuthUserDto } from './dto/auth-user.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -34,6 +40,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly authCookieService: AuthCookieService,
+    private readonly passwordResetService: PasswordResetService,
   ) {}
 
   @Post('register')
@@ -131,5 +138,56 @@ export class AuthController {
     // (passwordHash, mfaSecret, deletedAt, userRoles, profile PII) are never
     // included. Roles come from the JWT payload (set by JwtStrategy.validate).
     return this.authService.getAuthUserDto(user.id, (user.roles ?? []) as never);
+  }
+
+  // ── Sprint 28: Secure password reset ────────────────────────────────────
+
+  @Post('forgot-password')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Request a password reset (email link or SMS code)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Always returns a generic message — does not reveal whether the account exists.',
+  })
+  async forgotPassword(
+    @Body() dto: ForgotPasswordDto,
+    @Ip() ip: string,
+    @Headers('user-agent') userAgent?: string,
+  ): Promise<{ message: string }> {
+    // Sprint 28: always return the SAME generic message whether or not the
+    // account exists. This prevents account enumeration. The raw token/code
+    // is delivered via email/SMS (if configured) — never returned in the response.
+    await this.passwordResetService.requestReset(dto.identifier, {
+      ipAddress: ip,
+      userAgent,
+    });
+    return {
+      message: 'If an account exists for this identifier, password reset instructions have been sent.',
+    };
+  }
+
+  @Post('reset-password')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reset password using a token (email) or code (phone)' })
+  @ApiResponse({ status: 200, description: 'Password has been reset successfully.' })
+  @ApiResponse({ status: 401, description: 'Invalid or expired reset token/code' })
+  @ApiResponse({ status: 400, description: 'Weak password or missing fields' })
+  async resetPassword(@Body() dto: ResetPasswordDto): Promise<{ message: string }> {
+    // Sprint 28: supports two flows:
+    //   1. Email token: { token, password }
+    //   2. Phone code: { identifier, code, password }
+    // The controller routes to the appropriate service method.
+    if (dto.token) {
+      await this.passwordResetService.resetWithToken(dto.token, dto.password);
+    } else if (dto.identifier && dto.code) {
+      await this.passwordResetService.resetWithCode(dto.identifier, dto.code, dto.password);
+    } else {
+      throw new BadRequestException(
+        'Provide either a reset token (email flow) or identifier + code (phone flow)',
+      );
+    }
+    return { message: 'Password has been reset successfully.' };
   }
 }

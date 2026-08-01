@@ -3,6 +3,8 @@ import {
   AuthTokens,
   AuthUser,
   CheckoutResult,
+  ForgotPasswordRequest,
+  ForgotPasswordResponse,
   HealthResponse,
   Invoice,
   LoginRequest,
@@ -11,6 +13,8 @@ import {
   PaymentTransaction,
   RefreshRequest,
   RegisterRequest,
+  ResetPasswordRequest,
+  ResetPasswordResponse,
   SubscriptionPlan,
   UserSubscription,
 } from '@irexpro/types';
@@ -63,6 +67,12 @@ export interface ApiClient {
   logout(): Promise<LogoutResponse>;
   /** GET /auth/me (requires Authorization: Bearer) → current user */
   me(): Promise<AuthUser>;
+
+  // ── Sprint 28: Password reset ────────────────────────────────────────────
+  /** POST /auth/forgot-password → always returns a generic message (no account enumeration). */
+  forgotPassword(body: ForgotPasswordRequest): Promise<ForgotPasswordResponse>;
+  /** POST /auth/reset-password → reset password using token (email) or code (phone). */
+  resetPassword(body: ResetPasswordRequest): Promise<ResetPasswordResponse>;
 
   // Subscriptions / plans
   listPlans(): Promise<SubscriptionPlan[]>;
@@ -198,6 +208,19 @@ export function createApiClient(options: CreateApiClientOptions): ApiClient {
       request<LogoutResponse>('/auth/logout', { method: 'POST' }),
 
     me: () => request<AuthUser>('/auth/me'),
+
+    // Sprint 28: password reset
+    forgotPassword: (body) =>
+      request<ForgotPasswordResponse>('/auth/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+
+    resetPassword: (body) =>
+      request<ResetPasswordResponse>('/auth/reset-password', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
 
     listPlans: () => request<SubscriptionPlan[]>('/subscriptions/plans'),
 

@@ -6,6 +6,7 @@ import { Request, Response } from 'express';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { AuthCookieService } from './auth-cookie.service';
+import { PasswordResetService } from './password-reset.service';
 import { RoleName } from '../users/entities/role.entity';
 
 /**
@@ -33,6 +34,12 @@ const mockAuthService = {
   login: jest.fn(),
   refreshTokens: jest.fn(),
   getAuthUserDto: jest.fn(),
+};
+
+const mockPasswordResetService = {
+  requestReset: jest.fn().mockResolvedValue({ delivered: false, channel: null }),
+  resetWithToken: jest.fn().mockResolvedValue(undefined),
+  resetWithCode: jest.fn().mockResolvedValue(undefined),
 };
 
 describe('AuthController — refresh token validation (hotfix)', () => {
@@ -73,6 +80,7 @@ describe('AuthController — refresh token validation (hotfix)', () => {
       providers: [
         AuthCookieService,
         { provide: AuthService, useValue: mockAuthService },
+        { provide: PasswordResetService, useValue: mockPasswordResetService },
       ],
     }).compile();
 

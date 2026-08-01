@@ -93,6 +93,49 @@ export interface LogoutResponse {
   message: string;
 }
 
+// ── Sprint 28: Password reset ───────────────────────────────────────────────
+
+/** POST /auth/forgot-password request body. */
+export interface ForgotPasswordRequest {
+  /** Email address or international phone number (e.g. +233241234567). */
+  identifier: string;
+}
+
+/**
+ * POST /auth/forgot-password response.
+ *
+ * ALWAYS the same generic message — does NOT reveal whether the account exists.
+ * This prevents account enumeration.
+ */
+export interface ForgotPasswordResponse {
+  message: string;
+}
+
+/**
+ * POST /auth/reset-password request body.
+ *
+ * Supports two flows:
+ *   1. Email token: { token, password }
+ *   2. Phone code: { identifier, code, password }
+ *
+ * The controller routes to the appropriate service method based on which
+ * fields are present.
+ */
+export interface ResetPasswordRequest {
+  /** Raw reset token from the email reset link (email flow). */
+  token?: string;
+  /** Phone number or email (phone code flow). */
+  identifier?: string;
+  /** 6-digit numeric code sent via SMS (phone code flow). */
+  code?: string;
+  /** New password (min 12 chars, must contain letters + numbers). */
+  password: string;
+}
+
+export interface ResetPasswordResponse {
+  message: string;
+}
+
 /**
  * Convenience: an authenticated session = the access token + the current user.
  * The frontend assembles this by calling /auth/login (or /auth/refresh) then

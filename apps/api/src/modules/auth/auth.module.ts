@@ -6,16 +6,19 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { AuthCookieService } from './auth-cookie.service';
+import { PasswordResetService } from './password-reset.service';
+import { PasswordResetDeliveryService } from './password-reset-delivery.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { User } from '../users/entities/user.entity';
 import { UserProfile } from '../users/entities/user-profile.entity';
 import { UserRole } from '../users/entities/user-role.entity';
 import { Role } from '../users/entities/role.entity';
+import { PasswordResetToken } from './entities/password-reset-token.entity';
 import { AuditModule } from '../audit/audit.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, UserProfile, UserRole, Role]),
+    TypeOrmModule.forFeature([User, UserProfile, UserRole, Role, PasswordResetToken]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -28,7 +31,7 @@ import { AuditModule } from '../audit/audit.module';
     AuditModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, AuthCookieService, JwtStrategy],
+  providers: [AuthService, AuthCookieService, PasswordResetService, PasswordResetDeliveryService, JwtStrategy],
   exports: [AuthService, JwtModule],
 })
 export class AuthModule {}

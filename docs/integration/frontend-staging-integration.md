@@ -376,3 +376,64 @@ Behavior:
 
 After bootstrapping, the admin can sign in at
 `https://irexproadmin.lightworldtech.com/admin/login`.
+
+
+\## 13. Password reset flow (Sprint 28)
+
+### 13.1 Endpoints
+
+- `POST /api/v1/auth/forgot-password` — accepts `{ identifier }` (email or phone). Always returns the same generic message: "If an account exists for this identifier, password reset instructions have been sent." Does NOT reveal account existence.
+- `POST /api/v1/auth/reset-password` — accepts `{ token, password }` (email flow) or `{ identifier, code, password }` (phone flow). Returns success message or 401/400 on failure.
+
+### 13.2 Email reset link flow
+
+1. User enters email or phone on `/forgot-password` (web) or `/admin/forgot-password` (admin).
+2. Frontend calls `POST /auth/forgot-password` with `{ identifier }`.
+3. Backend resolves the user, invalidates prior unused tokens, generates a 32-byte high-entropy token, hashes it (SHA-256), stores the hash, and attempts to deliver the raw token via email.
+4. The reset link is `${WEB_BASE_URL}/reset-password?token=<raw-token>`.
+5. User clicks the link → lands on `/reset-password?token=...` → enters new password → frontend calls `POST /auth/reset-password` with `{ token, password }`.
+6. Backend verifies the token hash, checks expiry + single-use, hashes the new password with argon2, updates the user, marks the token as used, audits the completion.
+
+### 13.3 Phone code flow
+
+1. Same as above but for phone-only users.
+2. Backend generates a 6-digit code, hashes it, stores the hash, and attempts to deliver via SMS.
+3. User enters phone + code + new password on the reset page → frontend calls `POST /auth/reset-password` with `{ identifier, code, password }`.
+4. Max 5 failed code attempts before the token is invalidated.
+
+### 13.4 Email delivery status
+
+NO email provider is wired yet (nodemailer/SendGrid/etc. not integrated). When `EMAIL_SMTP_URL` is not set, the delivery service logs a safe operational warning (no raw token) and returns `delivered: false`. The API still returns the generic success message. To enable email delivery:
+1. Set `WEB_BASE_URL` and `EMAIL_SMTP_URL` in `.env` on the VPS.
+2. Wire a real email provider in `PasswordResetDeliveryService.deliverEmail()` (e.g. nodemailer).
+
+### 13.5 Phone/SMS delivery status
+
+All SMS providers (Twilio/Hubtel/Arkesel) are currently placeholders that throw `NotImplementedException`. Phone code flow is implemented in the backend but SMS delivery is not available until a live SMS provider is configured. To enable SMS delivery:
+1. Implement a live SMS provider (e.g. `TwilioSmsProvider.sendSms()`) in the notifications module.
+2. Wire it in `PasswordResetDeliveryService.deliverPhone()` via `SmsProviderRegistry.selectProvider()`.
+
+### 13.6 Security model
+
+- Raw token/code is NEVER stored — only SHA-256 hash.
+- Raw token/code is NEVER logged — only safe metadata in audit logs.
+- Raw token/code is NEVER returned in API responses.
+- Token expiry: 15 min (email), 10 min (phone).
+- Single-use: `usedAt` set on successful reset; reuse rejected.
+- Prior unused tokens invalidated when a new one is issued.
+- Phone code: max 5 failed attempts before invalidation.
+- No account enumeration — forgot-password always returns the same generic message.
+- Password hashed with argon2 (same as register/login).
+
+### 13.7 Session invalidation limitation
+
+Refresh tokens are currently stateless JWTs (no server-side session store). After a password reset, existing refresh tokens are NOT automatically revoked. The password change IS effective immediately for new login attempts. A Redis-based token blacklist is a future enhancement.
+
+### 13.8 Required env variables for delivery
+
+| Variable | Required? | Purpose |
+|---|---|---|
+| `WEB_BASE_URL` | For email reset links | Base URL for web app (e.g. `https://irexpro.lightworldtech.com`) |
+| `EMAIL_SMTP_URL` | For email delivery | SMTP connection URL (e.g. `smtps://user:pass@smtp.example.com:465`) |
+| `EMAIL_FROM_ADDRESS` | Optional | From address (default: `no-reply@irexpro.com`) |
+| SMS provider env | For phone delivery | See `docs/architecture/22-sms-provider-architecture.md` (not yet live) |
