@@ -495,6 +495,21 @@ export class RiskService {
       profile.maxVolatilityScore = dto.maxVolatilityScore.toFixed(2);
     if (dto.rejectLowLiquidity !== undefined) profile.rejectLowLiquidity = dto.rejectLowLiquidity;
 
+    // Sprint 29: new onboarding fields
+    if (dto.maxTradeRiskPercent !== undefined)
+      profile.maxTradeRiskPercent = dto.maxTradeRiskPercent.toFixed(2);
+    if (dto.maxLeverageAllowed !== undefined) profile.maxLeverageAllowed = dto.maxLeverageAllowed;
+    if (dto.allowedTradingModes !== undefined) profile.allowedTradingModes = dto.allowedTradingModes;
+
+    // Sprint 29: risk acknowledgement — only record when transitioning to true
+    const wasAccepted = profile.riskAcknowledgementAccepted;
+    if (dto.riskAcknowledgementAccepted !== undefined) {
+      profile.riskAcknowledgementAccepted = dto.riskAcknowledgementAccepted;
+      if (dto.riskAcknowledgementAccepted && !wasAccepted) {
+        profile.riskAcknowledgementAcceptedAt = new Date();
+      }
+    }
+
     await this.profileRepo.save(profile);
 
     await this.auditService.log({
@@ -504,6 +519,17 @@ export class RiskService {
       resourceId: profile.id,
       metadata: { changes: dto },
     });
+
+    // Sprint 29: separate audit for risk acknowledgement acceptance
+    if (dto.riskAcknowledgementAccepted && !wasAccepted) {
+      await this.auditService.log({
+        actorUserId: userId,
+        action: AuditAction.RISK_ACKNOWLEDGEMENT_ACCEPTED,
+        resourceType: 'RiskProfile',
+        resourceId: profile.id,
+        metadata: { acceptedAt: profile.riskAcknowledgementAcceptedAt },
+      });
+    }
 
     return profile;
   }

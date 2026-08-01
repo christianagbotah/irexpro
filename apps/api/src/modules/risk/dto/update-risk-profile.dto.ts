@@ -1,6 +1,7 @@
 import {
   IsArray,
   IsBoolean,
+  IsEnum,
   IsInt,
   IsNumber,
   IsOptional,
@@ -9,6 +10,7 @@ import {
   Min,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { AllowedTradingMode } from '../entities/risk-profile.entity';
 
 export class UpdateRiskProfileDto {
   @ApiPropertyOptional({
@@ -86,4 +88,52 @@ export class UpdateRiskProfileDto {
   @IsOptional()
   @IsBoolean()
   rejectLowLiquidity?: boolean;
+
+  // ── Sprint 29: onboarding fields ──────────────────────────────────────────
+
+  @ApiPropertyOptional({
+    description:
+      'Sprint 29: Max risk per trade as % of equity. ' +
+      'Default: 2%. Maximum for automated modes: 5% (conservative). ' +
+      'Values above 5% are rejected to prevent excessive automated risk.',
+    example: 2,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0.5)
+  @Max(5)
+  maxTradeRiskPercent?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Sprint 29: Max leverage allowed. ' +
+      'Default: 30 (conservative). Maximum: 100 for any automated mode. ' +
+      'Higher values may be allowed for PAPER_ONLY simulation but are capped ' +
+      'to prevent excessive automated risk.',
+    example: 30,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  maxLeverageAllowed?: number;
+
+  @ApiPropertyOptional({
+    description: 'Sprint 29: Allowed trading mode (PAPER_ONLY / SEMI_AUTO / FULL_AUTO)',
+    enum: AllowedTradingMode,
+    example: 'PAPER_ONLY',
+  })
+  @IsOptional()
+  @IsEnum(AllowedTradingMode)
+  allowedTradingModes?: AllowedTradingMode;
+
+  @ApiPropertyOptional({
+    description:
+      'Sprint 29: Explicit risk acknowledgement acceptance. Must be true to start trading. ' +
+      'When set to true, records the acceptance timestamp + audits RISK_ACKNOWLEDGEMENT_ACCEPTED.',
+    example: true,
+  })
+  @IsOptional()
+  @IsBoolean()
+  riskAcknowledgementAccepted?: boolean;
 }

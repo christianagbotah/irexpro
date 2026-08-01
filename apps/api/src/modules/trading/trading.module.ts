@@ -6,6 +6,7 @@ import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 import { RiskModule } from '../risk/risk.module';
 import { ExecutionModule } from '../execution/execution.module';
 import { AuditModule } from '../audit/audit.module';
+import { UsersModule } from '../users/users.module';
 
 import { AiEngineClientModule } from '../ai-engine-client/ai-engine-client.module';
 
@@ -14,6 +15,11 @@ import { AiEngineClientModule } from '../ai-engine-client/ai-engine-client.modul
  *
  * Uses forwardRef on ExecutionModule to prevent a possible cycle:
  *   TradingModule → ExecutionModule → RiskModule (which is also imported here)
+ *
+ * Sprint 29 amendment: imports UsersModule to access OnboardingService for
+ * the centralized canStartTrading gate (profile + risk acknowledgement +
+ * broker + kill switch). This gate is enforced INSIDE TradingService so it
+ * cannot be bypassed by any caller.
  *
  * EventsModule is global and does not need to be imported here.
  *
@@ -24,6 +30,7 @@ import { AiEngineClientModule } from '../ai-engine-client/ai-engine-client.modul
     BrokerModule,
     SubscriptionsModule,
     RiskModule,
+    UsersModule,
     forwardRef(() => ExecutionModule),
     AuditModule,
     AiEngineClientModule,

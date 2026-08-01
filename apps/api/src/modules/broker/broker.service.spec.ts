@@ -204,6 +204,37 @@ describe('BrokerService', () => {
 
       expect(JSON.stringify(result)).not.toContain('super-secret-key');
     });
+
+    // Sprint 29 amendment: verify audit metadata never contains sensitive fields
+    it('never includes credentials in audit metadata (Sprint 29)', async () => {
+      const dto = {
+        brokerId: 'metatrader5',
+        accountType: BrokerMode.DEMO,
+        accountId: '123456',
+        apiKey: 'super-secret-api-key',
+        apiSecret: 'super-secret-api-secret',
+      };
+      registry.getAdapter.mockReturnValue({ brokerName: 'MetaTrader 5' });
+      connectionRepo.create.mockImplementation((obj) => obj);
+      connectionRepo.save.mockImplementation(async (obj) => ({ id: 'new-id', ...obj }));
+
+      await service.createConnection(dto as any, 'user-1');
+
+      expect(auditService.log).toHaveBeenCalled();
+      const auditCall = auditService.log.mock.calls[0][0];
+      const metadataStr = JSON.stringify(auditCall.metadata);
+      // Audit metadata must NOT contain any credential fields
+      expect(metadataStr).not.toContain('super-secret-api-key');
+      expect(metadataStr).not.toContain('super-secret-api-secret');
+      expect(metadataStr).not.toContain('apiKey');
+      expect(metadataStr).not.toContain('apiSecret');
+      expect(metadataStr).not.toContain('password');
+      expect(metadataStr).not.toContain('token');
+      expect(metadataStr).not.toContain('encryptedCredentials');
+      // Metadata should only contain safe fields
+      expect(metadataStr).toContain('brokerId');
+      expect(metadataStr).toContain('accountId');
+    });
   });
 
   // ─── hasActiveConnection ──────────────────────────────────────────────────
