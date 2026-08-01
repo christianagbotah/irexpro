@@ -2,10 +2,12 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { UnauthorizedException } from '@nestjs/common';
 import { JwtModule, JwtService } from '@nestjs/jwt';
 import { ConfigModule } from '@nestjs/config';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { AuthCookieService } from './auth-cookie.service';
+import { PasswordResetService } from './password-reset.service';
 import { RoleName } from '../users/entities/role.entity';
 
 /**
@@ -33,6 +35,12 @@ const mockAuthService = {
   login: jest.fn(),
   refreshTokens: jest.fn(),
   getAuthUserDto: jest.fn(),
+};
+
+const mockPasswordResetService = {
+  requestReset: jest.fn().mockResolvedValue({ delivered: false, channel: null }),
+  resetWithToken: jest.fn().mockResolvedValue(undefined),
+  resetWithCode: jest.fn().mockResolvedValue(undefined),
 };
 
 describe('AuthController — refresh token validation (hotfix)', () => {
@@ -68,11 +76,15 @@ describe('AuthController — refresh token validation (hotfix)', () => {
             signOptions: { expiresIn: '15m' },
           }),
         }),
+        // Sprint 28 amendment: ThrottlerModule required because the controller
+        // now uses @UseGuards(ThrottlerGuard).
+        ThrottlerModule.forRoot({ throttlers: [{ name: 'default', ttl: 60_000, limit: 100 }] }),
       ],
       controllers: [AuthController],
       providers: [
         AuthCookieService,
         { provide: AuthService, useValue: mockAuthService },
+        { provide: PasswordResetService, useValue: mockPasswordResetService },
       ],
     }).compile();
 

@@ -3,37 +3,65 @@
 import { useState, FormEvent } from 'react';
 import Link from 'next/link';
 import { AuthLayout, Button, Input, Alert } from '@/components/ui';
+import { api } from '@/lib/api';
 
+/**
+ * Admin forgot password page — Sprint 28.
+ *
+ * Wired to the same POST /auth/forgot-password endpoint as the web app.
+ * The backend ALWAYS returns the same generic message — no account enumeration.
+ *
+ * Accepts email OR international phone number as the identifier.
+ */
 export default function AdminForgotPasswordPage() {
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    setError(null);
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 800));
-    setSubmitted(true);
-    setLoading(false);
+    try {
+      await api.forgotPassword({ identifier });
+      setSubmitted(true);
+    } catch (err) {
+      const msg = err instanceof Error && err.message.includes('Network')
+        ? 'Unable to reach the server. Please check your connection and try again.'
+        : null;
+      if (msg) {
+        setError(msg);
+      } else {
+        setSubmitted(true);
+      }
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
-    <AuthLayout title="Forgot password" subtitle="Enter your admin email to receive reset instructions">
+    <AuthLayout title="Forgot password" subtitle="Enter your admin email or phone to receive reset instructions">
       {submitted ? (
         <Alert variant="info">
-          If an account exists for this email, password reset instructions will be
-          sent once password recovery is enabled. This feature will be available in
-          the next update.
+          If an account exists for this identifier, password reset instructions have been sent.
+          Please check your email (including spam) or phone messages.
         </Alert>
       ) : (
         <form onSubmit={handleSubmit}>
-          <Alert variant="warning">
-            Password recovery is not yet available. This form will be activated once
-            the backend endpoint is ready.
-          </Alert>
-          <Input label="Email" type="email" placeholder="admin@irexpro.com" value={email} onChange={(e) => setEmail(e.target.value)} disabled={loading} required />
+          {error && <Alert variant="error">{error}</Alert>}
+          <Input
+            label="Email or phone number"
+            type="text"
+            placeholder="admin@irexpro.com or +233241234567"
+            value={identifier}
+            onChange={(e) => setIdentifier(e.target.value)}
+            disabled={loading}
+            required
+            autoComplete="username"
+          />
           <Button type="submit" block size="lg" loading={loading}>
-            {loading ? 'Sending…' : 'Send reset link'}
+            {loading ? 'Sending…' : 'Send reset instructions'}
           </Button>
         </form>
       )}

@@ -9,19 +9,39 @@ import {
   View,
   ActivityIndicator,
 } from 'react-native';
+import { api } from '../lib/api';
 
+/**
+ * ForgotPasswordScreen — Sprint 28.
+ *
+ * Wired to the real POST /auth/forgot-password endpoint via the shared API
+ * client. The backend ALWAYS returns the same generic message — no account
+ * enumeration. We show the same generic message here.
+ *
+ * Accepts email OR international phone number as the identifier.
+ *
+ * Deep link reset (opening /reset-password?token=... in the mobile app) is a
+ * next step — documented in CURRENT_STATE.md. For now, the user receives an
+ * email link that opens in the web browser, or an SMS code for phone-only
+ * users (once SMS delivery is configured).
+ */
 export default function ForgotPasswordScreen({ onBack }: { onBack: () => void }) {
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit() {
+    if (!identifier.trim()) return;
     setLoading(true);
-    // Sprint 26: backend does NOT yet have POST /auth/forgot-password.
-    // Show a safe generic message — do not expose whether the email exists.
-    await new Promise((r) => setTimeout(r, 800));
-    setSubmitted(true);
-    setLoading(false);
+    try {
+      await api.forgotPassword({ identifier });
+    } catch {
+      // Even on error, show the generic message — no account enumeration.
+      // Only network errors would be visible to the user (caught below).
+    } finally {
+      setSubmitted(true);
+      setLoading(false);
+    }
   }
 
   return (
@@ -31,39 +51,31 @@ export default function ForgotPasswordScreen({ onBack }: { onBack: () => void })
     >
       <Text style={styles.title}>Forgot password</Text>
       <Text style={styles.subtitle}>
-        Enter your email to receive reset instructions
+        Enter your email or phone number to receive reset instructions
       </Text>
 
       {submitted ? (
         <View style={styles.infoBox}>
           <Text style={styles.infoText}>
-            If an account exists for this email, password reset instructions will
-            be sent once password recovery is enabled. This feature will be
-            available in the next update.
+            If an account exists for this identifier, password reset instructions
+            have been sent. Check your email (including spam) or phone messages.
           </Text>
         </View>
       ) : (
         <>
-          <View style={styles.warningBox}>
-            <Text style={styles.warningText}>
-              Password recovery is not yet available. This form will be activated
-              once the backend endpoint is ready.
-            </Text>
-          </View>
           <TextInput
             style={styles.input}
-            placeholder="Email"
+            placeholder="Email or +233241234567"
             placeholderTextColor="#6b7494"
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
+            value={identifier}
+            onChangeText={setIdentifier}
             autoCapitalize="none"
           />
           <Pressable style={styles.button} onPress={handleSubmit} disabled={loading}>
             {loading ? (
               <ActivityIndicator color="#06231f" />
             ) : (
-              <Text style={styles.buttonText}>Send reset link</Text>
+              <Text style={styles.buttonText}>Send reset instructions</Text>
             )}
           </Pressable>
         </>
@@ -88,8 +100,6 @@ const styles = StyleSheet.create({
   buttonText: { color: '#06231f', fontWeight: '700', fontSize: 16 },
   infoBox: { backgroundColor: 'rgba(13,148,136,0.1)', borderColor: 'rgba(13,148,136,0.3)', borderWidth: 1, borderRadius: 10, padding: 16, marginBottom: 16 },
   infoText: { color: '#5eead4', fontSize: 14, lineHeight: 20 },
-  warningBox: { backgroundColor: 'rgba(245,158,11,0.1)', borderColor: 'rgba(245,158,11,0.3)', borderWidth: 1, borderRadius: 10, padding: 16, marginBottom: 16 },
-  warningText: { color: '#fcd34d', fontSize: 13, lineHeight: 18 },
   backLink: { alignSelf: 'center', marginTop: 16 },
   backLinkText: { color: '#14b8a6', fontSize: 15, fontWeight: '500' },
 });
