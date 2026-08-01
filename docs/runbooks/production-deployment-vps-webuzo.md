@@ -1641,21 +1641,34 @@ The backend now has secure password reset endpoints:
 
 These endpoints are functional. However, DELIVERY of the reset token/code requires email and/or SMS provider configuration. Without delivery, the token hash is stored in the DB but the user never receives the raw token.
 
-### 20.2 Email delivery (reset link)
+### 20.2 Email delivery (reset link) — REAL SMTP via nodemailer
 
-To enable email reset link delivery, add these env vars to the API `.env` on the VPS:
+Sprint 28 amendment: email delivery is now wired with real nodemailer SMTP.
+To enable, add these env vars to the API `.env` on the VPS:
 
 ```bash
 WEB_BASE_URL=https://irexpro.lightworldtech.com
 EMAIL_SMTP_URL=smtps://user:pass@smtp.example.com:465
-EMAIL_FROM_ADDRESS=no-reply@irexpro.lightworldtech.com
+EMAIL_FROM=no-reply@irexpro.lightworldtech.com
 ```
 
-Then wire a real email provider (e.g. nodemailer) in
-`apps/api/src/modules/auth/password-reset-delivery.service.ts` (`deliverEmail` method).
+When `EMAIL_SMTP_URL` + `WEB_BASE_URL` are set, the `NodemailerEmailProvider`
+sends a real reset email via the configured SMTP server. No additional wiring
+is needed — nodemailer is already installed and integrated.
 
 The reset link sent to users will be:
 `https://irexpro.lightworldtech.com/reset-password?token=<raw-token>`
+
+If `EMAIL_SMTP_URL` is missing, the API logs a safe warning and does NOT send
+email (the generic API response is still returned — no account enumeration).
+If SMTP send fails, the API returns the generic response (no enumeration).
+
+Security: raw token is NEVER logged. Email body is NEVER logged. SMTP errors
+are logged without the raw token or email body. Recipient email is masked.
+
+All reset links (web + admin) use `WEB_BASE_URL` — a single universal reset
+URL. Admin forgot-password calls the same endpoint. After reset, admin users
+log in at /admin/login.
 
 ### 20.3 Phone/SMS delivery (reset code)
 
@@ -1679,6 +1692,19 @@ support or an admin can use a future admin password-reset endpoint.
 - Prior unused tokens are invalidated when a new one is issued.
 - No account enumeration — the forgot-password endpoint always returns the same
   generic message.
+
+### 20.4.1 Rate limiting (Sprint 28 amendment)
+
+`@nestjs/throttler` is installed. `ThrottlerGuard` is applied to all `/auth/*`
+routes. Per-route `@Throttle` overrides:
+- `POST /auth/forgot-password`: **5 requests per 15 minutes per IP** (prevents
+  brute-force account enumeration).
+- `POST /auth/reset-password`: **10 attempts per 15 minutes per IP** (prevents
+  token brute-force).
+- Phone code: max 5 failed attempts per code (in the service, not the throttler).
+
+Rate-limited responses return HTTP 429 (Too Many Requests). The response body
+does NOT reveal whether the account exists — the same generic message is used.
 
 ### 20.5 Session invalidation limitation
 

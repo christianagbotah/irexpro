@@ -19,6 +19,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { ThrottlerGuard, Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { AuthCookieService } from './auth-cookie.service';
@@ -36,6 +37,9 @@ import { User } from '../users/entities/user.entity';
 
 @ApiTags('Auth')
 @Controller('auth')
+// Sprint 28 amendment: apply ThrottlerGuard to all auth routes. Per-route
+// @Throttle overrides set tighter limits on forgot-password and reset-password.
+@UseGuards(ThrottlerGuard)
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
@@ -145,6 +149,11 @@ export class AuthController {
   @Post('forgot-password')
   @Public()
   @HttpCode(HttpStatus.OK)
+  // Sprint 28 amendment: rate limit — 5 requests per 15 minutes per IP.
+  // Prevents brute-force account enumeration. The response is always the
+  // same generic message, so rate-limited callers cannot distinguish
+  // “rate limited” from “account does not exist”.
+  @Throttle({ default: { ttl: 15 * 60 * 1000, limit: 5 } })
   @ApiOperation({ summary: 'Request a password reset (email link or SMS code)' })
   @ApiResponse({
     status: 200,
@@ -170,6 +179,11 @@ export class AuthController {
   @Post('reset-password')
   @Public()
   @HttpCode(HttpStatus.OK)
+  // Sprint 28 amendment: rate limit — 10 attempts per 15 minutes per IP.
+  // Prevents brute-force token guessing. Combined with the single-use +
+  // expiry + max-5-phone-code-attempts in the service, this provides
+  // defense-in-depth.
+  @Throttle({ default: { ttl: 15 * 60 * 1000, limit: 10 } })
   @ApiOperation({ summary: 'Reset password using a token (email) or code (phone)' })
   @ApiResponse({ status: 200, description: 'Password has been reset successfully.' })
   @ApiResponse({ status: 401, description: 'Invalid or expired reset token/code' })

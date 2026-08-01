@@ -77,6 +77,8 @@ export const validationSchema = Joi.object({
 
   // Sprint 28 — password reset delivery (all optional; safe "not configured" behavior)
   WEB_BASE_URL: Joi.string().optional().allow(''),
+  ADMIN_BASE_URL: Joi.string().optional().allow(''),
   EMAIL_SMTP_URL: Joi.string().optional().allow(''),
+  EMAIL_FROM: Joi.string().optional().allow(''),
   EMAIL_FROM_ADDRESS: Joi.string().optional().allow(''),
 });

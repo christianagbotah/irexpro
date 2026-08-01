@@ -9,14 +9,21 @@ export default () => ({
     corsOrigins: (process.env.CORS_ORIGINS ?? 'http://localhost:3001').split(','),
     // Sprint 28: base URL of the web app, used to build password reset links.
     // e.g. https://irexpro.lightworldtech.com
+    // All reset links (web + admin) use this single base URL — admin users
+    // reset via the web reset page, then log in to the admin portal.
     webBaseUrl: process.env.WEB_BASE_URL,
+    // Sprint 28 amendment: admin base URL (for future admin-specific reset
+    // links if needed). Currently reset links point to the web app for all
+    // users — admin forgot-password calls the same endpoint and shows a
+    // generic message pointing users to the web reset page.
+    adminBaseUrl: process.env.ADMIN_BASE_URL,
   },
-  // Sprint 28: email provider config (placeholder — not yet wired to a real
-  // provider like nodemailer/SendGrid). When EMAIL_SMTP_URL is set, the
-  // delivery service will attempt to send via the configured SMTP server.
+  // Sprint 28 amendment: email provider config. When EMAIL_SMTP_URL is set,
+  // the delivery service uses nodemailer to send real reset emails.
+  // EMAIL_FROM / EMAIL_FROM_ADDRESS are aliases — either works.
   email: {
     smtpUrl: process.env.EMAIL_SMTP_URL,
-    fromAddress: process.env.EMAIL_FROM_ADDRESS ?? 'no-reply@irexpro.com',
+    fromAddress: process.env.EMAIL_FROM ?? process.env.EMAIL_FROM_ADDRESS ?? 'no-reply@irexpro.com',
   },
   jwt: {
     secret: process.env.JWT_SECRET,

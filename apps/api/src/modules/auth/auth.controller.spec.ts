@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { UnauthorizedException } from '@nestjs/common';
 import { JwtModule, JwtService } from '@nestjs/jwt';
 import { ConfigModule } from '@nestjs/config';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
@@ -75,6 +76,9 @@ describe('AuthController — refresh token validation (hotfix)', () => {
             signOptions: { expiresIn: '15m' },
           }),
         }),
+        // Sprint 28 amendment: ThrottlerModule required because the controller
+        // now uses @UseGuards(ThrottlerGuard).
+        ThrottlerModule.forRoot({ throttlers: [{ name: 'default', ttl: 60_000, limit: 100 }] }),
       ],
       controllers: [AuthController],
       providers: [
