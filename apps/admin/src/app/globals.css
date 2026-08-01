@@ -42,50 +42,77 @@ a:hover { text-decoration: underline; }
 code { font-family: var(--font-mono); font-size: 0.9em; }
 
 /* Auth layout (admin) */
-.auth-layout { display: flex; height: 100vh; overflow: hidden; }
+/* Hotfix: overflow-x: hidden on the root container prevents the decorative
+   ::before circle (positioned at right: -10%) from creating horizontal scroll. */
+.auth-layout { display: flex; height: 100vh; overflow: hidden; overflow-x: hidden; }
 .auth-layout__brand {
   flex: 1; display: flex; flex-direction: column; justify-content: center;
   padding: var(--space-12);
   background: linear-gradient(135deg, #0a0e1a 0%, #1a1205 50%, #0f0a02 100%);
-  position: relative; overflow-y: auto; height: 100vh; flex-shrink: 0;
+  /* Hotfix: overflow-x: hidden clips the decorative ::before circle that is
+     positioned at right: -10%. overflow-y: auto still allows vertical scroll
+     on short viewports. min-width: 0 lets the flex child shrink properly. */
+  position: relative; overflow-x: hidden; overflow-y: auto; height: 100vh; flex-shrink: 0; min-width: 0;
 }
+/* Hotfix: the decorative radial-gradient circle is positioned at right: -10%
+   with a fixed 500px width. Because the parent now has overflow-x: hidden,
+   the circle is clipped to the panel — it no longer creates horizontal scroll.
+   We also reduce the width on small screens to avoid covering content. */
 .auth-layout__brand::before {
   content: ''; position: absolute; top: 20%; right: -10%;
-  width: 500px; height: 500px;
+  width: 500px; height: 500px; max-width: 100%;
   background: radial-gradient(circle, rgba(217,119,6,0.08) 0%, transparent 70%);
-  border-radius: 50%;
+  border-radius: 50%; pointer-events: none;
 }
-.auth-layout__brand-content { position: relative; z-index: 1; max-width: 480px; }
+/* Hotfix: min-width: 0 lets the flex child shrink; overflow-wrap prevents
+   long unbroken strings (e.g. URLs, long words) from forcing overflow. */
+.auth-layout__brand-content { position: relative; z-index: 1; max-width: 480px; min-width: 0; overflow-wrap: anywhere; }
 .auth-layout__logo {
   font-size: 2rem; font-weight: 800; letter-spacing: -0.02em;
   margin-bottom: var(--space-6); display: flex; align-items: center; gap: var(--space-3);
+  flex-wrap: wrap; min-width: 0;
 }
 .auth-layout__logo-mark {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 44px; height: 44px;
+  width: 44px; height: 44px; flex-shrink: 0;
   background: linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%);
   border-radius: var(--radius-md); font-size: 1.3rem; color: white; box-shadow: var(--shadow-glow);
 }
-.auth-layout__headline { font-size: 1.75rem; font-weight: 700; line-height: 1.3; margin-bottom: var(--space-4); }
-.auth-layout__subheadline { font-size: 1.05rem; color: var(--text-secondary); line-height: 1.7; }
+/* Hotfix: overflow-wrap: anywhere ensures long headlines wrap instead of
+   forcing the panel wider than the viewport. */
+.auth-layout__headline { font-size: 1.75rem; font-weight: 700; line-height: 1.3; margin-bottom: var(--space-4); overflow-wrap: anywhere; }
+.auth-layout__subheadline { font-size: 1.05rem; color: var(--text-secondary); line-height: 1.7; overflow-wrap: anywhere; }
 .auth-layout__features { list-style: none; margin-top: var(--space-8); }
 .auth-layout__features li {
   display: flex; align-items: center; gap: var(--space-3);
   color: var(--text-secondary); margin-bottom: var(--space-3); font-size: 0.95rem;
+  min-width: 0; overflow-wrap: anywhere;
 }
 .auth-layout__features li::before {
   content: '✓'; display: inline-flex; align-items: center; justify-content: center;
   width: 22px; height: 22px; background: var(--success-bg); color: var(--success);
   border-radius: var(--radius-full); font-size: 0.75rem; font-weight: 700; flex-shrink: 0;
 }
-.auth-layout__form-side { flex: 1; display: flex; align-items: center; justify-content: center; padding: var(--space-8); height: 100vh; overflow-y: auto; }
-.auth-layout__form-container { width: 100%; max-width: 440px; }
+/* Hotfix: min-width: 0 on the form-side flex child prevents overflow when the
+   form inputs are wider than the available space. */
+.auth-layout__form-side { flex: 1; display: flex; align-items: center; justify-content: center; padding: var(--space-8); height: 100vh; overflow-y: auto; overflow-x: hidden; min-width: 0; }
+.auth-layout__form-container { width: 100%; max-width: 440px; min-width: 0; }
 
 @media (max-width: 900px) {
-  .auth-layout { flex-direction: column; height: auto; min-height: 100vh; overflow: visible; }
-  .auth-layout__brand { min-height: 140px; height: auto; padding: var(--space-6); flex-shrink: 0; }
+  .auth-layout { flex-direction: column; height: auto; min-height: 100vh; overflow: visible; overflow-x: hidden; }
+  /* Hotfix: keep overflow-x: hidden on mobile too — the decorative ::before
+     circle is positioned at right: -10% and would still escape on mobile. */
+  .auth-layout__brand { min-height: 140px; height: auto; padding: var(--space-6); flex-shrink: 0; overflow: visible; overflow-x: hidden; }
   .auth-layout__features { display: none; }
   .auth-layout__form-side { height: auto; overflow: visible; padding: var(--space-6); }
+}
+/* Hotfix: at very narrow widths, shrink the decorative circle and reduce
+   headline size so nothing overflows on 360–390px phones. */
+@media (max-width: 480px) {
+  .auth-layout__brand::before { width: 300px; height: 300px; }
+  .auth-layout__headline { font-size: 1.4rem; }
+  .auth-layout__logo { font-size: 1.5rem; }
+  .auth-layout__logo-mark { width: 36px; height: 36px; font-size: 1.1rem; }
 }
 
 /* Admin shell (sidebar) */
