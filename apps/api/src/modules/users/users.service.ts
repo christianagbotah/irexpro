@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { User } from './entities/user.entity';
 import { UserProfile } from './entities/user-profile.entity';
 import { Role, RoleName } from './entities/role.entity';
+import { UpdateMyProfileDto } from './dto/update-my-profile.dto';
 
 @Injectable()
 export class UsersService {
@@ -35,11 +36,42 @@ export class UsersService {
     return { users, total };
   }
 
+  /**
+   * Legacy profile update — only updates UserProfile fields.
+   * Kept for backward compatibility. Prefer updateMyProfile() for Sprint 29.
+   */
   async updateProfile(userId: string, updates: Partial<UserProfile>): Promise<UserProfile> {
     const profile = await this.profileRepo.findOne({ where: { userId } });
     if (!profile) throw new NotFoundException('Profile not found');
     Object.assign(profile, updates);
     return this.profileRepo.save(profile);
+  }
+
+  /**
+   * Sprint 29: update the authenticated user's profile for onboarding.
+   * Updates BOTH User-level fields (countryCode, timezone, preferredCurrency)
+   * AND UserProfile fields (firstName, lastName, tradingExperienceLevel).
+   * Returns the updated User with profile relation loaded.
+   */
+  async updateMyProfile(userId: string, dto: UpdateMyProfileDto): Promise<User> {
+    const user = await this.userRepo.findOne({ where: { id: userId }, relations: ['profile'] });
+    if (!user) throw new NotFoundException('User not found');
+
+    // Update User-level fields
+    if (dto.countryCode !== undefined) user.countryCode = dto.countryCode.toUpperCase();
+    if (dto.timezone !== undefined) user.timezone = dto.timezone;
+    if (dto.preferredCurrency !== undefined) user.preferredCurrency = dto.preferredCurrency.toUpperCase();
+
+    // Update UserProfile fields
+    if (user.profile) {
+      if (dto.firstName !== undefined) user.profile.firstName = dto.firstName;
+      if (dto.lastName !== undefined) user.profile.lastName = dto.lastName;
+      if (dto.tradingExperienceLevel !== undefined) user.profile.tradingExperienceLevel = dto.tradingExperienceLevel;
+      await this.profileRepo.save(user.profile);
+    }
+
+    await this.userRepo.save(user);
+    return this.findById(userId);
   }
 
   async seedDefaultRoles(): Promise<void> {

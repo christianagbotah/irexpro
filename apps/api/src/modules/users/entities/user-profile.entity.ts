@@ -16,6 +16,18 @@ export enum KycStatus {
   REJECTED = 'REJECTED',
 }
 
+/**
+ * Sprint 29: self-reported trading experience level.
+ * Used for onboarding profile completion + personalized risk defaults.
+ * Stored as a Postgres enum (identity.trading_experience_level).
+ */
+export enum TradingExperienceLevel {
+  BEGINNER = 'BEGINNER',
+  INTERMEDIATE = 'INTERMEDIATE',
+  ADVANCED = 'ADVANCED',
+  PROFESSIONAL = 'PROFESSIONAL',
+}
+
 @Entity({ name: 'user_profiles', schema: 'identity' })
 export class UserProfile {
   @PrimaryGeneratedColumn('uuid')
@@ -73,6 +85,18 @@ export class UserProfile {
 
   @Column({ name: 'risk_disclosure_accepted_at', type: 'timestamptz', nullable: true })
   riskDisclosureAcceptedAt: Date | null;
+
+  /**
+   * Sprint 29: self-reported trading experience level.
+   * Null until the user completes the onboarding profile step.
+   */
+  @Column({
+    name: 'trading_experience_level',
+    type: 'enum',
+    enum: TradingExperienceLevel,
+    nullable: true,
+  })
+  tradingExperienceLevel: TradingExperienceLevel | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

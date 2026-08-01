@@ -254,20 +254,138 @@ export interface PaymentProviderInfo {
 
 // ── Broker (frontend-safe view — no credentials) ────────────────────────────
 
+/**
+ * Sprint 29 amendment: updated to match the backend's 5-status enum
+ * (apps/api/src/modules/broker/interfaces/broker-adapter.interface.ts).
+ */
 export type BrokerConnectionStatus =
-  | 'ACTIVE'
-  | 'SUSPENDED'
-  | 'DISCONNECTED';
+  | 'CONNECTING'
+  | 'CONNECTED'
+  | 'DISCONNECTED'
+  | 'ERROR'
+  | 'SUSPENDED';
 
 export interface BrokerConnectionView {
   id: string;
   userId: string;
   brokerId: string;
+  brokerName: string;
+  displayName: string | null;
+  accountId: string | null;
   accountType: 'DEMO' | 'LIVE';
+  accountCurrency: string | null;
+  accountLeverage: number | null;
   status: BrokerConnectionStatus;
-  currency: string;
+  demoValidated: boolean;
+  liveTradingEnabled: boolean;
+  lastHealthCheckAt: string | null;
+  lastSyncAt: string | null;
+  lastErrorMessage: string | null;
   /** Broker credentials are NEVER included in frontend responses. */
   createdAt: string;
+  updatedAt: string;
+}
+
+/** Supported broker info (GET /broker/connections/supported). */
+export interface SupportedBroker {
+  brokerId: string;
+  brokerName: string;
+  supportsDemo: boolean;
+  supportsLive: boolean;
+}
+
+/** Request body for POST /broker/connections (create connection). */
+export interface CreateBrokerConnectionRequest {
+  brokerId: string;
+  accountType: 'DEMO' | 'LIVE';
+  accountId: string;
+  apiKey?: string;
+  apiSecret?: string;
+  serverUrl?: string;
+  displayName?: string;
+}
+
+/** Result of POST /broker/connections/test (no persistence). */
+export interface BrokerTestResult {
+  success: boolean;
+  accountId?: string;
+  errorMessage?: string;
+}
+
+// ── Sprint 29: Onboarding + Risk Profile ─────────────────────────────────────
+
+/** Onboarding step identifiers. */
+export type OnboardingStep = 'PROFILE' | 'RISK_PROFILE' | 'BROKER_CONNECTION';
+export type OnboardingNextStep = OnboardingStep | 'READY';
+
+/** GET /users/me/onboarding-status response. */
+export interface OnboardingStatus {
+  profileCompleted: boolean;
+  riskProfileCompleted: boolean;
+  brokerConnected: boolean;
+  brokerConnectionStatus: BrokerConnectionStatus;
+  canStartTrading: boolean;
+  missingSteps: OnboardingStep[];
+  nextStep: OnboardingNextStep;
+}
+
+/** Self-reported trading experience level. */
+export type TradingExperienceLevel = 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED' | 'PROFESSIONAL';
+
+/** PATCH /users/me request body (onboarding profile update). */
+export interface UpdateMyProfileRequest {
+  firstName?: string;
+  lastName?: string;
+  countryCode?: string;
+  timezone?: string;
+  preferredCurrency?: string;
+  tradingExperienceLevel?: TradingExperienceLevel;
+}
+
+/** Allowed trading mode (Sprint 29). */
+export type AllowedTradingMode = 'PAPER_ONLY' | 'SEMI_AUTO' | 'FULL_AUTO';
+
+/** GET /risk/profile response (frontend-safe — no secrets). */
+export interface RiskProfile {
+  id: string;
+  userId: string;
+  killSwitchActive: boolean;
+  killSwitchReason: string | null;
+  maxDailyLossPercent: string;
+  maxDrawdownPercent: string;
+  maxOpenTrades: number;
+  maxDailyTrades: number;
+  maxPositionSizeLot: string;
+  minStopLossPips: string;
+  allowedInstruments: string[] | null;
+  maxVolatilityScore: string;
+  rejectLowLiquidity: boolean;
+  // Sprint 29 fields:
+  riskAcknowledgementAccepted: boolean;
+  riskAcknowledgementAcceptedAt: string | null;
+  maxTradeRiskPercent: string;
+  maxLeverageAllowed: number;
+  allowedTradingModes: AllowedTradingMode;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** PATCH /risk/profile request body. */
+export interface UpdateRiskProfileRequest {
+  maxDailyLossPercent?: number;
+  maxDrawdownPercent?: number;
+  maxOpenTrades?: number;
+  maxDailyTrades?: number;
+  maxPositionSizeLot?: number;
+  minStopLossPips?: number;
+  allowedInstruments?: string[] | null;
+  maxVolatilityScore?: number;
+  rejectLowLiquidity?: boolean;
+  // Sprint 29:
+  maxTradeRiskPercent?: number;
+  maxLeverageAllowed?: number;
+  allowedTradingModes?: AllowedTradingMode;
+  riskAcknowledgementAccepted?: boolean;
 }
 
 // ── Health ──────────────────────────────────────────────────────────────────

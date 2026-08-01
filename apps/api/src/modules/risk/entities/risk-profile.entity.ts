@@ -8,6 +8,17 @@ import {
 } from 'typeorm';
 
 /**
+ * Sprint 29: allowed trading modes — the most permissive mode the user has
+ * enabled. PAPER_ONLY is the safe default (no real orders). The user must
+ * explicitly upgrade to SEMI_AUTO or FULL_AUTO after acknowledging risk.
+ */
+export enum AllowedTradingMode {
+  PAPER_ONLY = 'PAPER_ONLY',
+  SEMI_AUTO = 'SEMI_AUTO',
+  FULL_AUTO = 'FULL_AUTO',
+}
+
+/**
  * RiskProfile — Per-user risk management configuration.
  *
  * One record per user. Created automatically with safe defaults on first use.
@@ -135,6 +146,57 @@ export class RiskProfile {
   /** Whether to reject trades during LOW_LIQUIDITY regime. Default: true. */
   @Column({ name: 'reject_low_liquidity', type: 'boolean', default: true })
   rejectLowLiquidity: boolean;
+
+  // ─── Sprint 29: onboarding gates ──────────────────────────────────────────
+
+  /**
+   * Sprint 29: explicit user acceptance of the risk disclosure.
+   * This is the HARD GATE for canStartTrading — no automated trading is
+   * allowed until the user has explicitly accepted the risk acknowledgement.
+   * Separate from UserProfile.riskDisclosureAccepted (general KYC flag).
+   */
+  @Column({
+    name: 'risk_acknowledgement_accepted',
+    type: 'boolean',
+    default: false,
+  })
+  riskAcknowledgementAccepted: boolean;
+
+  /** Timestamp of the risk acknowledgement acceptance (audit trail). */
+  @Column({ name: 'risk_acknowledgement_accepted_at', type: 'timestamptz', nullable: true })
+  riskAcknowledgementAcceptedAt: Date | null;
+
+  /**
+   * Sprint 29: maximum risk per trade as a percentage of equity.
+   * Default: 2.0% — conservative. Range: 0.5–10.
+   */
+  @Column({
+    name: 'max_trade_risk_percent',
+    type: 'numeric',
+    precision: 5,
+    scale: 2,
+    default: '2.00',
+  })
+  maxTradeRiskPercent: string;
+
+  /**
+   * Sprint 29: maximum leverage allowed.
+   * Default: 30 — conservative. Range: 1–500.
+   */
+  @Column({ name: 'max_leverage_allowed', type: 'integer', default: 30 })
+  maxLeverageAllowed: number;
+
+  /**
+   * Sprint 29: the most permissive trading mode the user has enabled.
+   * Default: PAPER_ONLY — safest. The user must explicitly upgrade.
+   */
+  @Column({
+    name: 'allowed_trading_modes',
+    type: 'enum',
+    enum: AllowedTradingMode,
+    default: AllowedTradingMode.PAPER_ONLY,
+  })
+  allowedTradingModes: AllowedTradingMode;
 
   // ─── Timestamps ───────────────────────────────────────────────────────────
 

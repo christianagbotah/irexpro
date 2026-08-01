@@ -2,20 +2,28 @@ import {
   ApiError,
   AuthTokens,
   AuthUser,
+  BrokerConnectionView,
+  BrokerTestResult,
   CheckoutResult,
+  CreateBrokerConnectionRequest,
   ForgotPasswordRequest,
   ForgotPasswordResponse,
   HealthResponse,
   Invoice,
   LoginRequest,
   LogoutResponse,
+  OnboardingStatus,
   PaymentProviderInfo,
   PaymentTransaction,
   RefreshRequest,
   RegisterRequest,
   ResetPasswordRequest,
   ResetPasswordResponse,
+  RiskProfile,
   SubscriptionPlan,
+  SupportedBroker,
+  UpdateMyProfileRequest,
+  UpdateRiskProfileRequest,
   UserSubscription,
 } from '@irexpro/types';
 
@@ -73,6 +81,30 @@ export interface ApiClient {
   forgotPassword(body: ForgotPasswordRequest): Promise<ForgotPasswordResponse>;
   /** POST /auth/reset-password → reset password using token (email) or code (phone). */
   resetPassword(body: ResetPasswordRequest): Promise<ResetPasswordResponse>;
+
+  // ── Sprint 29: Users / onboarding / risk / broker ─────────────────────────
+  /** GET /users/me → current user profile (full entity with profile relation). */
+  getMyProfile(): Promise<unknown>;
+  /** PATCH /users/me → update profile fields (onboarding). */
+  updateMyProfile(body: UpdateMyProfileRequest): Promise<unknown>;
+  /** GET /users/me/onboarding-status → onboarding checklist status. */
+  getOnboardingStatus(): Promise<OnboardingStatus>;
+  /** GET /risk/profile → user risk profile (auto-created with defaults). */
+  getRiskProfile(): Promise<RiskProfile>;
+  /** PATCH /risk/profile → update risk profile + risk acknowledgement. */
+  updateRiskProfile(body: UpdateRiskProfileRequest): Promise<RiskProfile>;
+  /** GET /broker/connections/supported → list of supported brokers. */
+  listSupportedBrokers(): Promise<SupportedBroker[]>;
+  /** GET /broker/connections → user's broker connections (no credentials). */
+  listBrokerConnections(): Promise<BrokerConnectionView[]>;
+  /** POST /broker/connections → create a new broker connection (encrypts credentials). */
+  createBrokerConnection(body: CreateBrokerConnectionRequest): Promise<BrokerConnectionView>;
+  /** POST /broker/connections/test → test credentials without saving (returns success/error). */
+  testBrokerCredentials(body: CreateBrokerConnectionRequest): Promise<BrokerTestResult>;
+  /** POST /broker/connections/:id/connect → connect (set status to CONNECTED). */
+  connectBroker(connectionId: string): Promise<BrokerConnectionView>;
+  /** POST /broker/connections/:id/disconnect → disconnect. */
+  disconnectBroker(connectionId: string): Promise<void>;
 
   // Subscriptions / plans
   listPlans(): Promise<SubscriptionPlan[]>;
@@ -220,6 +252,54 @@ export function createApiClient(options: CreateApiClientOptions): ApiClient {
       request<ResetPasswordResponse>('/auth/reset-password', {
         method: 'POST',
         body: JSON.stringify(body),
+      }),
+
+    // Sprint 29: users / onboarding / risk / broker
+    getMyProfile: () => request<unknown>('/users/me'),
+
+    updateMyProfile: (body) =>
+      request<unknown>('/users/me', {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      }),
+
+    getOnboardingStatus: () =>
+      request<OnboardingStatus>('/users/me/onboarding-status'),
+
+    getRiskProfile: () => request<RiskProfile>('/risk/profile'),
+
+    updateRiskProfile: (body) =>
+      request<RiskProfile>('/risk/profile', {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      }),
+
+    listSupportedBrokers: () =>
+      request<SupportedBroker[]>('/broker/connections/supported'),
+
+    listBrokerConnections: () =>
+      request<BrokerConnectionView[]>('/broker/connections'),
+
+    createBrokerConnection: (body) =>
+      request<BrokerConnectionView>('/broker/connections', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+
+    testBrokerCredentials: (body) =>
+      request<BrokerTestResult>('/broker/connections/test', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+
+    connectBroker: (connectionId) =>
+      request<BrokerConnectionView>(`/broker/connections/${connectionId}/connect`, {
+        method: 'POST',
+      }),
+
+    disconnectBroker: (connectionId) =>
+      request<void>(`/broker/connections/${connectionId}/disconnect`, {
+        method: 'POST',
       }),
 
     listPlans: () => request<SubscriptionPlan[]>('/subscriptions/plans'),
