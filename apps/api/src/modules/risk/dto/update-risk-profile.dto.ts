@@ -92,23 +92,30 @@ export class UpdateRiskProfileDto {
   // ── Sprint 29: onboarding fields ──────────────────────────────────────────
 
   @ApiPropertyOptional({
-    description: 'Sprint 29: Max risk per trade as % of equity (0.5–10%)',
+    description:
+      'Sprint 29: Max risk per trade as % of equity. ' +
+      'Default: 2%. Maximum for automated modes: 5% (conservative). ' +
+      'Values above 5% are rejected to prevent excessive automated risk.',
     example: 2,
   })
   @IsOptional()
   @IsNumber()
   @Min(0.5)
-  @Max(10)
+  @Max(5)
   maxTradeRiskPercent?: number;
 
   @ApiPropertyOptional({
-    description: 'Sprint 29: Max leverage allowed (1–500)',
+    description:
+      'Sprint 29: Max leverage allowed. ' +
+      'Default: 30 (conservative). Maximum: 100 for any automated mode. ' +
+      'Higher values may be allowed for PAPER_ONLY simulation but are capped ' +
+      'to prevent excessive automated risk.',
     example: 30,
   })
   @IsOptional()
   @IsInt()
   @Min(1)
-  @Max(500)
+  @Max(100)
   maxLeverageAllowed?: number;
 
   @ApiPropertyOptional({

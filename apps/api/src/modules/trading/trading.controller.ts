@@ -49,14 +49,21 @@ export class TradingController {
   @ApiOperation({
     summary: 'Start a new AI trading session',
     description:
-      'Requires active subscription, connected broker, and kill switch inactive. ' +
-      'Returns the created TradingSession. Demo/paper mode is the default.',
+      'Requires onboarding complete (profile + risk acknowledgement + broker connected), ' +
+      'active subscription, healthy broker connection, and kill switch inactive. ' +
+      'Returns the created TradingSession. PAPER_ONLY mode is the default. ' +
+      'FULL_AUTO does NOT automatically enable live broker execution — live trading ' +
+      'requires a separate explicit enablement on the broker connection.',
   })
   async startSession(
     @Request() req: { user: { id: string } },
     @Body() dto: StartSessionDto,
   ): Promise<TradingSession> {
-    return this.tradingService.startTradingSession(req.user.id, dto.brokerConnectionId);
+    return this.tradingService.startTradingSession(
+      req.user.id,
+      dto.brokerConnectionId,
+      dto.requestedMode,
+    );
   }
 
   /**

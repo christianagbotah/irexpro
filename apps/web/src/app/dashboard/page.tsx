@@ -108,8 +108,14 @@ export default function DashboardPage() {
 
 /**
  * Onboarding checklist card — shows 4 steps with status + action buttons.
+ * Sprint 29 amendment: adds "Start trading" button that handles the
+ * TRADING_NOT_READY structured error (403 + missingSteps) from the backend.
  */
 function OnboardingCard({ status }: { status: OnboardingStatus }) {
+  const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
+  const [missingSteps, setMissingSteps] = useState<string[] | null>(null);
+
   const steps = [
     {
       key: 'PROFILE',
@@ -134,6 +140,51 @@ function OnboardingCard({ status }: { status: OnboardingStatus }) {
     },
   ];
 
+  /** Map a missing step to its onboarding page URL. */
+  function stepToHref(step: string): string {
+    switch (step) {
+      case 'PROFILE': return '/onboarding/profile';
+      case 'RISK_PROFILE': return '/onboarding/risk';
+      case 'BROKER_CONNECTION': return '/onboarding/broker';
+      default: return '/dashboard';
+    }
+  }
+
+  async function handleStartTrading() {
+    setStarting(true);
+    setStartError(null);
+    setMissingSteps(null);
+    try {
+      // Call POST /trading/sessions/start via the low-level request method.
+      // The API client doesn't have a typed trading method yet, so we use request().
+      await api.request('/trading/sessions/start', {
+        method: 'POST',
+        body: JSON.stringify({ requestedMode: 'PAPER_ONLY' }),
+      });
+      // Success — trading session started (no auto-redirect; user stays on dashboard)
+      setStartError(null);
+    } catch (err) {
+      // Sprint 29 amendment: handle the structured TRADING_NOT_READY error.
+      // The error body is { statusCode: 403, code: 'TRADING_NOT_READY', message, missingSteps }
+      if (err && typeof err === 'object' && 'statusCode' in err && err.statusCode === 403) {
+        const body = err as { code?: string; missingSteps?: string[]; message?: string };
+        if (body.code === 'TRADING_NOT_READY' && body.missingSteps) {
+          setMissingSteps(body.missingSteps);
+          setStartError('Your trading setup is not ready. Complete the missing steps below.');
+        } else {
+          setStartError(body.message ?? 'Trading could not be started. Please try again.');
+        }
+      } else {
+        // Safe generic message — do NOT expose raw backend errors
+        setStartError(err instanceof Error && !err.message.includes('fetch')
+          ? err.message
+          : 'Unable to start trading. Please try again or contact support.');
+      }
+    } finally {
+      setStarting(false);
+    }
+  }
+
   return (
     <Card
       title={status.canStartTrading ? 'Trading setup ready' : 'Complete your onboarding'}
@@ -144,11 +195,27 @@ function OnboardingCard({ status }: { status: OnboardingStatus }) {
     >
       {status.canStartTrading ? (
         <Alert variant="success">
-          ✅ Trading setup ready. You can start a trading session from the trading page when you are ready.
+          ✅ Trading setup ready. Start a paper trading session below when you are ready.
         </Alert>
       ) : (
         <Alert variant="info">
           Next step: <strong>{status.nextStep === 'READY' ? 'All complete' : status.nextStep.replace(/_/g, ' ').toLowerCase()}</strong>
+        </Alert>
+      )}
+
+      {/* Sprint 29 amendment: TRADING_NOT_READY error display */}
+      {startError && (
+        <Alert variant="error" >
+          <div>{startError}</div>
+          {missingSteps && missingSteps.length > 0 && (
+            <div style={{ marginTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              {missingSteps.map((step) => (
+                <Link key={step} href={stepToHref(step)} className="text-sm" style={{ textDecoration: 'underline' }}>
+                  → Complete {step.replace(/_/g, ' ').toLowerCase()}
+                </Link>
+              ))}
+            </div>
+          )}
         </Alert>
       )}
 
@@ -182,6 +249,18 @@ function OnboardingCard({ status }: { status: OnboardingStatus }) {
           </div>
         ))}
       </div>
+
+      {/* Sprint 29 amendment: Start trading button (only shown when ready) */}
+      {status.canStartTrading && (
+        <button
+          onClick={handleStartTrading}
+          disabled={starting}
+          className="btn btn--primary btn--lg btn--block"
+          style={{ marginTop: '1rem' }}
+        >
+          {starting ? 'Starting…' : 'Start paper trading session'}
+        </button>
+      )}
     </Card>
   );
 }
