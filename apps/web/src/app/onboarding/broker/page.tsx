@@ -22,6 +22,10 @@ import type { SupportedBroker, BrokerConnectionView, BrokerTestResult } from '@i
  *
  * Credentials are NEVER shown after save. The backend response DTO excludes
  * all credential fields.
+ *
+ * UX-4: Premium visual redesign — mini-card connection rows, premium empty
+ * state, security alert, and sectioned new-connection form. Business logic,
+ * API calls, ConfirmDialog, and notifications unchanged.
  */
 type BrokerAction = 'testing' | 'saving' | 'connecting' | 'disconnecting' | 'deleting';
 
@@ -250,38 +254,92 @@ export default function OnboardingBrokerPage() {
     }
   }
 
+  function statusVariant(status: BrokerConnectionView['status']): 'success' | 'error' | 'warning' | 'info' {
+    if (status === 'CONNECTED') return 'success';
+    if (status === 'ERROR') return 'error';
+    if (status === 'DISCONNECTED') return 'warning';
+    return 'info';
+  }
+
   return (
     <DashboardShell user={user} onLogout={logout} activeRoute="/onboarding/broker">
-      <div style={{ marginBottom: '1.5rem' }}>
-        <h1>Onboarding — Broker connection</h1>
-        <p className="muted">Step 3 of 3: Connect a broker account to enable trading.</p>
+      {/* Premium page header — secure, enterprise-grade tone */}
+      <div style={{ marginBottom: 'var(--space-6)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-2)' }}>
+          <Badge variant="info">Step 3 of 3</Badge>
+        </div>
+        <h1 style={{ marginBottom: 'var(--space-2)' }}>Broker connection</h1>
+        <p className="muted" style={{ maxWidth: '640px', lineHeight: 1.6 }}>
+          Securely link your broker account to enable trading. Credentials are encrypted
+          with AES-256-GCM before storage and are never returned in API responses or logs.
+        </p>
       </div>
 
       {activeConnection && (
         <Alert variant="success">
-          ✅ A broker is connected ({activeConnection.brokerName}). Onboarding is complete!
-          <Button variant="secondary" size="sm" onClick={() => router.push('/dashboard')} style={{ marginLeft: '1rem' }}>
+          <div style={{ flex: 1 }}>
+            ✅ A broker is connected ({activeConnection.brokerName}). Onboarding is complete!
+          </div>
+          <Button variant="secondary" size="sm" onClick={() => router.push('/dashboard')}>
             Go to dashboard
           </Button>
         </Alert>
       )}
 
-      <Card title="Existing connections" className="mt-4">
+      {/* ── Existing connections ──────────────────────────────────────────── */}
+      <Card>
+        <h2 className="card__title">Existing connections</h2>
+        <p className="card__subtitle">
+          Manage your linked broker accounts. Disconnect a connection before deleting it.
+        </p>
+
         {connections.length === 0 ? (
-          <EmptyState icon="🔌" title="No broker connections yet" description="Create your first broker connection below." />
+          <EmptyState
+            icon="🔌"
+            title="No broker connections yet"
+            description="Create your first broker connection below — Paper Broker is recommended for testing."
+          />
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
             {connections.map((conn) => (
-              <div key={conn.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem 1rem', border: '1px solid var(--border, #2a3550)', borderRadius: '8px' }}>
-                <div>
-                  <strong>{conn.brokerName}</strong>
-                  {conn.displayName && <span className="muted"> — {conn.displayName}</span>}
-                  <div className="text-sm muted">Account: {conn.accountId ?? '(not set)'}</div>
+              <div
+                key={conn.id}
+                style={{
+                  padding: 'var(--space-4)',
+                  border: '1px solid var(--border-soft)',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--surface-tint)',
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 'var(--space-3)',
+                  transition: 'border-color var(--transition-fast), background var(--transition-fast)',
+                }}
+              >
+                <div style={{ minWidth: 0, flex: '1 1 220px' }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 'var(--space-2)',
+                      marginBottom: 'var(--space-1)',
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    <strong style={{ fontSize: '0.95rem', color: 'var(--text)' }}>{conn.brokerName}</strong>
+                    {conn.displayName && <span className="muted text-sm">— {conn.displayName}</span>}
+                    <Badge variant={statusVariant(conn.status)}>{conn.status}</Badge>
+                  </div>
+                  <div
+                    className="text-sm muted"
+                    style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem', wordBreak: 'break-all' }}
+                  >
+                    Account: {conn.accountId ?? '(not set)'}
+                  </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <Badge variant={conn.status === 'CONNECTED' ? 'success' : conn.status === 'ERROR' ? 'error' : 'info'}>
-                    {conn.status}
-                  </Badge>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
                   {conn.status === 'CONNECTED' ? (
                     <Button
                       variant="secondary"
@@ -319,37 +377,60 @@ export default function OnboardingBrokerPage() {
         )}
       </Card>
 
-      <Card title="Connect a new broker" className="mt-4" subtitle="Paper Broker is recommended for your first connection — it is simulated and safest.">
+      {/* ── Connect a new broker ──────────────────────────────────────────── */}
+      <Card>
+        <h2 className="card__title">Connect a new broker</h2>
+        <p className="card__subtitle">
+          Paper Broker is recommended for your first connection — it is simulated and safest.
+        </p>
+
         {error && <Alert variant="error">{error}</Alert>}
 
-        <form onSubmit={handleCreate}>
+        <form onSubmit={handleCreate} className="onboarding-form">
           <div className="input-group">
-            <label className="input-label">Broker</label>
-            <select className="input" value={selectedBrokerId} onChange={(e) => setSelectedBrokerId(e.target.value)} disabled={loading}>
+            <label className="input-label" htmlFor="broker-select">Broker</label>
+            <select
+              id="broker-select"
+              className="input"
+              value={selectedBrokerId}
+              onChange={(e) => setSelectedBrokerId(e.target.value)}
+              disabled={loading}
+            >
               {supportedBrokers.map((b) => (
                 <option key={b.brokerId} value={b.brokerId}>{b.brokerName}</option>
               ))}
             </select>
+            <p className="helper-text">Paper Broker requires no API credentials — just an account ID.</p>
           </div>
-          <Input label="Account ID" value={accountId} onChange={(e) => setAccountId(e.target.value)} disabled={loading} placeholder="Your broker account ID" required />
-          <Input label="Display name (optional)" value={displayName} onChange={(e) => setDisplayName(e.target.value)} disabled={loading} placeholder="My demo account" />
-          <Input label="API key (optional for paper broker)" type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} disabled={loading} placeholder="••••••••" />
-          <Input label="API secret (optional for paper broker)" type="password" value={apiSecret} onChange={(e) => setApiSecret(e.target.value)} disabled={loading} placeholder="••••••••" />
 
-          {/* Credentials are never shown after save */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 'var(--space-4)' }}>
+            <Input label="Account ID" value={accountId} onChange={(e) => setAccountId(e.target.value)} disabled={loading} placeholder="Your broker account ID" required />
+            <Input label="Display name (optional)" value={displayName} onChange={(e) => setDisplayName(e.target.value)} disabled={loading} placeholder="My demo account" />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 'var(--space-4)' }}>
+            <Input label="API key (optional for paper broker)" type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} disabled={loading} placeholder="••••••••" />
+            <Input label="API secret (optional for paper broker)" type="password" value={apiSecret} onChange={(e) => setApiSecret(e.target.value)} disabled={loading} placeholder="••••••••" />
+          </div>
+
+          {/* Security note (info alert) */}
           <Alert variant="info">
-            🔒 Credentials are encrypted (AES-256-GCM) before storage. They are NEVER returned in API responses or logs.
+            <span style={{ flex: 1 }}>
+              🔒 Credentials are encrypted (AES-256-GCM) before storage. They are NEVER returned in API responses or logs.
+            </span>
           </Alert>
 
           {testResult && (
             <Alert variant={testResult.success ? 'success' : 'error'}>
-              {testResult.success
-                ? `✅ Test succeeded! Account ID: ${testResult.accountId ?? '(confirmed)'}`
-                : `❌ Test failed: ${testResult.errorMessage ?? 'unknown error'}`}
+              <span style={{ flex: 1 }}>
+                {testResult.success
+                  ? `✅ Test succeeded! Account ID: ${testResult.accountId ?? '(confirmed)'}`
+                  : `❌ Test failed: ${testResult.errorMessage ?? 'unknown error'}`}
+              </span>
             </Alert>
           )}
 
-          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
+          <div style={{ display: 'flex', gap: 'var(--space-3)', marginTop: 'var(--space-4)', flexWrap: 'wrap' }}>
             <Button
               type="button"
               variant="secondary"
@@ -370,7 +451,7 @@ export default function OnboardingBrokerPage() {
           </div>
         </form>
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 'var(--space-4)', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
           <Link href="/onboarding/risk" className="text-sm">← Risk profile</Link>
           <Link href="/dashboard" className="text-sm">Back to dashboard →</Link>
         </div>
