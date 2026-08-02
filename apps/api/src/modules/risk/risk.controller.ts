@@ -20,7 +20,7 @@ import { RiskService } from './risk.service';
 import { ToggleKillSwitchDto } from './dto/kill-switch.dto';
 import { UpdateRiskProfileDto } from './dto/update-risk-profile.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { CurrentUserId } from '../../common/decorators/current-user.decorator';
 
 /**
  * RiskController — User-facing risk management endpoints.
@@ -53,7 +53,7 @@ export class RiskController {
   @ApiResponse({ status: 200, description: 'Kill switch state updated' })
   async toggleKillSwitch(
     @Body() dto: ToggleKillSwitchDto,
-    @CurrentUser('sub') userId: string,
+    @CurrentUserId() userId: string,
   ) {
     const profile = await this.riskService.toggleKillSwitch(
       userId,
@@ -74,7 +74,7 @@ export class RiskController {
   @Get('profile')
   @ApiOperation({ summary: 'Get your current risk profile and limits' })
   @ApiResponse({ status: 200, description: 'Current risk profile' })
-  async getRiskProfile(@CurrentUser('sub') userId: string) {
+  async getRiskProfile(@CurrentUserId() userId: string) {
     return this.riskService.getOrCreateProfile(userId);
   }
 
@@ -88,7 +88,7 @@ export class RiskController {
   @ApiResponse({ status: 200, description: 'Updated risk profile' })
   async updateRiskProfile(
     @Body() dto: UpdateRiskProfileDto,
-    @CurrentUser('sub') userId: string,
+    @CurrentUserId() userId: string,
   ) {
     return this.riskService.updateProfile(userId, dto);
   }
@@ -100,7 +100,7 @@ export class RiskController {
   @ApiQuery({ name: 'limit', required: false, description: 'Max results (default 50)' })
   @ApiResponse({ status: 200, description: 'List of recent risk violations' })
   async getViolations(
-    @CurrentUser('sub') userId: string,
+    @CurrentUserId() userId: string,
     @Query('limit') limit?: string,
   ) {
     const take = limit ? Math.min(parseInt(limit, 10), 200) : 50;
@@ -115,7 +115,7 @@ export class RiskController {
     description: 'Quick view of kill switch, broker connection, and key risk limits',
   })
   @ApiResponse({ status: 200, description: 'Risk status summary' })
-  async getRiskStatus(@CurrentUser('sub') userId: string) {
+  async getRiskStatus(@CurrentUserId() userId: string) {
     const [profile, hasBroker, killSwitchActive] = await Promise.all([
       this.riskService.getOrCreateProfile(userId),
       this.riskService.hasBrokerConnection(userId),

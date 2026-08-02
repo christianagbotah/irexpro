@@ -18,8 +18,7 @@ import { OnboardingService } from './onboarding.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { User } from './entities/user.entity';
+import { CurrentUserId } from '../../common/decorators/current-user.decorator';
 import { RoleName } from './entities/role.entity';
 import { UpdateMyProfileDto } from './dto/update-my-profile.dto';
 import { AuditService } from '../audit/audit.service';
@@ -38,8 +37,8 @@ export class UsersController {
 
   @Get('users/me')
   @ApiOperation({ summary: 'Get current user profile' })
-  async getMe(@CurrentUser() user: User) {
-    return this.usersService.findById(user.id);
+  async getMe(@CurrentUserId() userId: string) {
+    return this.usersService.findById(userId);
   }
 
   /**
@@ -51,13 +50,13 @@ export class UsersController {
    */
   @Patch('users/me')
   @ApiOperation({ summary: 'Update current user profile (onboarding)' })
-  async updateMe(@CurrentUser() user: User, @Body() dto: UpdateMyProfileDto) {
-    const updated = await this.usersService.updateMyProfile(user.id, dto);
+  async updateMe(@CurrentUserId() userId: string, @Body() dto: UpdateMyProfileDto) {
+    const updated = await this.usersService.updateMyProfile(userId, dto);
     await this.auditService.log({
-      actorUserId: user.id,
+      actorUserId: userId,
       action: AuditAction.ONBOARDING_PROFILE_UPDATED,
       resourceType: 'User',
-      resourceId: user.id,
+      resourceId: userId,
       metadata: {
         fields: Object.keys(dto),
         // Do NOT log the values themselves (could contain PII)
@@ -73,8 +72,8 @@ export class UsersController {
    */
   @Get('users/me/onboarding-status')
   @ApiOperation({ summary: 'Get current user onboarding status (Sprint 29)' })
-  async getOnboardingStatus(@CurrentUser() user: User) {
-    return this.onboardingService.getOnboardingStatus(user.id);
+  async getOnboardingStatus(@CurrentUserId() userId: string) {
+    return this.onboardingService.getOnboardingStatus(userId);
   }
 
   @Get('admin/users')

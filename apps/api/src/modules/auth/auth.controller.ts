@@ -33,7 +33,7 @@ import { AuthUserDto } from './dto/auth-user.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { User } from '../users/entities/user.entity';
+import { AuthenticatedPrincipal } from '../../common/interfaces/authenticated-principal.interface';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -135,13 +135,13 @@ export class AuthController {
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Get current authenticated user (frontend-safe DTO)' })
   @ApiResponse({ status: 200, description: 'Current user profile with roles', type: AuthUserDto })
-  async me(@CurrentUser() user: User & { roles?: string[] }): Promise<AuthUserDto> {
+  async me(@CurrentUser() principal: AuthenticatedPrincipal): Promise<AuthUserDto> {
     // Sprint 25: return a frontend-safe AuthUserDto that explicitly allowlists
     // only safe fields (id, email, firstName, lastName, countryCode, status,
     // roles, mfaEnabled, lastLoginAt, createdAt). Sensitive fields
     // (passwordHash, mfaSecret, deletedAt, userRoles, profile PII) are never
     // included. Roles come from the JWT payload (set by JwtStrategy.validate).
-    return this.authService.getAuthUserDto(user.id, (user.roles ?? []) as never);
+    return this.authService.getAuthUserDto(principal.userId, principal.roles as never);
   }
 
   // ── Sprint 28: Secure password reset ────────────────────────────────────

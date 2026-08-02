@@ -23,7 +23,7 @@ import { BrokerService } from './broker.service';
 import { ConnectBrokerDto } from './dto/connect-broker.dto';
 import { BrokerConnectionResponseDto } from './dto/broker-connection-response.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { CurrentUserId } from '../../common/decorators/current-user.decorator';
 
 /**
  * BrokerConnectionsController — REST endpoints for broker connection management.
@@ -61,7 +61,7 @@ export class BrokerController {
   @ApiOperation({ summary: 'List current user broker connections' })
   @ApiResponse({ status: 200, type: [BrokerConnectionResponseDto] })
   async listConnections(
-    @CurrentUser('sub') userId: string,
+    @CurrentUserId() userId: string,
   ): Promise<BrokerConnectionResponseDto[]> {
     const connections = await this.brokerService.findConnectionsByUser(userId);
     return connections.map((c) => Object.assign(new BrokerConnectionResponseDto(), c));
@@ -74,7 +74,7 @@ export class BrokerController {
   @ApiResponse({ status: 200, type: BrokerConnectionResponseDto })
   async getConnection(
     @Param('connectionId', ParseUUIDPipe) connectionId: string,
-    @CurrentUser('sub') userId: string,
+    @CurrentUserId() userId: string,
   ): Promise<BrokerConnectionResponseDto> {
     const connection = await this.brokerService.findConnectionById(connectionId, userId);
     return Object.assign(new BrokerConnectionResponseDto(), connection);
@@ -93,7 +93,7 @@ export class BrokerController {
   @ApiResponse({ status: 200, description: 'Test result' })
   async testCredentials(
     @Body() dto: ConnectBrokerDto,
-    @CurrentUser('sub') userId: string,
+    @CurrentUserId() userId: string,
   ) {
     return this.brokerService.testCredentials(dto, userId);
   }
@@ -109,7 +109,7 @@ export class BrokerController {
   @ApiResponse({ status: 201, type: BrokerConnectionResponseDto })
   async createConnection(
     @Body() dto: ConnectBrokerDto,
-    @CurrentUser('sub') userId: string,
+    @CurrentUserId() userId: string,
   ): Promise<BrokerConnectionResponseDto> {
     const connection = await this.brokerService.createConnection(dto, userId);
     return Object.assign(new BrokerConnectionResponseDto(), connection);
@@ -127,7 +127,7 @@ export class BrokerController {
   @ApiResponse({ status: 200, type: BrokerConnectionResponseDto })
   async connectBroker(
     @Param('connectionId', ParseUUIDPipe) connectionId: string,
-    @CurrentUser('sub') userId: string,
+    @CurrentUserId() userId: string,
   ): Promise<BrokerConnectionResponseDto> {
     const connection = await this.brokerService.connectBroker(connectionId, userId);
     return Object.assign(new BrokerConnectionResponseDto(), connection);
@@ -140,7 +140,7 @@ export class BrokerController {
   @ApiResponse({ status: 204, description: 'Disconnected successfully' })
   async disconnectBroker(
     @Param('connectionId', ParseUUIDPipe) connectionId: string,
-    @CurrentUser('sub') userId: string,
+    @CurrentUserId() userId: string,
   ): Promise<void> {
     await this.brokerService.disconnectBroker(connectionId, userId);
   }
@@ -154,7 +154,7 @@ export class BrokerController {
   @ApiResponse({ status: 204, description: 'Connection deleted' })
   async deleteConnection(
     @Param('connectionId', ParseUUIDPipe) connectionId: string,
-    @CurrentUser('sub') userId: string,
+    @CurrentUserId() userId: string,
   ): Promise<void> {
     await this.brokerService.deleteConnection(connectionId, userId);
   }
@@ -174,7 +174,7 @@ export class BrokerController {
   @ApiResponse({ status: 403, description: 'DEMO not yet validated' })
   async enableLiveTrading(
     @Param('connectionId', ParseUUIDPipe) connectionId: string,
-    @CurrentUser('sub') userId: string,
+    @CurrentUserId() userId: string,
   ): Promise<void> {
     await this.brokerService.enableLiveTrading(connectionId, userId);
   }

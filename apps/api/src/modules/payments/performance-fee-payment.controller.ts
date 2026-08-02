@@ -13,14 +13,11 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { AuthenticatedPrincipal } from '../../common/interfaces/authenticated-principal.interface';
 import { RoleName } from '../users/entities/role.entity';
-import { User } from '../users/entities/user.entity';
 import { InvoiceStatus } from './entities/invoice.entity';
 import { PerformanceFeePaymentService } from './services/performance-fee-payment.service';
 import { InitiatePerformanceFeeCheckoutDto } from './dto/initiate-performance-fee-checkout.dto';
-
-/** The JWT strategy attaches `roles: RoleName[]` to the request user object. */
-type RequestUser = User & { roles?: RoleName[] };
 
 /**
  * PerformanceFeePaymentController (Sprint 14)
@@ -44,23 +41,23 @@ type RequestUser = User & { roles?: RoleName[] };
 export class PerformanceFeePaymentController {
   constructor(private readonly svc: PerformanceFeePaymentService) {}
 
-  private isAdmin(user: RequestUser): boolean {
-    return !!user.roles?.some((r) => r === RoleName.ADMIN || r === RoleName.SUPER_ADMIN);
+  private isAdmin(principal: AuthenticatedPrincipal): boolean {
+    return !!principal.roles?.some((r) => r === RoleName.ADMIN || r === RoleName.SUPER_ADMIN);
   }
 
   @Get('invoices')
   @ApiOperation({ summary: 'List performance-fee invoices (own, or any as admin)' })
   listInvoices(
-    @CurrentUser() user: RequestUser,
+    @CurrentUser() principal: AuthenticatedPrincipal,
     @Query('userId') queryUserId?: string,
     @Query('status') status?: InvoiceStatus,
     @Query('limit') limit?: string,
   ) {
-    const admin = this.isAdmin(user);
-    if (!admin && queryUserId && queryUserId !== user.id) {
+    const admin = this.isAdmin(principal);
+    if (!admin && queryUserId && queryUserId !== principal.userId) {
       throw new ForbiddenException('You can only view your own performance-fee invoices');
     }
-    const effectiveUserId = admin ? queryUserId ?? user.id : user.id;
+    const effectiveUserId = admin ? queryUserId ?? principal.userId : principal.userId;
     return this.svc.listUserPerformanceFeeInvoices(effectiveUserId, {
       status,
       limit: limit ? Number(limit) : undefined,
@@ -71,9 +68,9 @@ export class PerformanceFeePaymentController {
   @ApiOperation({ summary: 'View a single performance-fee invoice' })
   getInvoice(
     @Param('invoiceId', ParseUUIDPipe) invoiceId: string,
-    @CurrentUser() user: RequestUser,
+    @CurrentUser() principal: AuthenticatedPrincipal,
   ) {
-    return this.svc.getInvoiceView(invoiceId, user.id, this.isAdmin(user));
+    return this.svc.getInvoiceView(invoiceId, principal.userId, this.isAdmin(principal));
   }
 
   @Post('invoices/:invoiceId/checkout')
@@ -81,13 +78,13 @@ export class PerformanceFeePaymentController {
   initiateCheckout(
     @Param('invoiceId', ParseUUIDPipe) invoiceId: string,
     @Body() dto: InitiatePerformanceFeeCheckoutDto,
-    @CurrentUser() user: RequestUser,
+    @CurrentUser() principal: AuthenticatedPrincipal,
     @Request() req: { ip?: string },
   ) {
     return this.svc.initiatePerformanceFeeCheckout({
       invoiceId,
-      requestingUserId: user.id,
-      isAdmin: this.isAdmin(user),
+      requestingUserId: principal.userId,
+      isAdmin: this.isAdmin(principal),
       options: { provider: dto.provider, countryCode: dto.countryCode, currency: dto.currency },
       ipAddress: req.ip,
     });
@@ -97,13 +94,13 @@ export class PerformanceFeePaymentController {
   @ApiOperation({ summary: 'Get payment status for a performance-fee invoice' })
   getPaymentStatus(
     @Param('invoiceId', ParseUUIDPipe) invoiceId: string,
-    @CurrentUser() user: RequestUser,
+    @CurrentUser() principal: AuthenticatedPrincipal,
     @Request() req: { ip?: string },
   ) {
     return this.svc.getPerformanceFeePaymentStatus(
       invoiceId,
-      user.id,
-      this.isAdmin(user),
+      principal.userId,
+      this.isAdmin(principal),
       req.ip,
     );
   }

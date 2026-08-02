@@ -10,9 +10,8 @@ import {
 } from '@nestjs/common';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { CurrentUserId } from '../../common/decorators/current-user.decorator';
 import { RoleName } from '../users/entities/role.entity';
-import { User } from '../users/entities/user.entity';
 import { PerformanceFeeService } from './services/performance-fee.service';
 import { CreatePolicyDto } from './dto/create-policy.dto';
 import { CalculateAssessmentDto } from './dto/calculate-assessment.dto';
@@ -47,15 +46,15 @@ export class PerformanceFeesController {
 
   @Post('policies')
   @Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN)
-  createPolicy(@Body() dto: CreatePolicyDto, @CurrentUser() admin: User) {
-    return this.svc.createPolicy(dto, admin.id);
+  createPolicy(@Body() dto: CreatePolicyDto, @CurrentUserId() adminId: string) {
+    return this.svc.createPolicy(dto, adminId);
   }
 
   // ── User summary (own data) ────────────────────────────────────────────────
 
   @Get('me/summary')
-  getMyPerformanceSummary(@CurrentUser() user: User) {
-    return this.svc.getUserSummary(user.id);
+  getMyPerformanceSummary(@CurrentUserId() userId: string) {
+    return this.svc.getUserSummary(userId);
   }
 
   // ── Assessment endpoints ───────────────────────────────────────────────────
@@ -68,28 +67,28 @@ export class PerformanceFeesController {
 
   @Post('assessments/calculate')
   @Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN)
-  calculateAssessment(@Body() dto: CalculateAssessmentDto, @CurrentUser() admin: User) {
+  calculateAssessment(@Body() dto: CalculateAssessmentDto, @CurrentUserId() adminId: string) {
     return this.svc.calculateAssessment(
       dto.userId,
       dto.brokerConnectionId ?? null,
       dto.currency,
       new Date(dto.periodStart),
       new Date(dto.periodEnd),
-      admin.id,
+      adminId,
     );
   }
 
   @Post('assessments/:id/invoice')
   @Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN)
-  invoiceAssessment(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() admin: User) {
-    return this.svc.invoiceAssessment(id, admin.id);
+  invoiceAssessment(@Param('id', ParseUUIDPipe) id: string, @CurrentUserId() adminId: string) {
+    return this.svc.invoiceAssessment(id, adminId);
   }
 
   // ── Ledger entry endpoint (admin only) ────────────────────────────────────
 
   @Post('ledger-entries')
   @Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN)
-  createLedgerEntry(@Body() dto: CreateLedgerEntryDto, @CurrentUser() admin: User) {
-    return this.svc.recordLedgerEntry(dto, admin.id);
+  createLedgerEntry(@Body() dto: CreateLedgerEntryDto, @CurrentUserId() adminId: string) {
+    return this.svc.recordLedgerEntry(dto, adminId);
   }
 }
