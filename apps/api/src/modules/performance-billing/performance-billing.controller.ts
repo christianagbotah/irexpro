@@ -11,17 +11,14 @@ import {
 } from '@nestjs/common';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { CurrentUser, CurrentUserId } from '../../common/decorators/current-user.decorator';
+import { AuthenticatedPrincipal } from '../../common/interfaces/authenticated-principal.interface';
 import { RoleName } from '../users/entities/role.entity';
-import { User } from '../users/entities/user.entity';
 import { PerformanceFeeBillingCycleService } from './services/performance-fee-billing-cycle.service';
 import { CreateBillingCycleDto } from './dto/create-billing-cycle.dto';
 import { RunBillingCycleDto } from './dto/run-billing-cycle.dto';
 import { CancelBillingCycleDto } from './dto/cancel-billing-cycle.dto';
 import { BillingCycleStatus } from './entities/performance-fee-billing-cycle.entity';
-
-/** The JWT strategy attaches `roles: RoleName[]` to the request user. */
-type RequestUser = User & { roles?: RoleName[] };
 
 /**
  * PerformanceBillingController
@@ -48,7 +45,7 @@ export class PerformanceBillingController {
   @Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN)
   createCycle(
     @Body() dto: CreateBillingCycleDto,
-    @CurrentUser() actor: RequestUser,
+    @CurrentUserId() actorId: string,
     @Request() req: { ip?: string },
   ) {
     return this.svc.createBillingCycle(
@@ -57,7 +54,7 @@ export class PerformanceBillingController {
       new Date(dto.periodStart),
       new Date(dto.periodEnd),
       dto.currency,
-      actor.id,
+      actorId,
       req.ip,
     );
   }
@@ -67,10 +64,10 @@ export class PerformanceBillingController {
   @Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN)
   runCycle(
     @Param('id') id: string,
-    @CurrentUser() actor: RequestUser,
+    @CurrentUserId() actorId: string,
     @Request() req: { ip?: string },
   ) {
-    return this.svc.runBillingCycle(id, actor.id, req.ip);
+    return this.svc.runBillingCycle(id, actorId, req.ip);
   }
 
   /** Create and immediately run a billing cycle (convenience endpoint). Admin only. */
@@ -78,7 +75,7 @@ export class PerformanceBillingController {
   @Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN)
   runDirect(
     @Body() dto: RunBillingCycleDto,
-    @CurrentUser() actor: RequestUser,
+    @CurrentUserId() actorId: string,
     @Request() req: { ip?: string },
   ) {
     return this.svc.runBillingCycleForUserPeriod(
@@ -87,7 +84,7 @@ export class PerformanceBillingController {
       new Date(dto.periodStart),
       new Date(dto.periodEnd),
       dto.currency,
-      actor.id,
+      actorId,
       req.ip,
     );
   }
@@ -99,17 +96,17 @@ export class PerformanceBillingController {
    */
   @Get('cycles')
   listCycles(
-    @CurrentUser() currentUser: RequestUser,
+    @CurrentUser() principal: AuthenticatedPrincipal,
     @Query('userId') queryUserId?: string,
     @Query('status') status?: BillingCycleStatus,
   ) {
-    const isAdmin = this.isAdmin(currentUser);
+    const isAdmin = this.isAdmin(principal);
 
-    if (!isAdmin && queryUserId && queryUserId !== currentUser.id) {
+    if (!isAdmin && queryUserId && queryUserId !== principal.userId) {
       throw new ForbiddenException('You can only view your own billing cycles');
     }
 
-    const effectiveUserId = isAdmin ? queryUserId : currentUser.id;
+    const effectiveUserId = isAdmin ? queryUserId : principal.userId;
     return this.svc.listBillingCycles({ userId: effectiveUserId, status });
   }
 
@@ -121,11 +118,11 @@ export class PerformanceBillingController {
   @Get('cycles/:id')
   async getCycle(
     @Param('id') id: string,
-    @CurrentUser() currentUser: RequestUser,
+    @CurrentUser() principal: AuthenticatedPrincipal,
   ) {
     const cycle = await this.svc.getBillingCycle(id);
 
-    if (!this.isAdmin(currentUser) && cycle.userId !== currentUser.id) {
+    if (!this.isAdmin(principal) && cycle.userId !== principal.userId) {
       throw new ForbiddenException('You can only view your own billing cycles');
     }
 
@@ -138,14 +135,14 @@ export class PerformanceBillingController {
   cancelCycle(
     @Param('id') id: string,
     @Body() dto: CancelBillingCycleDto,
-    @CurrentUser() actor: RequestUser,
+    @CurrentUserId() actorId: string,
     @Request() req: { ip?: string },
   ) {
-    return this.svc.cancelBillingCycle(id, dto.reason, actor.id, req.ip);
+    return this.svc.cancelBillingCycle(id, dto.reason, actorId, req.ip);
   }
 
-  private isAdmin(user: RequestUser): boolean {
-    return user.roles?.some(
+  private isAdmin(principal: AuthenticatedPrincipal): boolean {
+    return principal.roles?.some(
       (r) => r === RoleName.ADMIN || r === RoleName.SUPER_ADMIN,
     ) ?? false;
   }

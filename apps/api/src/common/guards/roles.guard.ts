@@ -2,7 +2,7 @@ import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@
 import { Reflector } from '@nestjs/core';
 import { RoleName } from '../../modules/users/entities/role.entity';
 import { ROLES_KEY } from '../constants/roles.constants';
-import { User } from '../../modules/users/entities/user.entity';
+import { AuthenticatedPrincipal } from '../interfaces/authenticated-principal.interface';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -16,11 +16,13 @@ export class RolesGuard implements CanActivate {
     if (!requiredRoles || requiredRoles.length === 0) return true;
 
     const request = context.switchToHttp().getRequest();
-    const user: User & { roles?: RoleName[] } = request.user;
+    const principal = request.user as AuthenticatedPrincipal | undefined;
 
-    if (!user) throw new ForbiddenException('Access denied');
+    if (!principal || !principal.roles) {
+      throw new ForbiddenException('Access denied');
+    }
 
-    const hasRole = requiredRoles.some((role) => user.roles?.includes(role));
+    const hasRole = requiredRoles.some((role) => principal.roles.includes(role));
     if (!hasRole) throw new ForbiddenException('Insufficient permissions');
     return true;
   }

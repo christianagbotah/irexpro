@@ -2,14 +2,29 @@ import { ForbiddenException } from '@nestjs/common';
 import { PerformanceBillingController } from './performance-billing.controller';
 import { BillingCycleStatus } from './entities/performance-fee-billing-cycle.entity';
 import { RoleName } from '../users/entities/role.entity';
+import { UserStatus } from '../users/entities/user.entity';
+import { AuthenticatedPrincipal } from '../../common/interfaces/authenticated-principal.interface';
 
 const FROM = '2026-01-01T00:00:00Z';
 const TO = '2026-05-31T23:59:59Z';
 
-const adminUser = { id: 'admin-1', roles: [RoleName.ADMIN] } as any;
-const superAdmin = { id: 'sa-1', roles: [RoleName.SUPER_ADMIN] } as any;
-const normalUser = { id: 'user-1', roles: [RoleName.USER] } as any;
-const noRoles = { id: 'user-2' } as any;
+/**
+ * Hotfix: controller methods now accept `@CurrentUserId() actorId: string`
+ * (for id-only methods) or `@CurrentUser() principal: AuthenticatedPrincipal`
+ * (for methods that also check roles via isAdmin()).
+ */
+const adminPrincipal: AuthenticatedPrincipal = {
+  userId: 'admin-1', email: null, phone: null, roles: [RoleName.ADMIN], status: UserStatus.ACTIVE,
+};
+const superAdminPrincipal: AuthenticatedPrincipal = {
+  userId: 'sa-1', email: null, phone: null, roles: [RoleName.SUPER_ADMIN], status: UserStatus.ACTIVE,
+};
+const normalPrincipal: AuthenticatedPrincipal = {
+  userId: 'user-1', email: null, phone: null, roles: [RoleName.USER], status: UserStatus.ACTIVE,
+};
+const noRolesPrincipal: AuthenticatedPrincipal = {
+  userId: 'user-2', email: null, phone: null, roles: [], status: UserStatus.ACTIVE,
+};
 
 const svc = {
   createBillingCycle: jest.fn(),
@@ -31,7 +46,7 @@ describe('createCycle', () => {
   it('delegates to service with parsed dates', () => {
     controller.createCycle(
       { userId: 'u1', brokerConnectionId: 'c1', periodStart: FROM, periodEnd: TO, currency: 'USD' },
-      adminUser,
+      'admin-1',
       { ip: '1.2.3.4' },
     );
     expect(svc.createBillingCycle).toHaveBeenCalledWith(
@@ -42,7 +57,7 @@ describe('createCycle', () => {
   it('passes null when brokerConnectionId is omitted', () => {
     controller.createCycle(
       { userId: 'u1', periodStart: FROM, periodEnd: TO, currency: 'USD' } as any,
-      adminUser,
+      'admin-1',
       {},
     );
     expect(svc.createBillingCycle).toHaveBeenCalledWith(
@@ -53,7 +68,7 @@ describe('createCycle', () => {
 
 describe('runCycle', () => {
   it('delegates to service with cycleId', () => {
-    controller.runCycle('cycle-1', adminUser, { ip: '5.5.5.5' });
+    controller.runCycle('cycle-1', 'admin-1', { ip: '5.5.5.5' });
     expect(svc.runBillingCycle).toHaveBeenCalledWith('cycle-1', 'admin-1', '5.5.5.5');
   });
 });
@@ -62,7 +77,7 @@ describe('runDirect', () => {
   it('delegates to runBillingCycleForUserPeriod', () => {
     controller.runDirect(
       { userId: 'u1', brokerConnectionId: 'c1', periodStart: FROM, periodEnd: TO, currency: 'EUR' },
-      superAdmin,
+      'sa-1',
       {},
     );
     expect(svc.runBillingCycleForUserPeriod).toHaveBeenCalledWith(
@@ -73,31 +88,31 @@ describe('runDirect', () => {
 
 describe('listCycles', () => {
   it('admin can list with any userId', () => {
-    controller.listCycles(adminUser, 'target-user', undefined);
+    controller.listCycles(adminPrincipal, 'target-user', undefined);
     expect(svc.listBillingCycles).toHaveBeenCalledWith({ userId: 'target-user', status: undefined });
   });
 
   it('super-admin can list with any userId', () => {
-    controller.listCycles(superAdmin, 'any-user', BillingCycleStatus.INVOICED);
+    controller.listCycles(superAdminPrincipal, 'any-user', BillingCycleStatus.INVOICED);
     expect(svc.listBillingCycles).toHaveBeenCalledWith({
       userId: 'any-user', status: BillingCycleStatus.INVOICED,
     });
   });
 
   it('normal user with no queryUserId is scoped to own id', () => {
-    controller.listCycles(normalUser, undefined, undefined);
+    controller.listCycles(normalPrincipal, undefined, undefined);
     expect(svc.listBillingCycles).toHaveBeenCalledWith({ userId: 'user-1', status: undefined });
   });
 
   it('normal user cannot read another user\'s cycles (ForbiddenException)', () => {
     expect(() => {
-      controller.listCycles(normalUser, 'other-user', undefined);
+      controller.listCycles(normalPrincipal, 'other-user', undefined);
     }).toThrow(ForbiddenException);
     expect(svc.listBillingCycles).not.toHaveBeenCalled();
   });
 
   it('user with no roles is scoped to own id', () => {
-    controller.listCycles(noRoles, undefined, undefined);
+    controller.listCycles(noRolesPrincipal, undefined, undefined);
     expect(svc.listBillingCycles).toHaveBeenCalledWith({ userId: 'user-2', status: undefined });
   });
 });
@@ -105,25 +120,25 @@ describe('listCycles', () => {
 describe('getCycle', () => {
   it('admin can get any cycle', async () => {
     svc.getBillingCycle.mockResolvedValue({ id: 'cycle-1', userId: 'other-user' });
-    const result = await controller.getCycle('cycle-1', adminUser);
+    const result = await controller.getCycle('cycle-1', adminPrincipal);
     expect(result.id).toBe('cycle-1');
   });
 
   it('normal user can get own cycle', async () => {
     svc.getBillingCycle.mockResolvedValue({ id: 'cycle-1', userId: 'user-1' });
-    const result = await controller.getCycle('cycle-1', normalUser);
+    const result = await controller.getCycle('cycle-1', normalPrincipal);
     expect(result.id).toBe('cycle-1');
   });
 
   it('normal user cannot get another user\'s cycle', async () => {
     svc.getBillingCycle.mockResolvedValue({ id: 'cycle-2', userId: 'other-user' });
-    await expect(controller.getCycle('cycle-2', normalUser)).rejects.toThrow(ForbiddenException);
+    await expect(controller.getCycle('cycle-2', normalPrincipal)).rejects.toThrow(ForbiddenException);
   });
 });
 
 describe('cancelCycle', () => {
   it('admin can cancel a cycle', () => {
-    controller.cancelCycle('cycle-1', { reason: 'Admin decision' }, adminUser, {});
+    controller.cancelCycle('cycle-1', { reason: 'Admin decision' }, 'admin-1', {});
     expect(svc.cancelBillingCycle).toHaveBeenCalledWith('cycle-1', 'Admin decision', 'admin-1', undefined);
   });
 });

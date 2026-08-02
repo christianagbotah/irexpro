@@ -10,14 +10,11 @@ import {
 } from '@nestjs/common';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { CurrentUser, CurrentUserId } from '../../common/decorators/current-user.decorator';
+import { AuthenticatedPrincipal } from '../../common/interfaces/authenticated-principal.interface';
 import { RoleName } from '../users/entities/role.entity';
-import { User } from '../users/entities/user.entity';
 import { BrokerTradeReconciliationService } from './services/broker-trade-reconciliation.service';
 import { RunReconciliationDto } from './dto/run-reconciliation.dto';
-
-/** The JWT strategy attaches `roles: RoleName[]` to the request user object. */
-type RequestUser = User & { roles?: RoleName[] };
 
 /**
  * BrokerReconciliationController
@@ -49,7 +46,7 @@ export class BrokerReconciliationController {
   @Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN)
   runReconciliation(
     @Body() dto: RunReconciliationDto,
-    @CurrentUser() actor: RequestUser,
+    @CurrentUserId() actorId: string,
     @Request() req: { ip?: string },
   ) {
     return this.svc.runReconciliation(
@@ -57,7 +54,7 @@ export class BrokerReconciliationController {
       dto.brokerConnectionId,
       new Date(dto.fromTime),
       new Date(dto.toTime),
-      actor.id,
+      actorId,
       req.ip,
     );
   }
@@ -69,14 +66,14 @@ export class BrokerReconciliationController {
    */
   @Get('runs')
   getRuns(
-    @CurrentUser() currentUser: RequestUser,
+    @CurrentUser() principal: AuthenticatedPrincipal,
     @Query('userId') queryUserId?: string,
   ) {
-    const isAdmin = currentUser.roles?.some(
+    const isAdmin = principal.roles?.some(
       (r) => r === RoleName.ADMIN || r === RoleName.SUPER_ADMIN,
     );
 
-    const effectiveUserId = isAdmin ? queryUserId : currentUser.id;
+    const effectiveUserId = isAdmin ? queryUserId : principal.userId;
     return this.svc.getRuns(effectiveUserId);
   }
 
@@ -87,20 +84,20 @@ export class BrokerReconciliationController {
    */
   @Get('reconciled-trades')
   getReconciledTrades(
-    @CurrentUser() currentUser: RequestUser,
+    @CurrentUser() principal: AuthenticatedPrincipal,
     @Query('userId') queryUserId?: string,
     @Query('brokerConnectionId') brokerConnectionId?: string,
   ) {
-    const isAdmin = currentUser.roles?.some(
+    const isAdmin = principal.roles?.some(
       (r) => r === RoleName.ADMIN || r === RoleName.SUPER_ADMIN,
     );
 
     // Non-admin users attempting to view another user's data get a 403
-    if (!isAdmin && queryUserId && queryUserId !== currentUser.id) {
+    if (!isAdmin && queryUserId && queryUserId !== principal.userId) {
       throw new ForbiddenException('You can only view your own reconciliation data');
     }
 
-    const effectiveUserId = isAdmin ? queryUserId : currentUser.id;
+    const effectiveUserId = isAdmin ? queryUserId : principal.userId;
     return this.svc.getReconciledTrades(effectiveUserId, brokerConnectionId);
   }
 }

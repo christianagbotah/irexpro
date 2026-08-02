@@ -7,12 +7,12 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
-  Request,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { TradingService } from './trading.service';
 import { TradingSession } from '../execution/entities/trading-session.entity';
 import { StartSessionDto } from './dto/start-session.dto';
+import { CurrentUserId } from '../../common/decorators/current-user.decorator';
 
 /**
  * TradingController — Trading session lifecycle API.
@@ -56,11 +56,11 @@ export class TradingController {
       'requires a separate explicit enablement on the broker connection.',
   })
   async startSession(
-    @Request() req: { user: { id: string } },
+    @CurrentUserId() userId: string,
     @Body() dto: StartSessionDto,
   ): Promise<TradingSession> {
     return this.tradingService.startTradingSession(
-      req.user.id,
+      userId,
       dto.brokerConnectionId,
       dto.requestedMode,
     );
@@ -82,10 +82,10 @@ export class TradingController {
       'Emits a realtime session-stopped event.',
   })
   async stopSession(
-    @Request() req: { user: { id: string } },
+    @CurrentUserId() userId: string,
     @Param('id', ParseUUIDPipe) sessionId: string,
   ): Promise<{ message: string; sessionId: string }> {
-    await this.tradingService.stopTradingSession(req.user.id, sessionId);
+    await this.tradingService.stopTradingSession(userId, sessionId);
     return { message: 'Trading session stopped', sessionId };
   }
 
@@ -97,9 +97,9 @@ export class TradingController {
   @Get('active')
   @ApiOperation({ summary: 'Get the current active trading session' })
   async getActive(
-    @Request() req: { user: { id: string } },
+    @CurrentUserId() userId: string,
   ): Promise<TradingSession | null> {
-    return this.tradingService.getActiveSession(req.user.id);
+    return this.tradingService.getActiveSession(userId);
   }
 
   /**
@@ -110,10 +110,10 @@ export class TradingController {
   @Get(':id')
   @ApiOperation({ summary: 'Get a trading session by ID' })
   async getById(
-    @Request() req: { user: { id: string } },
+    @CurrentUserId() userId: string,
     @Param('id', ParseUUIDPipe) sessionId: string,
   ): Promise<TradingSession> {
-    const session = await this.tradingService.getSessionById(req.user.id, sessionId);
+    const session = await this.tradingService.getSessionById(userId, sessionId);
     if (!session) {
       throw new NotFoundException(`Trading session ${sessionId} not found`);
     }

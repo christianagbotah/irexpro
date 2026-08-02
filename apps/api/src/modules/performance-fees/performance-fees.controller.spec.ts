@@ -3,12 +3,14 @@ import { PerformanceFeesController } from './performance-fees.controller';
 import { PerformanceFeeService } from './services/performance-fee.service';
 import { ROLES_KEY } from '../../common/constants/roles.constants';
 import { RoleName } from '../users/entities/role.entity';
-import { User } from '../users/entities/user.entity';
 import { BillingFrequency } from './entities/performance-fee-policy.entity';
 import { LedgerEntryType } from './entities/performance-fee-ledger-entry.entity';
 
 /**
  * Access-control + scoping tests for the performance fee endpoints.
+ *
+ * Hotfix: controller methods now accept `@CurrentUserId() userId: string`
+ * instead of `@CurrentUser() user: User`. Tests pass UUID strings directly.
  *
  * - me/summary must be scoped to the authenticated user's own id.
  * - All admin endpoints must require ADMIN or SUPER_ADMIN via @Roles metadata
@@ -19,8 +21,8 @@ describe('PerformanceFeesController', () => {
   let svc: jest.Mocked<PerformanceFeeService>;
   const reflector = new Reflector();
 
-  const normalUser = { id: 'user-123', roles: [RoleName.USER] } as unknown as User;
-  const adminUser = { id: 'admin-1', roles: [RoleName.ADMIN] } as unknown as User;
+  const normalUserId = 'user-123';
+  const adminId = 'admin-1';
 
   beforeEach(() => {
     svc = {
@@ -39,7 +41,7 @@ describe('PerformanceFeesController', () => {
   describe('me/summary scoping', () => {
     it('returns only the authenticated user\u2019s own summary', async () => {
       svc.getUserSummary.mockResolvedValue({ performance: null, assessments: [] });
-      await controller.getMyPerformanceSummary(normalUser);
+      await controller.getMyPerformanceSummary(normalUserId);
       // Must be called with the JWT user's OWN id — no way to pass another user's id
       expect(svc.getUserSummary).toHaveBeenCalledWith('user-123');
     });
@@ -50,7 +52,7 @@ describe('PerformanceFeesController', () => {
       svc.calculateAssessment.mockResolvedValue({} as never);
       await controller.calculateAssessment(
         { userId: 'target-user', currency: 'USD', periodStart: '2026-01-01T00:00:00Z', periodEnd: '2026-01-31T00:00:00Z' },
-        adminUser,
+        adminId,
       );
       const args = svc.calculateAssessment.mock.calls[0];
       expect(args[0]).toBe('target-user'); // target user
@@ -85,7 +87,7 @@ describe('PerformanceFeesController', () => {
       svc.createPolicy.mockResolvedValue({} as never);
       await controller.createPolicy(
         { name: 'P', feePercent: 20, billingFrequency: BillingFrequency.MONTHLY },
-        adminUser,
+        adminId,
       );
       expect(svc.createPolicy).toHaveBeenCalledWith(expect.anything(), 'admin-1');
     });
@@ -100,7 +102,7 @@ describe('PerformanceFeesController', () => {
           amount: '100000',
           occurredAt: '2026-01-15T00:00:00Z',
         },
-        adminUser,
+        adminId,
       );
       expect(svc.recordLedgerEntry).toHaveBeenCalledWith(expect.anything(), 'admin-1');
     });

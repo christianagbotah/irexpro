@@ -1,75 +1,115 @@
-import { normalizePhone, isEmail } from './phone.util';
+import { normalizePhone, isEmail, PhoneValidationError } from './phone.util';
 
-describe('Phone normalization (Sprint 27 amendment)', () => {
-  describe('normalizePhone', () => {
-    it('should normalize Ghana local number with leading 0', () => {
-      expect(normalizePhone('0241234567', '+233')).toBe('+233241234567');
+/**
+ * Phone normalization tests — Hotfix.
+ *
+ * Verifies Ghana phone formats normalize correctly without duplicate +233.
+ */
+describe('normalizePhone (Hotfix — Ghana phone normalization)', () => {
+  const GH_CALLING_CODE = '+233';
+
+  describe('Ghana local formats', () => {
+    it('should normalize 0243618186 with +233 → +233243618186', () => {
+      expect(normalizePhone('0243618186', GH_CALLING_CODE)).toBe('+233243618186');
     });
 
-    it('should normalize Ghana local number without leading 0', () => {
-      expect(normalizePhone('241234567', '+233')).toBe('+233241234567');
+    it('should normalize 024 361 8186 (spaces) with +233 → +233243618186', () => {
+      expect(normalizePhone('024 361 8186', GH_CALLING_CODE)).toBe('+233243618186');
     });
 
-    it('should keep international format as-is (already starts with +)', () => {
-      expect(normalizePhone('+233241234567', '+233')).toBe('+233241234567');
+    it('should normalize 024-361-8186 (dashes) with +233 → +233243618186', () => {
+      expect(normalizePhone('024-361-8186', GH_CALLING_CODE)).toBe('+233243618186');
     });
 
-    it('should keep international format even with different calling code param', () => {
-      expect(normalizePhone('+12345678901', '+233')).toBe('+12345678901');
-    });
-
-    it('should remove spaces and dashes', () => {
-      expect(normalizePhone('+233 24 123-4567', '+233')).toBe('+233241234567');
-    });
-
-    it('should remove parentheses', () => {
-      expect(normalizePhone('+233 (24) 123-4567', '+233')).toBe('+233241234567');
-    });
-
-    it('should handle 00 prefix as international', () => {
-      expect(normalizePhone('00233241234567')).toBe('+233241234567');
-    });
-
-    it('should return null for empty string', () => {
-      expect(normalizePhone('', '+233')).toBeNull();
-    });
-
-    it('should return null for undefined', () => {
-      expect(normalizePhone(undefined, '+233')).toBeNull();
-    });
-
-    it('should return null for null', () => {
-      expect(normalizePhone(null, '+233')).toBeNull();
-    });
-
-    it('should return null for whitespace-only string', () => {
-      expect(normalizePhone('   ', '+233')).toBeNull();
-    });
-
-    it('should handle Nigerian local number', () => {
-      expect(normalizePhone('08012345678', '+234')).toBe('+2348012345678');
-    });
-
-    it('should return as-is if no calling code and not international', () => {
-      expect(normalizePhone('241234567')).toBe('241234567');
+    it('should normalize (024) 361-8186 (parens) with +233 → +233243618186', () => {
+      expect(normalizePhone('(024) 361-8186', GH_CALLING_CODE)).toBe('+233243618186');
     });
   });
 
-  describe('isEmail', () => {
-    it('should return true for email-like string', () => {
-      expect(isEmail('user@example.com')).toBe(true);
+  describe('international formats without +', () => {
+    it('should normalize 233243618186 with +233 → +233243618186 (not +233233243618186)', () => {
+      expect(normalizePhone('233243618186', GH_CALLING_CODE)).toBe('+233243618186');
     });
 
-    it('should return false for phone number', () => {
-      expect(isEmail('+233241234567')).toBe(false);
+    it('should normalize 233 243 618 186 (spaces) with +233 → +233243618186', () => {
+      expect(normalizePhone('233 243 618 186', GH_CALLING_CODE)).toBe('+233243618186');
+    });
+  });
+
+  describe('already-normalized formats', () => {
+    it('should keep +233243618186 unchanged', () => {
+      expect(normalizePhone('+233243618186', GH_CALLING_CODE)).toBe('+233243618186');
     });
 
-    it('should return false for local phone number', () => {
-      expect(isEmail('0241234567')).toBe(false);
+    it('should keep +233 243 618 186 (with spaces) → +233243618186', () => {
+      expect(normalizePhone('+233 243 618 186', GH_CALLING_CODE)).toBe('+233243618186');
+    });
+  });
+
+  describe('00 prefix format', () => {
+    it('should normalize 00233243618186 → +233243618186', () => {
+      expect(normalizePhone('00233243618186')).toBe('+233243618186');
+    });
+  });
+
+  describe('malformed duplicate prefixes (Hotfix amendment — REJECTED)', () => {
+    it('should REJECT +233+233243618186 (multiple +)', () => {
+      expect(() => normalizePhone('+233+233243618186', GH_CALLING_CODE)).toThrow(PhoneValidationError);
     });
 
-    it('should return false for empty string', () => {
-      expect(isEmail('')).toBe(false);
+    it('should REJECT +233+233243618186 without callingCode', () => {
+      expect(() => normalizePhone('+233+233243618186')).toThrow(PhoneValidationError);
     });
+
+    it('should REJECT +1+233243618186 (multiple +)', () => {
+      expect(() => normalizePhone('+1+233243618186')).toThrow(PhoneValidationError);
+    });
+
+    it('should REJECT 233+233243618186 (+ not at position 0)', () => {
+      expect(() => normalizePhone('233+233243618186')).toThrow(PhoneValidationError);
+    });
+
+    it('should REJECT ++233243618186 (double +)', () => {
+      expect(() => normalizePhone('++233243618186')).toThrow(PhoneValidationError);
+    });
+  });
+
+  describe('edge cases', () => {
+    it('should return null for empty string', () => {
+      expect(normalizePhone('')).toBeNull();
+    });
+
+    it('should return null for undefined', () => {
+      expect(normalizePhone(undefined)).toBeNull();
+    });
+
+    it('should return null for null', () => {
+      expect(normalizePhone(null)).toBeNull();
+    });
+
+    it('should return null for only-spaces', () => {
+      expect(normalizePhone('   ')).toBeNull();
+    });
+
+    it('should handle phone without callingCode (local number returned as-is)', () => {
+      // Without a calling code, the 0 is NOT stripped (no country context)
+      expect(normalizePhone('0243618186')).toBe('0243618186');
+    });
+
+    it('should not corrupt a short local number', () => {
+      expect(normalizePhone('243618186', GH_CALLING_CODE)).toBe('+233243618186');
+    });
+  });
+});
+
+describe('isEmail', () => {
+  it('should detect email addresses', () => {
+    expect(isEmail('user@example.com')).toBe(true);
+  });
+
+  it('should detect non-email strings', () => {
+    expect(isEmail('+233243618186')).toBe(false);
+    expect(isEmail('0243618186')).toBe(false);
+    expect(isEmail('user')).toBe(false);
   });
 });

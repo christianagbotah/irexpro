@@ -22,8 +22,8 @@ import { CheckoutDto, CancelSubscriptionDto } from './dto/checkout.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { User } from '../users/entities/user.entity';
+import { CurrentUser, CurrentUserId } from '../../common/decorators/current-user.decorator';
+import { AuthenticatedPrincipal } from '../../common/interfaces/authenticated-principal.interface';
 import { RoleName } from '../users/entities/role.entity';
 
 @ApiTags('Subscriptions')
@@ -41,8 +41,8 @@ export class SubscriptionsController {
 
   @Get('me')
   @ApiOperation({ summary: 'Get current user subscription' })
-  async getMySubscription(@CurrentUser() user: User) {
-    return this.subscriptionsService.findUserSubscription(user.id);
+  async getMySubscription(@CurrentUserId() userId: string) {
+    return this.subscriptionsService.findUserSubscription(userId);
   }
 
   /**
@@ -71,13 +71,13 @@ export class SubscriptionsController {
   @ApiResponse({ status: 409, description: 'Active subscription/paid invoice/idempotency conflict' })
   async checkout(
     @Body() dto: CheckoutDto,
-    @CurrentUser() user: User,
+    @CurrentUser() principal: AuthenticatedPrincipal,
     @Req() req: Request,
     @Headers('idempotency-key') idempotencyKeyHeader?: string,
   ) {
     return this.subscriptionsService.initiateCheckout({
-      userId: user.id,
-      email: user.email ?? undefined,
+      userId: principal.userId,
+      email: principal.email ?? undefined,
       planId: dto.planId,
       currency: dto.currency,
       countryCode: dto.countryCode ?? 'US',
@@ -97,10 +97,10 @@ export class SubscriptionsController {
   @ApiResponse({ status: 404, description: 'No active subscription found' })
   async cancelSubscription(
     @Body() dto: CancelSubscriptionDto,
-    @CurrentUser() user: User,
+    @CurrentUserId() userId: string,
     @Req() req: Request,
   ) {
-    return this.subscriptionsService.cancelSubscription(user.id, dto.reason, req.ip);
+    return this.subscriptionsService.cancelSubscription(userId, dto.reason, req.ip);
   }
 
   /**
@@ -124,13 +124,13 @@ export class SubscriptionsController {
   @ApiResponse({ status: 403, description: 'Admin role required' })
   async manualActivate(
     @Body() dto: ManualActivateDto,
-    @CurrentUser() admin: User,
+    @CurrentUserId() adminId: string,
     @Req() req: Request,
   ) {
     return this.subscriptionsService.manualActivate(
       dto.userId,
       dto.planId,
-      admin.id,
+      adminId,
       req.ip,
     );
   }

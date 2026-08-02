@@ -17,8 +17,6 @@ import {
 import { Request } from 'express';
 import { Public } from '../../common/decorators/public.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { User } from '../users/entities/user.entity';
 import { PaymentRoutingService } from './services/payment-routing.service';
 import { WebhookProcessorService } from './services/webhook-processor.service';
 
@@ -47,7 +45,6 @@ export class PaymentsController {
   async getProviders(
     @Query('countryCode') countryCode?: string,
     @Query('currency') currency?: string,
-    @CurrentUser() _user?: User,
   ) {
     if (countryCode && currency) {
       return this.routingService.getAvailableProviders(countryCode, currency);

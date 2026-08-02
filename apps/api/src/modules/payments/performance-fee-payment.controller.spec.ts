@@ -1,12 +1,18 @@
 import { ForbiddenException } from '@nestjs/common';
 import { PerformanceFeePaymentController } from './performance-fee-payment.controller';
 import { RoleName } from '../users/entities/role.entity';
+import { UserStatus } from '../users/entities/user.entity';
+import { AuthenticatedPrincipal } from '../../common/interfaces/authenticated-principal.interface';
 
-function normalUser() {
-  return { id: 'user-1', roles: [RoleName.USER] } as any;
+/**
+ * Hotfix: all 4 controller methods now accept `@CurrentUser() principal:
+ * AuthenticatedPrincipal` (they all call `isAdmin()` for role checks).
+ */
+function normalUser(): AuthenticatedPrincipal {
+  return { userId: 'user-1', email: null, phone: null, roles: [RoleName.USER], status: UserStatus.ACTIVE };
 }
-function adminUser() {
-  return { id: 'admin-1', roles: [RoleName.ADMIN] } as any;
+function adminUser(): AuthenticatedPrincipal {
+  return { userId: 'admin-1', email: null, phone: null, roles: [RoleName.ADMIN], status: UserStatus.ACTIVE };
 }
 
 let svc: any;

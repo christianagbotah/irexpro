@@ -4,13 +4,13 @@ import {
   ForbiddenException,
   Logger,
   Post,
-  Request,
   UseGuards,
 } from '@nestjs/common';
 import { ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { Public } from '../../common/decorators/public.decorator';
 import { InternalApiKeyGuard, INTERNAL_API_KEY_HEADER } from '../../common/guards/internal-api-key.guard';
+import { CurrentUserId } from '../../common/decorators/current-user.decorator';
 import { AiSignalService } from './ai-signal.service';
 import { SimulateSignalDto } from './dto/simulate-signal.dto';
 import { InternalSignalDto } from './dto/internal-signal.dto';
@@ -67,24 +67,24 @@ export class AiController {
       'Does not bypass any safety gates.',
   })
   async simulateSignal(
-    @Request() req: { user: { id: string } },
+    @CurrentUserId() userId: string,
     @Body() dto: SimulateSignalDto,
   ): Promise<StrategyResult> {
     const env = this.configService.get<string>('app.env', 'development');
     if (env === 'production') {
       this.logger.warn(
-        `DEV simulate-signal endpoint was called in PRODUCTION by user=${req.user.id} — BLOCKED`,
+        `DEV simulate-signal endpoint was called in PRODUCTION by user=${userId} — BLOCKED`,
       );
       throw new ForbiddenException('This endpoint is disabled in production');
     }
 
     this.logger.log(
-      `[DEV] Simulated signal from user=${req.user.id} ` +
+      `[DEV] Simulated signal from user=${userId} ` +
       `instrument=${dto.instrument} direction=${dto.direction} ` +
       `session=${dto.tradingSessionId}`,
     );
 
-    const candidate = this.aiSignalService.buildSimulatedCandidate(req.user.id, {
+    const candidate = this.aiSignalService.buildSimulatedCandidate(userId, {
       tradingSessionId: dto.tradingSessionId,
       brokerConnectionId: dto.brokerConnectionId,
       instrument: dto.instrument,
