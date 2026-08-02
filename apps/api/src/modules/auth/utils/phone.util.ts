@@ -3,23 +3,31 @@
  *
  * Converts various phone number formats to a consistent E.164-like format.
  *
- * Hotfix: fixes duplicate-prefix bug where `+233+233243618186` was returned
- * as-is instead of being deduplicated to `+233243618186`. Also fixes
- * `233243618186` (without +) being incorrectly prefixed to
- * `+233233243618186` instead of recognized as already international.
+ * Hotfix amendment: malformed duplicate prefixes are now REJECTED (not
+ * silently normalized). The previous version took the substring after the
+ * last '+', which could silently guess the wrong number. Now it throws
+ * PhoneValidationError for:
+ *   - Multiple '+' characters (e.g. "+233+233243618186", "++233243618186")
+ *   - '+' not at position 0 (e.g. "233+233243618186")
  *
- * Handles:
+ * Valid formats handled:
  *   - Ghana local:    0243618186  with +233  →  +233243618186
  *   - International:  +233243618186          →  +233243618186
  *   - Without +:      233243618186  with +233 →  +233243618186
  *   - 00 prefix:      00233243618186         →  +233243618186
- *   - Duplicate +:    +233+233243618186      →  +233243618186
  *   - With spaces:    +233 24 361 8186       →  +233243618186
  *   - With dashes:    +233-24-361-8186       →  +233243618186
- *
- * Does NOT use libphonenumber (no heavy dependency). Uses simple string
- * manipulation sufficient for the supported country list.
  */
+
+/**
+ * Error thrown when a phone number is malformed and cannot be safely normalized.
+ */
+export class PhoneValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PhoneValidationError';
+  }
+}
 
 /**
  * Normalize a phone number to E.164-like format.
@@ -27,6 +35,7 @@
  * @param rawPhone - the raw phone input from the user
  * @param callingCode - the calling code from the country selector (e.g. "+233")
  * @returns normalized phone like "+233243618186", or null if empty
+ * @throws PhoneValidationError if the input has malformed duplicate prefixes
  */
 export function normalizePhone(rawPhone: string | undefined | null, callingCode?: string): string | null {
   if (!rawPhone) return null;
@@ -36,21 +45,26 @@ export function normalizePhone(rawPhone: string | undefined | null, callingCode?
 
   if (!cleaned) return null;
 
-  // ── Hotfix: handle duplicate '+' prefixes (e.g. "+233+233243618186") ──────
-  // This happens when the frontend prepends +233 but the user also typed +233.
-  // Strategy: find all '+' positions; if there are multiple, keep only the
-  // digits after the LAST '+' (which is the actual phone number with its CC).
+  // ── Hotfix amendment: reject malformed duplicate '+' prefixes ─────────────
+  // Multiple '+' characters indicate user error or frontend double-prepend.
+  // We do NOT silently guess the intended number — reject explicitly.
   const plusCount = (cleaned.match(/\+/g) || []).length;
   if (plusCount > 1) {
-    // Take the substring starting from the last '+'
-    const lastPlusIdx = cleaned.lastIndexOf('+');
-    cleaned = cleaned.substring(lastPlusIdx);
+    throw new PhoneValidationError(
+      'Phone number contains multiple "+" characters — please enter a single international prefix',
+    );
   }
 
-  // If already starts with '+', it's international — clean and return
+  // A '+' not at position 0 is also malformed (e.g. "233+233243618186")
+  const plusIdx = cleaned.indexOf('+');
+  if (plusIdx > 0) {
+    throw new PhoneValidationError(
+      'Phone number has "+" in an unexpected position — please enter a valid international number',
+    );
+  }
+
+  // If already starts with '+', it's international — return cleaned
   if (cleaned.startsWith('+')) {
-    // Remove any remaining '+' characters (defense-in-depth)
-    cleaned = '+' + cleaned.replace(/\+/g, '');
     return cleaned;
   }
 
@@ -71,7 +85,6 @@ export function normalizePhone(rawPhone: string | undefined | null, callingCode?
     }
 
     // Check if the cleaned number already starts with the country code digits
-    // (e.g., "233243618186" starts with "233")
     if (cleaned.startsWith(ccDigits)) {
       return `+${cleaned}`;
     }
@@ -81,7 +94,6 @@ export function normalizePhone(rawPhone: string | undefined | null, callingCode?
   }
 
   // No calling code provided and not international — return as-is
-  // (will likely fail validation downstream)
   return cleaned;
 }
 

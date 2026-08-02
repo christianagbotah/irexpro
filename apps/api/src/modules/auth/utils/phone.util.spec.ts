@@ -1,4 +1,4 @@
-import { normalizePhone, isEmail } from './phone.util';
+import { normalizePhone, isEmail, PhoneValidationError } from './phone.util';
 
 /**
  * Phone normalization tests — Hotfix.
@@ -52,13 +52,25 @@ describe('normalizePhone (Hotfix — Ghana phone normalization)', () => {
     });
   });
 
-  describe('duplicate prefix (Hotfix bug)', () => {
-    it('should normalize +233+233243618186 → +233243618186', () => {
-      expect(normalizePhone('+233+233243618186', GH_CALLING_CODE)).toBe('+233243618186');
+  describe('malformed duplicate prefixes (Hotfix amendment — REJECTED)', () => {
+    it('should REJECT +233+233243618186 (multiple +)', () => {
+      expect(() => normalizePhone('+233+233243618186', GH_CALLING_CODE)).toThrow(PhoneValidationError);
     });
 
-    it('should normalize +233+233243618186 without callingCode → +233243618186', () => {
-      expect(normalizePhone('+233+233243618186')).toBe('+233243618186');
+    it('should REJECT +233+233243618186 without callingCode', () => {
+      expect(() => normalizePhone('+233+233243618186')).toThrow(PhoneValidationError);
+    });
+
+    it('should REJECT +1+233243618186 (multiple +)', () => {
+      expect(() => normalizePhone('+1+233243618186')).toThrow(PhoneValidationError);
+    });
+
+    it('should REJECT 233+233243618186 (+ not at position 0)', () => {
+      expect(() => normalizePhone('233+233243618186')).toThrow(PhoneValidationError);
+    });
+
+    it('should REJECT ++233243618186 (double +)', () => {
+      expect(() => normalizePhone('++233243618186')).toThrow(PhoneValidationError);
     });
   });
 
