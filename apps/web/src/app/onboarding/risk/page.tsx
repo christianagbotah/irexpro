@@ -4,7 +4,10 @@ import { useState, FormEvent, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/auth-context';
-import { DashboardShell, Card, Button, Input, Alert } from '@/components/ui';
+import { DashboardShell, Card, Button, Alert } from '@/components/ui';
+import { InfoTooltip } from '@/components/ui/InfoTooltip';
+import { useNotification } from '@/hooks/useNotification';
+import { mapApiError } from '@/lib/error-mapping';
 import { api } from '@/lib/api';
 import type { RiskProfile, AllowedTradingMode } from '@irexpro/types';
 
@@ -20,6 +23,7 @@ import type { RiskProfile, AllowedTradingMode } from '@irexpro/types';
 export default function OnboardingRiskPage() {
   const router = useRouter();
   const { user, logout, restoring } = useAuth();
+  const notify = useNotification();
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -46,8 +50,10 @@ export default function OnboardingRiskPage() {
         setMaxLeverageAllowed(String(profile.maxLeverageAllowed));
         setAllowedTradingModes(profile.allowedTradingModes);
         setRiskAcknowledgementAccepted(profile.riskAcknowledgementAccepted);
-      } catch {
-        // Profile may not exist yet — defaults are fine
+      } catch (err) {
+        // Profile may not exist yet — defaults are fine, but surface the
+        // error silently via a toast so the user knows something went wrong.
+        notify.error(mapApiError(err).message);
       } finally {
         if (!cancelled) setFetching(false);
       }
@@ -83,6 +89,7 @@ export default function OnboardingRiskPage() {
     setError(null);
     if (!riskAcknowledgementAccepted) {
       setError('You must acknowledge the risk disclosure to continue.');
+      notify.warning('Your risk acknowledgement is required.');
       return;
     }
     setLoading(true);
@@ -97,9 +104,11 @@ export default function OnboardingRiskPage() {
         riskAcknowledgementAccepted: true,
       });
       setSuccess(true);
+      notify.success('Risk limits saved successfully.');
       setTimeout(() => router.push('/onboarding/broker'), 1000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save risk profile. Please check your values.');
+      notify.error(mapApiError(err).message);
     } finally {
       setLoading(false);
     }
@@ -118,20 +127,121 @@ export default function OnboardingRiskPage() {
 
         <form onSubmit={handleSubmit}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
-            <Input label="Max daily loss (%)" type="number" step="0.5" min="0.5" max="20" value={maxDailyLossPercent} onChange={(e) => setMaxDailyLossPercent(e.target.value)} disabled={loading} />
-            <Input label="Max drawdown (%)" type="number" step="0.5" min="1" max="30" value={maxDrawdownPercent} onChange={(e) => setMaxDrawdownPercent(e.target.value)} disabled={loading} />
-            <Input label="Max risk per trade (%)" type="number" step="0.5" min="0.5" max="10" value={maxTradeRiskPercent} onChange={(e) => setMaxTradeRiskPercent(e.target.value)} disabled={loading} />
-            <Input label="Max open trades" type="number" min="1" max="20" value={maxOpenTrades} onChange={(e) => setMaxOpenTrades(e.target.value)} disabled={loading} />
-            <Input label="Max leverage" type="number" min="1" max="500" value={maxLeverageAllowed} onChange={(e) => setMaxLeverageAllowed(e.target.value)} disabled={loading} />
             <div className="input-group">
-              <label className="input-label">Allowed trading mode</label>
+              <label className="input-label">
+                Max daily loss (%)
+                <InfoTooltip
+                  label="Explain maximum daily loss"
+                  content="The maximum percentage of your account balance that may be lost in one trading day. When this limit is reached, new trading activity is blocked until the next permitted trading period. Note: market gaps, slippage, broker execution, and connectivity can affect actual results."
+                />
+              </label>
+              <input
+                type="number"
+                step="0.5"
+                min="0.5"
+                max="20"
+                value={maxDailyLossPercent}
+                onChange={(e) => setMaxDailyLossPercent(e.target.value)}
+                disabled={loading}
+                className="input"
+              />
+            </div>
+            <div className="input-group">
+              <label className="input-label">
+                Max drawdown (%)
+                <InfoTooltip
+                  label="Explain maximum drawdown"
+                  content="The maximum permitted decline from the account's previous highest value. Reaching this threshold activates protective restrictions and may stop automated trading."
+                />
+              </label>
+              <input
+                type="number"
+                step="0.5"
+                min="1"
+                max="30"
+                value={maxDrawdownPercent}
+                onChange={(e) => setMaxDrawdownPercent(e.target.value)}
+                disabled={loading}
+                className="input"
+              />
+            </div>
+            <div className="input-group">
+              <label className="input-label">
+                Max risk per trade (%)
+                <InfoTooltip
+                  label="Explain maximum risk per trade"
+                  content="The maximum percentage of account equity that may be exposed to loss on one trade based on position size and the planned stop-loss level. Slippage may cause realized loss to differ."
+                />
+              </label>
+              <input
+                type="number"
+                step="0.5"
+                min="0.5"
+                max="10"
+                value={maxTradeRiskPercent}
+                onChange={(e) => setMaxTradeRiskPercent(e.target.value)}
+                disabled={loading}
+                className="input"
+              />
+            </div>
+            <div className="input-group">
+              <label className="input-label">
+                Max open trades
+                <InfoTooltip
+                  label="Explain maximum open trades"
+                  content="The maximum number of positions that may remain open at the same time. Lower limits reduce simultaneous market exposure."
+                />
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="20"
+                value={maxOpenTrades}
+                onChange={(e) => setMaxOpenTrades(e.target.value)}
+                disabled={loading}
+                className="input"
+              />
+            </div>
+            <div className="input-group">
+              <label className="input-label">
+                Max leverage
+                <InfoTooltip
+                  label="Explain maximum leverage"
+                  content="The highest leverage the platform may permit when evaluating a trading action. Higher leverage increases both potential gains and potential losses."
+                />
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="500"
+                value={maxLeverageAllowed}
+                onChange={(e) => setMaxLeverageAllowed(e.target.value)}
+                disabled={loading}
+                className="input"
+              />
+            </div>
+            <div className="input-group">
+              <label className="input-label">
+                Allowed trading mode
+                <InfoTooltip
+                  label="Explain allowed trading mode"
+                  content="Paper-only uses simulated funds. Semi-auto requires explicit approval before execution. Full auto executes after all safety checks."
+                />
+              </label>
               <select className="input" value={allowedTradingModes} onChange={(e) => setAllowedTradingModes(e.target.value as AllowedTradingMode)} disabled={loading}>
                 <option value="PAPER_ONLY">Paper only — simulated (safest)</option>
                 <option value="SEMI_AUTO">Semi-auto — manual approval required</option>
-                <option value="FULL_AUTO">Full auto — AI executes automatically</option>
+                <option value="FULL_AUTO">Full auto — approved automation executes after all safety checks</option>
               </select>
+              <p className="text-sm muted" style={{ marginTop: '0.25rem', marginBottom: 0 }}>
+                Paper-only mode is recommended until your broker connection and strategy have been tested.
+              </p>
             </div>
           </div>
+
+          <p className="text-sm muted" style={{ marginTop: '0.75rem' }}>
+            Lower limits generally reduce exposure but cannot eliminate trading risk.
+          </p>
 
           {/* Risk acknowledgement */}
           <div style={{ marginTop: '1.5rem', padding: '1rem', border: '1px solid var(--border, #2a3550)', borderRadius: '8px', background: 'rgba(245,158,11,0.05)' }}>
@@ -144,7 +254,12 @@ export default function OnboardingRiskPage() {
                 style={{ width: '18px', height: '18px', marginTop: '2px', accentColor: 'var(--brand, #d97706)' }}
               />
               <span className="text-sm">
-                <strong>Risk acknowledgement.</strong> I understand that trading in financial markets
+                <strong>Risk acknowledgement.</strong>{' '}
+                <InfoTooltip
+                  label="Explain risk acknowledgement"
+                  content="Accepting the risk acknowledgement confirms that you understand trading can result in financial loss and that no result or profit is guaranteed."
+                />{' '}
+                I understand that trading in financial markets
                 involves significant risk of loss. Past performance does not guarantee future results.
                 The AI trading system may incur losses, and I am responsible for monitoring my account.
                 Profits are not guaranteed. I have reviewed and accept the risk limits configured above.

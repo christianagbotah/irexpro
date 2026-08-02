@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/context/auth-context';
 import { DashboardShell, Card, Badge, EmptyState, LoadingSpinner, Alert } from '@/components/ui';
+import { useNotification } from '@/hooks/useNotification';
+import { mapApiError } from '@/lib/error-mapping';
 import { api } from '@/lib/api';
 import type { OnboardingStatus } from '@irexpro/types';
 
@@ -16,9 +18,13 @@ import type { OnboardingStatus } from '@irexpro/types';
  */
 export default function DashboardPage() {
   const { user, logout, loading, restoring } = useAuth();
+  const notify = useNotification();
   const [onboarding, setOnboarding] = useState<OnboardingStatus | null>(null);
   const [onboardingLoading, setOnboardingLoading] = useState(true);
   const [onboardingError, setOnboardingError] = useState<string | null>(null);
+  // Track whether the onboarding-status load error has already been surfaced
+  // via a toast — prevents spamming on background refreshes.
+  const onboardingErrorShownRef = useRef(false);
 
   useEffect(() => {
     if (!user) return;
@@ -30,13 +36,18 @@ export default function DashboardPage() {
       } catch (err) {
         if (!cancelled) {
           setOnboardingError(err instanceof Error ? err.message : 'Failed to load onboarding status');
+          // Only show the toast once per mount — background refreshes shouldn't spam.
+          if (!onboardingErrorShownRef.current) {
+            notify.error(mapApiError(err).message);
+            onboardingErrorShownRef.current = true;
+          }
         }
       } finally {
         if (!cancelled) setOnboardingLoading(false);
       }
     })();
     return () => { cancelled = true; };
-  }, [user]);
+  }, [user, notify]);
 
   if (restoring) {
     return <div style={{ padding: '3rem' }}><LoadingSpinner text="Restoring session…" /></div>;
@@ -112,6 +123,7 @@ export default function DashboardPage() {
  * TRADING_NOT_READY structured error (403 + missingSteps) from the backend.
  */
 function OnboardingCard({ status }: { status: OnboardingStatus }) {
+  const notify = useNotification();
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const [missingSteps, setMissingSteps] = useState<string[] | null>(null);
@@ -163,6 +175,7 @@ function OnboardingCard({ status }: { status: OnboardingStatus }) {
       });
       // Success — trading session started (no auto-redirect; user stays on dashboard)
       setStartError(null);
+      notify.success('Trading session started.');
     } catch (err) {
       // Sprint 29 amendment: handle the structured TRADING_NOT_READY error.
       // The error body is { statusCode: 403, code: 'TRADING_NOT_READY', message, missingSteps }
@@ -171,14 +184,17 @@ function OnboardingCard({ status }: { status: OnboardingStatus }) {
         if (body.code === 'TRADING_NOT_READY' && body.missingSteps) {
           setMissingSteps(body.missingSteps);
           setStartError('Your trading setup is not ready. Complete the missing steps below.');
+          notify.warning('Your trading setup is not ready.');
         } else {
           setStartError(body.message ?? 'Trading could not be started. Please try again.');
+          notify.error(mapApiError(err).message);
         }
       } else {
         // Safe generic message — do NOT expose raw backend errors
         setStartError(err instanceof Error && !err.message.includes('fetch')
           ? err.message
           : 'Unable to start trading. Please try again or contact support.');
+        notify.error(mapApiError(err).message);
       }
     } finally {
       setStarting(false);

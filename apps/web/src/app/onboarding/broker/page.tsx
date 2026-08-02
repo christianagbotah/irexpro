@@ -5,6 +5,9 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/auth-context';
 import { DashboardShell, Card, Button, Input, Alert, Badge, EmptyState } from '@/components/ui';
+import { ConfirmDialog } from '@/components/notifications/ConfirmDialog';
+import { useNotification } from '@/hooks/useNotification';
+import { mapApiError } from '@/lib/error-mapping';
 import { api } from '@/lib/api';
 import type { SupportedBroker, BrokerConnectionView, BrokerTestResult } from '@irexpro/types';
 
@@ -20,13 +23,32 @@ import type { SupportedBroker, BrokerConnectionView, BrokerTestResult } from '@i
  * Credentials are NEVER shown after save. The backend response DTO excludes
  * all credential fields.
  */
+type BrokerAction = 'testing' | 'saving' | 'connecting' | 'disconnecting' | 'deleting';
+
 export default function OnboardingBrokerPage() {
   const router = useRouter();
   const { user, logout, restoring } = useAuth();
-  const [loading, setLoading] = useState(false);
+  const notify = useNotification();
+  const [action, setAction] = useState<BrokerAction | null>(null);
+  const [pendingConnectionId, setPendingConnectionId] = useState<string | null>(null);
+  const loading = action !== null;
   const [fetching, setFetching] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    title: string;
+    description: string;
+    confirmLabel: string;
+    onConfirm: () => void;
+    tone: 'danger' | 'warning';
+  }>({
+    open: false,
+    title: '',
+    description: '',
+    confirmLabel: '',
+    onConfirm: () => {},
+    tone: 'danger',
+  });
 
   const [supportedBrokers, setSupportedBrokers] = useState<SupportedBroker[]>([]);
   const [connections, setConnections] = useState<BrokerConnectionView[]>([]);
@@ -51,7 +73,8 @@ export default function OnboardingBrokerPage() {
         setConnections(conns);
         if (brokers.length > 0) setSelectedBrokerId(brokers[0].brokerId);
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load broker data.');
+        // Silently notify — don't block the page (user can still attempt actions).
+        if (!cancelled) notify.error(mapApiError(err).message);
       } finally {
         if (!cancelled) setFetching(false);
       }
@@ -92,7 +115,8 @@ export default function OnboardingBrokerPage() {
       setError('Please select a broker and enter your account ID.');
       return;
     }
-    setLoading(true);
+    setAction('testing');
+    notify.info('Testing broker credentials...');
     try {
       const result = await api.testBrokerCredentials({
         brokerId: selectedBrokerId,
@@ -102,22 +126,26 @@ export default function OnboardingBrokerPage() {
         apiSecret: apiSecret || undefined,
       });
       setTestResult(result);
+      if (result.success) {
+        notify.success('Broker connection test passed.');
+      } else {
+        notify.error('The broker connection test failed. Please check your credentials.');
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Test failed. Check your credentials.');
+      notify.error('The broker connection test failed. Please check your credentials.');
     } finally {
-      setLoading(false);
+      setAction(null);
     }
   }
 
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    setSuccess(null);
     if (!selectedBrokerId || !accountId) {
       setError('Please select a broker and enter your account ID.');
       return;
     }
-    setLoading(true);
+    setAction('saving');
     try {
       await api.createBrokerConnection({
         brokerId: selectedBrokerId,
@@ -127,7 +155,7 @@ export default function OnboardingBrokerPage() {
         apiSecret: apiSecret || undefined,
         displayName: displayName || undefined,
       });
-      setSuccess('Broker connection created! Connect it below to activate.');
+      notify.success('Broker connection created.');
       // Clear credential fields — never show them again after save
       setApiKey('');
       setApiSecret('');
@@ -135,38 +163,90 @@ export default function OnboardingBrokerPage() {
       const conns = await api.listBrokerConnections();
       setConnections(conns);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create connection. Please try again.');
+      notify.error(mapApiError(err).message);
     } finally {
-      setLoading(false);
+      setAction(null);
     }
   }
 
   async function handleConnect(connectionId: string) {
     setError(null);
-    setLoading(true);
+    setAction('connecting');
+    setPendingConnectionId(connectionId);
     try {
       await api.connectBroker(connectionId);
       const conns = await api.listBrokerConnections();
       setConnections(conns);
-      setSuccess('Broker connected! Onboarding complete.');
+      notify.success('Broker connected.');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to connect. Please try again.');
+      notify.error(mapApiError(err).message);
     } finally {
-      setLoading(false);
+      setAction(null);
+      setPendingConnectionId(null);
     }
+  }
+
+  function openDisconnectDialog(connectionId: string) {
+    setConfirmDialog({
+      open: true,
+      title: 'Disconnect broker?',
+      description:
+        'Automated trading will remain unavailable until a broker is reconnected.',
+      confirmLabel: 'Disconnect',
+      onConfirm: () => {
+        setConfirmDialog((prev) => ({ ...prev, open: false }));
+        void handleDisconnect(connectionId);
+      },
+      tone: 'danger',
+    });
+  }
+
+  function openDeleteDialog(connectionId: string) {
+    setConfirmDialog({
+      open: true,
+      title: 'Delete broker connection?',
+      description:
+        'This will permanently remove the broker connection. This action cannot be undone.',
+      confirmLabel: 'Delete',
+      onConfirm: () => {
+        setConfirmDialog((prev) => ({ ...prev, open: false }));
+        void handleDelete(connectionId);
+      },
+      tone: 'danger',
+    });
   }
 
   async function handleDisconnect(connectionId: string) {
     setError(null);
-    setLoading(true);
+    setAction('disconnecting');
+    setPendingConnectionId(connectionId);
     try {
       await api.disconnectBroker(connectionId);
       const conns = await api.listBrokerConnections();
       setConnections(conns);
+      notify.success('Broker disconnected.');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to disconnect.');
+      notify.error(mapApiError(err).message);
     } finally {
-      setLoading(false);
+      setAction(null);
+      setPendingConnectionId(null);
+    }
+  }
+
+  async function handleDelete(connectionId: string) {
+    setError(null);
+    setAction('deleting');
+    setPendingConnectionId(connectionId);
+    try {
+      await api.request<void>(`/broker/connections/${connectionId}`, { method: 'DELETE' });
+      const conns = await api.listBrokerConnections();
+      setConnections(conns);
+      notify.success('Broker connection deleted.');
+    } catch (err) {
+      notify.error(mapApiError(err).message);
+    } finally {
+      setAction(null);
+      setPendingConnectionId(null);
     }
   }
 
@@ -203,14 +283,35 @@ export default function OnboardingBrokerPage() {
                     {conn.status}
                   </Badge>
                   {conn.status === 'CONNECTED' ? (
-                    <Button variant="secondary" size="sm" onClick={() => handleDisconnect(conn.id)} disabled={loading}>
-                      Disconnect
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => openDisconnectDialog(conn.id)}
+                      disabled={loading}
+                      loading={action === 'disconnecting' && pendingConnectionId === conn.id}
+                    >
+                      {action === 'disconnecting' && pendingConnectionId === conn.id ? 'Disconnecting…' : 'Disconnect'}
                     </Button>
                   ) : (
-                    <Button variant="primary" size="sm" onClick={() => handleConnect(conn.id)} disabled={loading}>
-                      Connect
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => handleConnect(conn.id)}
+                      disabled={loading}
+                      loading={action === 'connecting' && pendingConnectionId === conn.id}
+                    >
+                      {action === 'connecting' && pendingConnectionId === conn.id ? 'Connecting…' : 'Connect'}
                     </Button>
                   )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => openDeleteDialog(conn.id)}
+                    disabled={loading}
+                    loading={action === 'deleting' && pendingConnectionId === conn.id}
+                  >
+                    {action === 'deleting' && pendingConnectionId === conn.id ? 'Deleting…' : 'Delete'}
+                  </Button>
                 </div>
               </div>
             ))}
@@ -220,7 +321,6 @@ export default function OnboardingBrokerPage() {
 
       <Card title="Connect a new broker" className="mt-4" subtitle="Paper Broker is recommended for your first connection — it is simulated and safest.">
         {error && <Alert variant="error">{error}</Alert>}
-        {success && <Alert variant="success">{success}</Alert>}
 
         <form onSubmit={handleCreate}>
           <div className="input-group">
@@ -250,11 +350,22 @@ export default function OnboardingBrokerPage() {
           )}
 
           <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
-            <Button type="button" variant="secondary" onClick={handleTest} disabled={loading}>
-              {loading ? 'Testing…' : 'Test credentials'}
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={handleTest}
+              disabled={loading}
+              loading={action === 'testing'}
+            >
+              {action === 'testing' ? 'Testing…' : 'Test credentials'}
             </Button>
-            <Button type="submit" variant="primary" loading={loading}>
-              {loading ? 'Saving…' : 'Save connection'}
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={loading}
+              loading={action === 'saving'}
+            >
+              {action === 'saving' ? 'Saving…' : 'Save connection'}
             </Button>
           </div>
         </form>
@@ -264,6 +375,16 @@ export default function OnboardingBrokerPage() {
           <Link href="/dashboard" className="text-sm">Back to dashboard →</Link>
         </div>
       </Card>
+
+      <ConfirmDialog
+        open={confirmDialog.open}
+        title={confirmDialog.title}
+        description={confirmDialog.description}
+        confirmLabel={confirmDialog.confirmLabel}
+        tone={confirmDialog.tone}
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={() => setConfirmDialog((prev) => ({ ...prev, open: false }))}
+      />
     </DashboardShell>
   );
 }

@@ -5,6 +5,9 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/auth-context';
 import { DashboardShell, Card, Button, Input, Alert, Badge } from '@/components/ui';
+import { TimezoneSelect } from '@/components/forms/TimezoneSelect';
+import { useNotification } from '@/hooks/useNotification';
+import { mapApiError } from '@/lib/error-mapping';
 import { api } from '@/lib/api';
 import type { TradingExperienceLevel } from '@irexpro/types';
 
@@ -18,6 +21,7 @@ import type { TradingExperienceLevel } from '@irexpro/types';
 export default function OnboardingProfilePage() {
   const router = useRouter();
   const { user, logout, restoring } = useAuth();
+  const notify = useNotification();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -42,7 +46,10 @@ export default function OnboardingProfilePage() {
         if (profile.timezone) setTimezone(profile.timezone);
         if (profile.preferredCurrency) setPreferredCurrency(profile.preferredCurrency);
         if (profile.profile?.tradingExperienceLevel) setTradingExperienceLevel(profile.profile.tradingExperienceLevel);
-      }).catch(() => { /* ignore — user can fill manually */ });
+      }).catch((err) => {
+        // Silently notify the user — don't block the form (defaults remain editable).
+        notify.error(mapApiError(err).message);
+      });
     }
   }, [user]);
 
@@ -79,10 +86,11 @@ export default function OnboardingProfilePage() {
         tradingExperienceLevel,
       });
       setSuccess(true);
+      notify.success('Profile updated successfully.');
       // Redirect to the next onboarding step after a short delay
       setTimeout(() => router.push('/onboarding/risk'), 1000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update profile. Please try again.');
+      notify.error(mapApiError(err).message);
     } finally {
       setLoading(false);
     }
@@ -106,7 +114,7 @@ export default function OnboardingProfilePage() {
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
             <Input label="Country code (2 letters)" value={countryCode} onChange={(e) => setCountryCode(e.target.value)} disabled={loading} placeholder="GH" maxLength={2} />
-            <Input label="Timezone (IANA)" value={timezone} onChange={(e) => setTimezone(e.target.value)} disabled={loading} placeholder="Africa/Accra" />
+            <TimezoneSelect value={timezone} onChange={setTimezone} label="Timezone" disabled={loading} />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
             <Input label="Preferred currency (3 letters)" value={preferredCurrency} onChange={(e) => setPreferredCurrency(e.target.value)} disabled={loading} placeholder="USD" maxLength={3} />

@@ -546,3 +546,434 @@ h2 { font-size: 1.3rem; font-weight: 600; }
 .mt-4 { margin-top: var(--space-4); }
 .mt-6 { margin-top: var(--space-6); }
 .mt-8 { margin-top: var(--space-8); }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   UX-1 — Additional component styles (TimezoneSelect, InfoTooltip,
+   NotificationProvider toasts, ConfirmDialog). Appended per Task UX-1.
+   Only existing CSS variables are used for colour.
+   ─────────────────────────────────────────────────────────────────────── */
+
+/* Button variant used by ConfirmDialog's warning tone. */
+.btn--warning {
+  background: var(--warning);
+  color: #1a1407; /* high-contrast on amber for readability */
+}
+.btn--warning:hover:not(:disabled) { filter: brightness(1.05); }
+
+/* ── TimezoneSelect ───────────────────────────────────────────────────────── */
+.timezone-select {
+  position: relative;
+  display: block;
+  margin-bottom: var(--space-4);
+}
+
+.timezone-select__trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 0.95rem;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  outline: none;
+}
+.timezone-select__trigger:hover:not(:disabled) { border-color: var(--brand); }
+.timezone-select__trigger:focus-visible,
+.timezone-select__trigger:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.15);
+}
+.timezone-select__trigger:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.timezone-select__value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.timezone-select__value.is-placeholder { color: var(--text-muted); }
+
+.timezone-select__chevron {
+  flex-shrink: 0;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+}
+
+.timezone-select__dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+.timezone-select__search {
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-card);
+}
+
+.timezone-select__search-input {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 0.85rem;
+  outline: none;
+}
+.timezone-select__search-input:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 2px rgba(13, 148, 136, 0.15);
+}
+.timezone-select__search-input::placeholder { color: var(--text-muted); }
+
+.timezone-select__list {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-1);
+  max-height: 280px;
+  overflow-y: auto;
+  /* Smooth scrolling on keyboard navigation. */
+  scroll-behavior: smooth;
+}
+
+.timezone-select__option {
+  display: grid;
+  grid-template-columns: 1.2fr 1.4fr auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--text);
+  transition: background 0.1s ease;
+}
+.timezone-select__option.is-active,
+.timezone-select__option:hover {
+  background: rgba(13, 148, 136, 0.08);
+}
+.timezone-select__option.is-selected {
+  background: rgba(13, 148, 136, 0.14);
+}
+.timezone-select__option.is-selected .timezone-select__option-city {
+  font-weight: 600;
+  color: var(--brand-light);
+}
+
+.timezone-select__option-city {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.timezone-select__option-iana {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.timezone-select__option-offset {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  flex-shrink: 0;
+}
+
+.timezone-select__empty {
+  list-style: none;
+  padding: var(--space-4);
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+@media (max-width: 480px) {
+  /* On small screens, the option label collapses to a 2-line stacked layout. */
+  .timezone-select__option {
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto;
+    gap: 0 var(--space-3);
+  }
+  .timezone-select__option-iana {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .timezone-select__option-offset {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
+  }
+}
+
+/* ── InfoTooltip ──────────────────────────────────────────────────────────── */
+.info-tooltip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+}
+
+.info-tooltip__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-full);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+  outline: none;
+}
+.info-tooltip__trigger:hover,
+.info-tooltip__trigger:focus-visible,
+.info-tooltip__trigger:focus {
+  color: var(--brand-light);
+  background: rgba(13, 148, 136, 0.12);
+}
+.info-tooltip__trigger:focus-visible {
+  box-shadow: 0 0 0 2px rgba(13, 148, 136, 0.4);
+}
+
+.info-tooltip__panel {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: 320px;
+  min-width: 160px;
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-elevated);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  z-index: 1100;
+  /* Allow long text to wrap. */
+  white-space: normal;
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+  /* Animate in. */
+  animation: info-tooltip-fade-in 0.12s ease-out;
+}
+
+.info-tooltip__panel--top {
+  bottom: calc(100% + 8px);
+}
+
+.info-tooltip__panel--bottom {
+  top: calc(100% + 8px);
+}
+
+/* Small arrow pointing to the trigger. */
+.info-tooltip__panel::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 10px;
+  height: 10px;
+  background: var(--bg-elevated);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.info-tooltip__panel--top::after {
+  bottom: -6px;
+  transform: translateX(-50%) rotate(45deg);
+}
+.info-tooltip__panel--bottom::after {
+  top: -6px;
+  transform: translateX(-50%) rotate(-135deg);
+  border-right: none;
+  border-bottom: none;
+  border-left: 1px solid var(--border);
+  border-top: 1px solid var(--border);
+}
+
+@keyframes info-tooltip-fade-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(2px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* On very small screens, anchor the panel to the left edge so it doesn't
+   overflow the viewport. */
+@media (max-width: 480px) {
+  .info-tooltip__panel {
+    left: 0;
+    transform: none;
+    max-width: 240px;
+  }
+  .info-tooltip__panel--top { animation-name: info-tooltip-fade-in-mobile; }
+  @keyframes info-tooltip-fade-in-mobile {
+    from { opacity: 0; transform: translateY(2px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .info-tooltip__panel::after { left: 10px; transform: translateX(0) rotate(45deg); }
+  .info-tooltip__panel--bottom::after {
+    transform: translateX(0) rotate(-135deg);
+  }
+}
+
+/* ── react-hot-toast custom styles ──────────────────────────────────────────
+   react-hot-toast wraps each toast in its own div. The `className` we pass
+   via `toastOptions.className` lands on that wrapper. Per-variant classes
+   (`toast-custom--success`, etc.) are applied via the `className` option on
+   each `toast(...)` call in NotificationProvider.
+   ────────────────────────────────────────────────────────────────────────── */
+.toast-custom-container {
+  /* The container is positioned by react-hot-toast based on `position`.
+     We use safe margins via `containerStyle` on <Toaster />. */
+  font-family: var(--font);
+}
+
+.toast-custom {
+  min-width: 280px;
+  max-width: 380px;
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-elevated) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--shadow-lg) !important;
+  font-size: 0.9rem !important;
+  line-height: 1.45;
+  /* Leave room on the right for the close button. */
+  padding-right: var(--space-8) !important;
+}
+
+/* Left accent stripe per variant. */
+.toast-custom--success {
+  border-left: 3px solid var(--success) !important;
+}
+.toast-custom--error {
+  border-left: 3px solid var(--error) !important;
+}
+.toast-custom--warning {
+  border-left: 3px solid var(--warning) !important;
+}
+.toast-custom--info {
+  border-left: 3px solid var(--brand-light) !important;
+}
+
+/* Make the close button react-hot-toast renders readable against our bg. */
+.toast-custom > button[aria-label*="close"],
+.toast-custom > button[data-icon] {
+  color: var(--text-muted) !important;
+  background: transparent !important;
+  border: none !important;
+  cursor: pointer;
+}
+.toast-custom > button[aria-label*="close"]:hover,
+.toast-custom > button[data-icon]:hover {
+  color: var(--text) !important;
+}
+
+/* Mobile: span the full width minus safe margins. */
+@media (max-width: 480px) {
+  .toast-custom {
+    min-width: auto;
+    max-width: calc(100vw - var(--space-8));
+    width: calc(100vw - var(--space-8));
+  }
+}
+
+/* ── ConfirmDialog ────────────────────────────────────────────────────────── */
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(5, 8, 16, 0.65);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  /* Animate overlay in. */
+  animation: confirm-overlay-fade 0.15s ease-out;
+}
+
+@keyframes confirm-overlay-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.confirm-dialog {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-6);
+  /* Animate panel in. */
+  animation: confirm-dialog-pop 0.18s ease-out;
+}
+
+@keyframes confirm-dialog-pop {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.confirm-dialog__title {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: var(--space-3);
+  /* Title is always left-aligned. */
+  text-align: left;
+}
+
+.confirm-dialog__description {
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: var(--space-6);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.confirm-dialog__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}
+
+/* On small screens, stack the buttons full-width with Cancel on top. */
+@media (max-width: 480px) {
+  .confirm-dialog {
+    padding: var(--space-4);
+  }
+  .confirm-dialog__actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+  .confirm-dialog__actions .btn {
+    width: 100%;
+  }
+}
