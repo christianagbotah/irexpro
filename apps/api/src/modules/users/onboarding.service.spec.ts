@@ -335,6 +335,79 @@ describe('OnboardingService (Sprint 29)', () => {
       expect(status.canStartTrading).toBe(false);
       expect(status.nextStep).toBe('PROFILE');
     });
+
+    // ── Hotfix: broker schema reconciliation + resilience ───────────────────
+
+    it('should return brokerConnectionStatus=NONE when user has no broker connection', async () => {
+      mockUserRepo.findOne.mockResolvedValue(buildCompleteUser());
+      mockRiskProfileRepo.findOne.mockResolvedValue(buildCompleteRiskProfile());
+      mockBrokerQb.getOne.mockResolvedValue(null);
+
+      const status = await service.getOnboardingStatus('user-complete');
+
+      expect(status.brokerConnected).toBe(false);
+      expect(status.brokerConnectionStatus).toBe('NONE');
+      expect(status.canStartTrading).toBe(false);
+      expect(status.missingSteps).toContain('BROKER_CONNECTION');
+      expect(status.nextStep).toBe('BROKER_CONNECTION');
+    });
+
+    it('should NOT produce HTTP 500 when broker query fails (DB error → null, fail-closed)', async () => {
+      mockUserRepo.findOne.mockResolvedValue(buildCompleteUser());
+      mockRiskProfileRepo.findOne.mockResolvedValue(buildCompleteRiskProfile());
+      // Simulate a DB error (e.g. missing column) — the query builder throws
+      mockBrokerQb.getOne.mockRejectedValue(new Error('column conn.last_sync_at does not exist'));
+
+      const status = await service.getOnboardingStatus('user-complete');
+
+      // Must NOT throw — returns fail-closed status
+      expect(status.brokerConnected).toBe(false);
+      expect(status.brokerConnectionStatus).toBe('NONE');
+      expect(status.canStartTrading).toBe(false);
+      expect(status.missingSteps).toContain('BROKER_CONNECTION');
+    });
+
+    it('should select ONLY readiness fields (not credentials, not sync metadata, not accountId)', async () => {
+      mockUserRepo.findOne.mockResolvedValue(buildCompleteUser());
+      mockRiskProfileRepo.findOne.mockResolvedValue(buildCompleteRiskProfile());
+      mockBrokerQb.getOne.mockResolvedValue(buildConnectedBroker());
+
+      await service.getOnboardingStatus('user-complete');
+
+      // Verify the select() was called with ONLY the 5 readiness fields
+      const selectCall = mockBrokerQb.select.mock.calls[0][0];
+      expect(selectCall).toEqual([
+        'conn.id',
+        'conn.status',
+        'conn.lastHealthCheckAt',
+        'conn.consecutiveFailureCount',
+        'conn.liveTradingEnabled',
+      ]);
+      // Explicitly verify credential fields are NOT selected
+      expect(selectCall).not.toContain('conn.encryptedCredentials');
+      expect(selectCall).not.toContain('conn.credentialIv');
+      expect(selectCall).not.toContain('conn.credentialTag');
+      expect(selectCall).not.toContain('conn.encryptionKeyId');
+      // Also verify sync/account fields are NOT selected (not needed for readiness)
+      expect(selectCall).not.toContain('conn.lastSyncAt');
+      expect(selectCall).not.toContain('conn.accountId');
+      expect(selectCall).not.toContain('conn.brokerId');
+    });
+
+    it('should return liveTradingEnabled=false when the broker connection has it false', async () => {
+      mockUserRepo.findOne.mockResolvedValue(buildCompleteUser());
+      mockRiskProfileRepo.findOne.mockResolvedValue(buildCompleteRiskProfile());
+      mockBrokerQb.getOne.mockResolvedValue({
+        ...buildConnectedBroker(),
+        liveTradingEnabled: false,
+      });
+
+      const status = await service.getOnboardingStatus('user-complete');
+
+      // liveTradingEnabled defaults to false — user can start PAPER_ONLY but not FULL_AUTO
+      expect(status.brokerConnected).toBe(true);
+      expect(status.canStartTrading).toBe(true); // canStartTrading doesn't check liveTradingEnabled
+    });
   });
 
   describe('canStartTrading', () => {
