@@ -61,7 +61,7 @@ export class OnboardingService {
         profileCompleted: false,
         riskProfileCompleted: false,
         brokerConnected: false,
-        brokerConnectionStatus: BrokerConnectionStatus.DISCONNECTED,
+        brokerConnectionStatus: 'NONE' as const,
         canStartTrading: false,
         missingSteps: ['PROFILE', 'RISK_PROFILE', 'BROKER_CONNECTION'],
         nextStep: 'PROFILE',
@@ -78,9 +78,9 @@ export class OnboardingService {
     // 3. Broker connection
     const activeConnection = await this.findActiveBrokerConnection(userId);
     const brokerConnected = !!activeConnection;
-    const brokerConnectionStatus = activeConnection
+    const brokerConnectionStatus: BrokerConnectionStatus | 'NONE' = activeConnection
       ? activeConnection.status
-      : BrokerConnectionStatus.DISCONNECTED;
+      : 'NONE';
 
     // 4. Kill switch (if risk profile exists)
     const killSwitchActive = riskProfile?.killSwitchActive ?? false;
@@ -177,33 +177,46 @@ export class OnboardingService {
 
   /**
    * Find the user's active (CONNECTED) broker connection. Returns null if none.
-   * Does NOT load encrypted credentials (selects only safe fields).
+   *
+   * Hotfix: selects ONLY the fields needed for onboarding readiness — never
+   * loads encrypted credentials, API keys, or sync metadata. This is
+   * defense-in-depth: even if the entity had credential fields selected by
+   * default, this query would not include them.
+   *
+   * Resilience: if the query fails (e.g. DB infrastructure error), logs the
+   * error and returns null — the caller returns `brokerConnected: false` with
+   * `brokerConnectionStatus: 'NONE'`. This prevents a 500 on the onboarding
+   * status endpoint when the broker table has a schema issue or the DB is
+   * unreachable. Database errors are NOT falsely converted into a healthy
+   * status — the user is treated as not-ready (canStartTrading = false).
    */
-  private async findActiveBrokerConnection(userId: string): Promise<BrokerConnection | null> {
-    // Select only safe fields — never load encryptedCredentials/iv/tag
-    const connection = await this.brokerConnectionRepo
-      .createQueryBuilder('conn')
-      .select([
-        'conn.id',
-        'conn.brokerId',
-        'conn.brokerName',
-        'conn.displayName',
-        'conn.accountId',
-        'conn.accountType',
-        'conn.status',
-        'conn.demoValidated',
-        'conn.liveTradingEnabled',
-        'conn.lastHealthCheckAt',
-        'conn.lastSyncAt',
-        'conn.lastErrorMessage',
-        'conn.createdAt',
-        'conn.updatedAt',
-      ])
-      .where('conn.userId = :userId', { userId })
-      .andWhere('conn.status = :status', { status: BrokerConnectionStatus.CONNECTED })
-      .getOne();
+  private async findActiveBrokerConnection(
+    userId: string,
+  ): Promise<Pick<BrokerConnection, 'id' | 'status' | 'lastHealthCheckAt' | 'consecutiveFailureCount' | 'liveTradingEnabled'> | null> {
+    try {
+      const connection = await this.brokerConnectionRepo
+        .createQueryBuilder('conn')
+        .select([
+          'conn.id',
+          'conn.status',
+          'conn.lastHealthCheckAt',
+          'conn.consecutiveFailureCount',
+          'conn.liveTradingEnabled',
+        ])
+        .where('conn.userId = :userId', { userId })
+        .andWhere('conn.status = :status', { status: BrokerConnectionStatus.CONNECTED })
+        .getOne();
 
-    return connection;
+      return connection as Pick<BrokerConnection, 'id' | 'status' | 'lastHealthCheckAt' | 'consecutiveFailureCount' | 'liveTradingEnabled'> | null;
+    } catch (err) {
+      // Log the DB error (without credentials — none are in this query) and
+      // return null. The user is treated as not having a broker connection.
+      // This is a FAIL-CLOSED behavior: canStartTrading = false.
+      this.logger.error(
+        `Failed to query broker connection for onboarding status (user ${userId}): ${(err as Error).message}`,
+      );
+      return null;
+    }
   }
 }
 
@@ -217,7 +230,8 @@ export interface OnboardingStatus {
   profileCompleted: boolean;
   riskProfileCompleted: boolean;
   brokerConnected: boolean;
-  brokerConnectionStatus: BrokerConnectionStatus;
+  /** 'NONE' when the user has no broker connection at all. */
+  brokerConnectionStatus: BrokerConnectionStatus | 'NONE';
   canStartTrading: boolean;
   missingSteps: OnboardingStep[];
   nextStep: OnboardingNextStep;
