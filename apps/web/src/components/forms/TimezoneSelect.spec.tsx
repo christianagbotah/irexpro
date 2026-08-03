@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { useState } from 'react';
 import { TimezoneSelect } from './TimezoneSelect';
 
 /**
@@ -159,5 +160,104 @@ describe('TimezoneSelect', () => {
     // The selected option should have aria-selected="true"
     const selectedOption = options.find((o) => o.getAttribute('aria-selected') === 'true');
     expect(selectedOption).toBeDefined();
+  });
+
+  // ── Edge case tests (final verification) ──────────────────────────────────
+
+  it('should have aria-activedescendant absent when no option is active (closed)', () => {
+    render(<TimezoneSelect value="Africa/Accra" onChange={() => {}} />);
+    const combobox = screen.getByRole('combobox');
+    expect(combobox.getAttribute('aria-activedescendant')).toBeNull();
+  });
+
+  it('should clear aria-activedescendant when dropdown closes', () => {
+    render(<TimezoneSelect value="" onChange={() => {}} />);
+    const combobox = screen.getByRole('combobox');
+    fireEvent.focus(combobox);
+    // aria-activedescendant should be set when open
+    expect(combobox.getAttribute('aria-activedescendant')).toBeTruthy();
+
+    // Close with Escape
+    fireEvent.keyDown(combobox, { key: 'Escape' });
+    // aria-activedescendant should be absent when closed
+    expect(combobox.getAttribute('aria-activedescendant')).toBeNull();
+  });
+
+  it('should display the selected value when reopened after selection', () => {
+    function Wrapper() {
+      const [val, setVal] = useState('');
+      return <TimezoneSelect value={val} onChange={setVal} />;
+    }
+    const { unmount } = render(<Wrapper />);
+    const combobox = screen.getByRole('combobox');
+    fireEvent.focus(combobox);
+    fireEvent.change(combobox, { target: { value: 'Accra' } });
+    fireEvent.keyDown(combobox, { key: 'Enter' });
+
+    // Re-open — the selected value should be reflected in aria-selected
+    fireEvent.focus(combobox);
+    const options = screen.getAllByRole('option');
+    const accraOption = options.find((o) => o.textContent?.includes('Africa/Accra'));
+    expect(accraOption).toBeDefined();
+    expect(accraOption?.getAttribute('aria-selected')).toBe('true');
+    unmount();
+  });
+
+  it('should not clear saved timezone on Escape', () => {
+    const onChange = jest.fn();
+    render(<TimezoneSelect value="Africa/Accra" onChange={onChange} />);
+    const combobox = screen.getByRole('combobox');
+    fireEvent.focus(combobox);
+    fireEvent.keyDown(combobox, { key: 'Escape' });
+
+    // onChange should not be called (Escape doesn't clear the value)
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('should not trap focus on Tab (Tab closes and allows focus to move)', () => {
+    render(<TimezoneSelect value="" onChange={() => {}} />);
+    const combobox = screen.getByRole('combobox');
+    fireEvent.focus(combobox);
+    expect(combobox).toHaveAttribute('aria-expanded', 'true');
+
+    // Tab should close the dropdown without preventDefault
+    fireEvent.keyDown(combobox, { key: 'Tab' });
+    expect(combobox).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('should not trap focus on Shift+Tab', () => {
+    render(<TimezoneSelect value="" onChange={() => {}} />);
+    const combobox = screen.getByRole('combobox');
+    fireEvent.focus(combobox);
+
+    // Shift+Tab should also close (falls through to Tab case)
+    fireEvent.keyDown(combobox, { key: 'Tab', shiftKey: true });
+    expect(combobox).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('should support Home and End keys for navigation', () => {
+    render(<TimezoneSelect value="" onChange={() => {}} />);
+    const combobox = screen.getByRole('combobox');
+    fireEvent.focus(combobox);
+
+    const initialActive = combobox.getAttribute('aria-activedescendant');
+
+    // End should move to last option
+    fireEvent.keyDown(combobox, { key: 'End' });
+    const endActive = combobox.getAttribute('aria-activedescendant');
+    expect(endActive).toBeTruthy();
+    expect(endActive).not.toBe(initialActive);
+
+    // Home should move to first option
+    fireEvent.keyDown(combobox, { key: 'Home' });
+    const homeActive = combobox.getAttribute('aria-activedescendant');
+    expect(homeActive).toBeTruthy();
+  });
+
+  it('should only auto-detect browser timezone when value is empty', () => {
+    const onChange = jest.fn();
+    // When value is set, onChange should not be called for auto-detection
+    render(<TimezoneSelect value="America/New_York" onChange={onChange} />);
+    expect(onChange).not.toHaveBeenCalled();
   });
 });
