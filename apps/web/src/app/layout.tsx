@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { AuthProvider } from '@/context/auth-context';
+import { NotificationProvider } from '@/components/notifications/NotificationProvider';
 
 export const metadata: Metadata = {
   title: 'iRexPro — AI Forex Trading Platform',
@@ -15,7 +16,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <AuthProvider>{children}</AuthProvider>
+        <NotificationProvider>
+          <AuthProvider>{children}</AuthProvider>
+        </NotificationProvider>
       </body>
     </html>
   );

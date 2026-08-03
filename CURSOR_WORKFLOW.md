@@ -14,12 +14,14 @@ This document defines how to use Cursor AI effectively for building iRexPro. It 
 
 1. **Always reference architecture docs in prompts** — point Cursor to the relevant doc before asking it to build a feature
 2. **Always include DEVELOPMENT_RULES.md in context** — all 18 rules must not be violated by generated code
-3. **One feature/module per session** — don't ask Cursor to build multiple modules in one prompt
-4. **Verify financial logic manually** — always review fee calculation, HWM, risk engine, and Model A fee collection code personally before committing
-5. **Never accept code that bypasses the Risk Engine** — if Cursor generates code that routes around the Risk Engine, reject it and re-prompt
-6. **Test first, then implement** — for critical modules (Risk Engine, fee calculation, HWM), write unit tests first as specification
-7. **Never accept hardcoded providers** — if Cursor writes `new StripeAdapter()` directly in a service, reject it; all providers must be used through `IPaymentProvider` and `ISmsProvider` interfaces via their registries
-8. **Never accept single-country assumptions** — if Cursor writes country-specific logic in business code rather than routing through `CountryConfigService`, reject it
+3. **Always include `docs/design/IREXPRO_UI_UX_DESIGN_SYSTEM.md` in context for any frontend work** — all UI must conform to the mandatory design system standard. Do not implement pages that are merely functional; every interface must receive complete professional UI/UX treatment
+4. **One feature/module per session** — don't ask Cursor to build multiple modules in one prompt
+5. **Verify financial logic manually** — always review fee calculation, HWM, risk engine, and Model A fee collection code personally before committing
+6. **Never accept code that bypasses the Risk Engine** — if Cursor generates code that routes around the Risk Engine, reject it and re-prompt
+7. **Test first, then implement** — for critical modules (Risk Engine, fee calculation, HWM), write unit tests first as specification
+8. **Never accept hardcoded providers** — if Cursor writes `new StripeAdapter()` directly in a service, reject it; all providers must be used through `IPaymentProvider` and `ISmsProvider` interfaces via their registries
+9. **Never accept single-country assumptions** — if Cursor writes country-specific logic in business code rather than routing through `CountryConfigService`, reject it
+10. **Never accept merely functional UI** — every page must be ultra-modern, professionally designed, responsive, accessible, and cohesive with the iRexPro design system. Verify all applicable states (loading, empty, error, success, warning, disabled). See `docs/design/IREXPRO_UI_UX_DESIGN_SYSTEM.md`
 
 ---
 

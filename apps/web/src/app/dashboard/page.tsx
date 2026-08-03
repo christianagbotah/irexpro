@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/context/auth-context';
-import { DashboardShell, Card, Badge, EmptyState, LoadingSpinner, Alert } from '@/components/ui';
+import { DashboardShell, Card, Badge, EmptyState, LoadingSpinner, Alert, Button } from '@/components/ui';
+import { useNotification } from '@/hooks/useNotification';
+import { mapApiError } from '@/lib/error-mapping';
 import { api } from '@/lib/api';
 import type { OnboardingStatus } from '@irexpro/types';
 
@@ -13,12 +15,20 @@ import type { OnboardingStatus } from '@irexpro/types';
  * Shows the onboarding checklist card + existing account/subscription/activity
  * cards. The onboarding card fetches GET /users/me/onboarding-status and
  * displays the next step + missing steps with action buttons.
+ *
+ * UX-4: Premium visual redesign — premium checklist step rows, status cards
+ * with icon containers, polished TRADING_NOT_READY alert. Business logic, API
+ * calls, readiness gate, and notifications unchanged.
  */
 export default function DashboardPage() {
   const { user, logout, loading, restoring } = useAuth();
+  const notify = useNotification();
   const [onboarding, setOnboarding] = useState<OnboardingStatus | null>(null);
   const [onboardingLoading, setOnboardingLoading] = useState(true);
   const [onboardingError, setOnboardingError] = useState<string | null>(null);
+  // Track whether the onboarding-status load error has already been surfaced
+  // via a toast — prevents spamming on background refreshes.
+  const onboardingErrorShownRef = useRef(false);
 
   useEffect(() => {
     if (!user) return;
@@ -30,13 +40,18 @@ export default function DashboardPage() {
       } catch (err) {
         if (!cancelled) {
           setOnboardingError(err instanceof Error ? err.message : 'Failed to load onboarding status');
+          // Only show the toast once per mount — background refreshes shouldn't spam.
+          if (!onboardingErrorShownRef.current) {
+            notify.error(mapApiError(err).message);
+            onboardingErrorShownRef.current = true;
+          }
         }
       } finally {
         if (!cancelled) setOnboardingLoading(false);
       }
     })();
     return () => { cancelled = true; };
-  }, [user]);
+  }, [user, notify]);
 
   if (restoring) {
     return <div style={{ padding: '3rem' }}><LoadingSpinner text="Restoring session…" /></div>;
@@ -57,9 +72,14 @@ export default function DashboardPage() {
 
   return (
     <DashboardShell user={user} onLogout={logout} activeRoute="/dashboard">
-      <div style={{ marginBottom: '1.5rem' }}>
-        <h1>Dashboard</h1>
-        <p className="muted">Welcome back, {fullName}</p>
+      {/* Premium dashboard header */}
+      <div style={{ marginBottom: 'var(--space-6)' }}>
+        <h1 style={{ marginBottom: 'var(--space-2)' }}>
+          Welcome back, <span style={{ color: 'var(--brand-light)' }}>{fullName.split(' ')[0]}</span>
+        </h1>
+        <p className="muted" style={{ maxWidth: '640px', lineHeight: 1.6 }}>
+          Here&rsquo;s a snapshot of your account, broker connection, and onboarding progress.
+        </p>
       </div>
 
       {/* Sprint 29: Onboarding checklist card */}
@@ -75,18 +95,30 @@ export default function DashboardPage() {
         </Card>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem', marginTop: '1.5rem' }}>
-        <Card title="Account Status">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+      {/* ── Status cards ──────────────────────────────────────────────────── */}
+      <div
+        className="stat-grid"
+        style={{ marginTop: 'var(--space-6)' }}
+      >
+        {/* Account status */}
+        <Card>
+          <span className="stat-card__icon" aria-hidden="true">👤</span>
+          <h2 className="card__title" style={{ marginBottom: 'var(--space-2)' }}>Account status</h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-3)' }}>
             <Badge variant={user.status === 'ACTIVE' ? 'success' : 'warning'}>{user.status}</Badge>
           </div>
-          <p className="text-sm muted">Email: {user.email ?? '(phone-only)'}</p>
-          {user.phone && <p className="text-sm muted">Phone: {user.phone}</p>}
-          {user.countryCode && <p className="text-sm muted">Country: {user.countryCode}</p>}
-          {user.mfaEnabled && <p className="text-sm muted">MFA: Enabled</p>}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
+            <p className="text-sm muted">Email: {user.email ?? '(phone-only)'}</p>
+            {user.phone && <p className="text-sm muted">Phone: {user.phone}</p>}
+            {user.countryCode && <p className="text-sm muted">Country: {user.countryCode}</p>}
+            {user.mfaEnabled && <p className="text-sm muted">MFA: Enabled</p>}
+          </div>
         </Card>
 
-        <Card title="Broker Connection">
+        {/* Broker connection */}
+        <Card>
+          <span className="stat-card__icon" aria-hidden="true">🔌</span>
+          <h2 className="card__title" style={{ marginBottom: 'var(--space-2)' }}>Broker connection</h2>
           {onboarding?.brokerConnected ? (
             <EmptyState icon="✅" title="Broker connected" description="Your broker account is connected and ready for trading." />
           ) : (
@@ -94,12 +126,15 @@ export default function DashboardPage() {
           )}
         </Card>
 
-        <Card title="Subscription">
+        {/* Subscription */}
+        <Card>
+          <span className="stat-card__icon" aria-hidden="true">📋</span>
+          <h2 className="card__title" style={{ marginBottom: 'var(--space-2)' }}>Subscription</h2>
           <EmptyState icon="📋" title="No active subscription" description="Choose a plan to activate AI auto-trading." />
         </Card>
       </div>
 
-      <Card title="Recent Activity" className="mt-6">
+      <Card title="Recent activity" className="mt-6">
         <EmptyState icon="📈" title="No trading activity yet" description="Your AI trading signals and execution history will appear here once you start trading." />
       </Card>
     </DashboardShell>
@@ -110,8 +145,11 @@ export default function DashboardPage() {
  * Onboarding checklist card — shows 4 steps with status + action buttons.
  * Sprint 29 amendment: adds "Start trading" button that handles the
  * TRADING_NOT_READY structured error (403 + missingSteps) from the backend.
+ *
+ * UX-4: Premium redesign using .checklist / .checklist__step classes.
  */
 function OnboardingCard({ status }: { status: OnboardingStatus }) {
+  const notify = useNotification();
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const [missingSteps, setMissingSteps] = useState<string[] | null>(null);
@@ -163,6 +201,7 @@ function OnboardingCard({ status }: { status: OnboardingStatus }) {
       });
       // Success — trading session started (no auto-redirect; user stays on dashboard)
       setStartError(null);
+      notify.success('Trading session started.');
     } catch (err) {
       // Sprint 29 amendment: handle the structured TRADING_NOT_READY error.
       // The error body is { statusCode: 403, code: 'TRADING_NOT_READY', message, missingSteps }
@@ -171,14 +210,17 @@ function OnboardingCard({ status }: { status: OnboardingStatus }) {
         if (body.code === 'TRADING_NOT_READY' && body.missingSteps) {
           setMissingSteps(body.missingSteps);
           setStartError('Your trading setup is not ready. Complete the missing steps below.');
+          notify.warning('Your trading setup is not ready.');
         } else {
           setStartError(body.message ?? 'Trading could not be started. Please try again.');
+          notify.error(mapApiError(err).message);
         }
       } else {
         // Safe generic message — do NOT expose raw backend errors
         setStartError(err instanceof Error && !err.message.includes('fetch')
           ? err.message
           : 'Unable to start trading. Please try again or contact support.');
+        notify.error(mapApiError(err).message);
       }
     } finally {
       setStarting(false);
@@ -191,7 +233,7 @@ function OnboardingCard({ status }: { status: OnboardingStatus }) {
       subtitle={status.canStartTrading
         ? 'All required steps are complete. You can start trading when ready.'
         : 'Complete these steps to start automated trading.'}
-      className="mt-4"
+      className="mt-4 readiness-card"
     >
       {status.canStartTrading ? (
         <Alert variant="success">
@@ -205,46 +247,57 @@ function OnboardingCard({ status }: { status: OnboardingStatus }) {
 
       {/* Sprint 29 amendment: TRADING_NOT_READY error display */}
       {startError && (
-        <Alert variant="error" >
-          <div>{startError}</div>
-          {missingSteps && missingSteps.length > 0 && (
-            <div style={{ marginTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-              {missingSteps.map((step) => (
-                <Link key={step} href={stepToHref(step)} className="text-sm" style={{ textDecoration: 'underline' }}>
-                  → Complete {step.replace(/_/g, ' ').toLowerCase()}
-                </Link>
-              ))}
+        <Alert variant="warning">
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 600, marginBottom: 'var(--space-1)' }}>
+              {startError}
             </div>
-          )}
+            {missingSteps && missingSteps.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)', marginTop: 'var(--space-2)' }}>
+                {missingSteps.map((step) => (
+                  <Link
+                    key={step}
+                    href={stepToHref(step)}
+                    className="text-sm"
+                    style={{ textDecoration: 'underline', display: 'inline-flex', alignItems: 'center', gap: 'var(--space-1)' }}
+                  >
+                    → Complete {step.replace(/_/g, ' ').toLowerCase()}
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
         </Alert>
       )}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '1rem' }}>
+      {/* Premium onboarding checklist step rows */}
+      <div className="checklist" role="list">
         {steps.map((step) => (
           <div
             key={step.key}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '0.75rem 1rem',
-              border: '1px solid var(--border, #2a3550)',
-              borderRadius: '8px',
-              background: step.done ? 'rgba(16,185,129,0.05)' : 'transparent',
-            }}
+            className={`checklist__step${step.done ? ' checklist__step--done' : ''}`}
+            role="listitem"
           >
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
-                <span style={{ fontSize: '1.1rem' }}>{step.done ? '✅' : '⬜'}</span>
-                <strong>{step.label}</strong>
+            <span className="checklist__indicator" aria-hidden="true">
+              {step.done ? '✓' : ''}
+            </span>
+            <div className="checklist__body">
+              <div className="checklist__step-title">
+                {step.label}
                 {step.done && <Badge variant="success">Done</Badge>}
               </div>
-              <p className="text-sm muted" style={{ margin: 0 }}>{step.description}</p>
+              <p className="checklist__step-desc">{step.description}</p>
             </div>
             {!step.done && (
-              <Link href={step.href} className="btn btn--primary btn--sm" style={{ marginLeft: '1rem', flexShrink: 0 }}>
-                {status.nextStep === step.key ? 'Start' : 'Complete'}
-              </Link>
+              <div className="checklist__action">
+                <Link
+                  href={step.href}
+                  className="btn btn--primary btn--sm"
+                  aria-label={status.nextStep === step.key ? `Start: ${step.label}` : `Complete: ${step.label}`}
+                >
+                  {status.nextStep === step.key ? 'Start' : 'Complete'}
+                </Link>
+              </div>
             )}
           </div>
         ))}
@@ -252,14 +305,17 @@ function OnboardingCard({ status }: { status: OnboardingStatus }) {
 
       {/* Sprint 29 amendment: Start trading button (only shown when ready) */}
       {status.canStartTrading && (
-        <button
+        <Button
           onClick={handleStartTrading}
           disabled={starting}
-          className="btn btn--primary btn--lg btn--block"
-          style={{ marginTop: '1rem' }}
+          loading={starting}
+          variant="primary"
+          size="lg"
+          block
+          style={{ marginTop: 'var(--space-6)' }}
         >
-          {starting ? 'Starting…' : 'Start paper trading session'}
-        </button>
+          {starting ? 'Starting…' : 'Start Paper Trading Session'}
+        </Button>
       )}
     </Card>
   );
