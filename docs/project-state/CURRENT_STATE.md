@@ -4,11 +4,51 @@
 
 \## Current Sprint Checkpoint
 
-Current sprint: Sprint 28 — Secure Password Reset Backend Flow (IN PROGRESS).
+Current sprint: Sprint 29 + UX feature (merged to `main`).
 
-Last completed sprint: Sprint 27 — Auth UI Refinement + Phone Registration + Remember Me (PASS, merged to `main`).
+Last completed: PR #24 — Premium Onboarding UX and Persistent Design System (MERGED to `main`, merge commit `2a4b608`).
 
-Previous: Sprint 26 — Modern UI/UX Design System + Forgot Password Flow (PASS, merged to `main`, tagged `sprint-26-complete`).
+Previous: PR #23 — Auth-principal hotfix (MERGED to `main`).
+
+
+\## PR #24 — Premium Onboarding UX and Persistent Design System (MERGED)
+
+PR: https://github.com/christianagbotah/irexpro/pull/24
+Merge commit: `2a4b6087e69afd90d81f474d33d7fab58aa5c6fc`
+Head commit at merge: `582831ede672404aa54d682f15eea3aa4b86a36e`
+Branch: `feature-onboarding-ux-timezone-risk-tooltips-notifications`
+
+### What was merged
+
+- **TimezoneSelect**: searchable IANA timezone selector with standard ARIA editable combobox pattern (role="combobox" on input, aria-expanded, aria-controls, aria-autocomplete="list", conditional aria-activedescendant, role="listbox", role="option", aria-selected). Browser auto-detection. 48-entry fallback list. Full keyboard navigation.
+- **InfoTooltip**: accessible tooltip (hover + focus + touch + Escape). 7 risk-setting tooltips with exact spec copy.
+- **NotificationProvider**: centralized toast system. notify is referentially stable (useMemo with []).
+- **ConfirmDialog**: accessible confirmation modal with focus trap, Escape, overlay close, focus restoration.
+- **mapApiError**: API error to safe user-facing message mapper.
+- **Premium CSS**: +1,463 lines appended to globals.css (progressive enhancement).
+- **Premium page redesigns**: /onboarding/profile, /onboarding/risk, /onboarding/broker, /dashboard.
+- **Persistent UI/UX design system**: `docs/design/IREXPRO_UI_UX_DESIGN_SYSTEM.md` (737 lines, 28 sections). Mandatory reference in CURSOR_WORKFLOW.md and DEVELOPMENT_RULES.md.
+
+### TimezoneSelect accessibility fix
+
+Original implementation placed aria-activedescendant on a <button> trigger (triggered jsx-a11y/role-supports-aria-props). Fixed by converting to standard ARIA editable combobox pattern where the search <input> has role="combobox".
+
+### Post-merge verification
+
+- Web test: **44 passed (4 suites)**
+- Web lint: **0 warnings, 0 errors**
+- Web build: pass
+- Admin build: pass
+- Mobile typecheck: pass
+- Types typecheck: pass
+- API-client typecheck: pass
+- API test: **1,054 passed (70 suites)**
+- API build: pass
+- git diff --check: clean
+
+### Remaining requirement
+
+A rendered cross-viewport browser review (360px, 390px, 768px, 1024px, 1440px) was not available in the sandbox environment. Static CSS inspection and component tests found no overflow risks, but a rendered browser review should be performed in staging before production release.
 
 
 \## Sprint 28 — Secure Password Reset Backend Flow (in progress)
