@@ -710,3 +710,52 @@ Before approving any PR touching trading, risk, financial, payment, or regional 
 - [ ] `StripeHttpClient` must never log the `Authorization` header, and must sanitise/length-cap any provider-supplied error message before it is returned or logged
 - [ ] Tests for Stripe must mock `StripeHttpClient`/`fetch` — never call the live Stripe network
 - [ ] Flutterwave, Hubtel, PayPal, Wise, and Braintree remain out of scope for this sprint and must not be implemented as part of Stripe integration work
+
+---
+
+## Rule 19 — UI/UX Design System Compliance
+
+> **Mandatory reference:** `docs/design/IREXPRO_UI_UX_DESIGN_SYSTEM.md`
+
+Every new or modified iRexPro interface — web, admin, or mobile — MUST conform to the
+iRexPro UI/UX Design System document. This is not optional.
+
+### Requirements
+
+1. **Read the design system document** before starting any frontend work
+2. **Reuse existing shared components** — do not duplicate patterns across pages
+3. **Use established design tokens** — do not invent new colors, spacing, radii, or shadows
+4. **Design all applicable states** — loading, empty, error, success, warning, disabled,
+   offline, degraded
+5. **Verify responsive behavior** at 360px, 390px, 768px, 1024px, 1440px
+6. **Verify accessibility** — keyboard, screen reader, contrast, ARIA, focus management
+7. **Never expose raw backend errors** — use `mapApiError()` for all error messages
+8. **Never use browser `alert()` or `confirm()`** — use toast notifications and ConfirmDialog
+9. **Preserve trading-safety wording** — AI signal → risk gate → execution → broker adapter.
+   AI must never directly execute broker orders.
+10. **Include UI/UX verification** in the final feature report using the design-review checklist
+
+### Prohibited
+
+- ❌ Pages that are merely functional without professional visual treatment
+- ❌ Generic Bootstrap-style layouts or default browser controls
+- ❌ Inconsistent page designs that don't match the iRexPro design system
+- ❌ Casino-style, neon, or gambling aesthetics
+- ❌ Aggressive profit-focused messaging or guaranteed-returns language
+- ❌ Raw backend errors, SQL messages, stack traces, or credentials in the UI
+- ❌ Desktop-only interactions without mobile alternatives
+- ❌ Postponing accessibility as a separate task
+
+### Definition of Done
+
+No frontend page or component is complete unless:
+- Business logic works
+- The interface is professionally designed per the design system
+- Shared components are reused
+- All applicable states are handled
+- Responsive behavior is verified
+- Accessibility is verified
+- Safety wording is correct
+- Raw errors and secrets are never exposed
+- Tests and production builds pass
+- The final report includes UI/UX verification
