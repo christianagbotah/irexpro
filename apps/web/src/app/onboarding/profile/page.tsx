@@ -54,7 +54,7 @@ export default function OnboardingProfilePage() {
         notify.error(mapApiError(err).message);
       });
     }
-  }, [user]);
+  }, [user, notify]);
 
   if (restoring) {
     return <div style={{ padding: '3rem' }}><p className="muted">Restoring session…</p></div>;

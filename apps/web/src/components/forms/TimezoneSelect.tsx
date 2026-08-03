@@ -3,7 +3,8 @@
 /**
  * TimezoneSelect — searchable IANA timezone selector.
  *
- * UX-1 component.
+ * UX-1 component. Accessibility fix: uses the standard ARIA editable combobox
+ * pattern (role="combobox" on the search input, not on a button trigger).
  *
  * Features:
  * - Uses `Intl.supportedValuesOf('timeZone')` when available, with a curated
@@ -17,7 +18,11 @@
  *   with `timeZoneName: 'shortOffset'` (manual fallback for older engines).
  * - Searchable by city name or IANA key.
  * - Keyboard navigable: ArrowUp/ArrowDown, Enter, Escape.
- * - ARIA combobox pattern with role="listbox" / role="option".
+ * - ARIA editable combobox pattern:
+ *   - Search input has role="combobox", aria-expanded, aria-controls,
+ *     aria-autocomplete="list", aria-activedescendant.
+ *   - Results container has role="listbox".
+ *   - Each result has role="option" with stable unique id and aria-selected.
  * - Validates that the submitted value is a recognized IANA timezone — arbitrary
  *   free text never produces an unrecognised value.
  * - Styled with the existing CSS variables (--brand, --bg-input, --border, etc.).
@@ -34,104 +39,47 @@ export interface TimezoneSelectProps {
 }
 
 // ── Fallback timezone list ───────────────────────────────────────────────────
-// Used when `Intl.supportedValuesOf` is unavailable (older Safari, etc.).
-// ~50 commonly-used IANA timezones covering all major regions.
 const FALLBACK_TIMEZONES: string[] = [
-  'Africa/Accra',
-  'Africa/Addis_Ababa',
-  'Africa/Cairo',
-  'Africa/Casablanca',
-  'Africa/Johannesburg',
-  'Africa/Lagos',
-  'Africa/Nairobi',
-  'America/Argentina/Buenos_Aires',
-  'America/Bogota',
-  'America/Chicago',
-  'America/Denver',
-  'America/Los_Angeles',
-  'America/Mexico_City',
-  'America/New_York',
-  'America/Sao_Paulo',
-  'America/Toronto',
-  'America/Vancouver',
-  'Asia/Bangkok',
-  'Asia/Dubai',
-  'Asia/Hong_Kong',
-  'Asia/Jakarta',
-  'Asia/Jerusalem',
-  'Asia/Karachi',
-  'Asia/Kolkata',
-  'Asia/Manila',
-  'Asia/Seoul',
-  'Asia/Shanghai',
-  'Asia/Singapore',
-  'Asia/Tehran',
-  'Asia/Tokyo',
-  'Australia/Adelaide',
-  'Australia/Brisbane',
-  'Australia/Melbourne',
-  'Australia/Sydney',
-  'Europe/Amsterdam',
-  'Europe/Berlin',
-  'Europe/Dublin',
-  'Europe/Istanbul',
-  'Europe/Lisbon',
-  'Europe/London',
-  'Europe/Madrid',
-  'Europe/Moscow',
-  'Europe/Paris',
-  'Europe/Rome',
-  'Pacific/Auckland',
-  'Pacific/Honolulu',
-  'Pacific/Tahiti',
-  'UTC',
+  'Africa/Accra', 'Africa/Addis_Ababa', 'Africa/Cairo', 'Africa/Casablanca',
+  'Africa/Johannesburg', 'Africa/Lagos', 'Africa/Nairobi',
+  'America/Argentina/Buenos_Aires', 'America/Bogota', 'America/Chicago',
+  'America/Denver', 'America/Los_Angeles', 'America/Mexico_City',
+  'America/New_York', 'America/Sao_Paulo', 'America/Toronto', 'America/Vancouver',
+  'Asia/Bangkok', 'Asia/Dubai', 'Asia/Hong_Kong', 'Asia/Jakarta',
+  'Asia/Jerusalem', 'Asia/Karachi', 'Asia/Kolkata', 'Asia/Manila',
+  'Asia/Seoul', 'Asia/Shanghai', 'Asia/Singapore', 'Asia/Tehran', 'Asia/Tokyo',
+  'Australia/Adelaide', 'Australia/Brisbane', 'Australia/Melbourne',
+  'Australia/Sydney', 'Europe/Amsterdam', 'Europe/Berlin', 'Europe/Dublin',
+  'Europe/Istanbul', 'Europe/Lisbon', 'Europe/London', 'Europe/Madrid',
+  'Europe/Moscow', 'Europe/Paris', 'Europe/Rome',
+  'Pacific/Auckland', 'Pacific/Honolulu', 'Pacific/Tahiti', 'UTC',
 ];
 
 interface TimezoneOption {
   iana: string;
   city: string;
-  offsetLabel: string; // e.g. "UTC+00:00"
-  displayLabel: string; // e.g. "Accra — Africa/Accra — UTC+00:00"
+  offsetLabel: string;
+  displayLabel: string;
 }
 
-/**
- * Returns the list of supported IANA timezones for the current runtime.
- * Falls back to a curated list when `Intl.supportedValuesOf` is unavailable.
- */
 function getSupportedTimezones(): string[] {
   try {
-    // `Intl.supportedValuesOf` is supported in modern Chrome/Edge/Firefox/Safari.
     const supported = (Intl as unknown as {
       supportedValuesOf?: (key: string) => string[];
     }).supportedValuesOf?.('timeZone');
     if (Array.isArray(supported) && supported.length > 0) {
-      // Ensure UTC is always present.
       return supported.includes('UTC') ? supported : [...supported, 'UTC'];
     }
-  } catch {
-    /* ignore — fall through to static list */
-  }
+  } catch { /* fall through */ }
   return FALLBACK_TIMEZONES;
 }
 
-/**
- * Computes the current UTC offset (in minutes) for a given IANA timezone.
- * Returns the offset in minutes (e.g. Accra = 0, Tokyo = 540, New York = -300
- * during DST).
- */
 function getUtcOffsetMinutes(iana: string): number {
   try {
     const now = new Date();
-    // Format the current instant in the target timezone, then in UTC, and diff.
     const targetFmt = new Intl.DateTimeFormat('en-US', {
-      timeZone: iana,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false,
+      timeZone: iana, year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
     });
     const parts = targetFmt.formatToParts(now).reduce<Record<string, string>>((acc, p) => {
       if (p.type !== 'literal') acc[p.type] = p.value;
@@ -139,17 +87,11 @@ function getUtcOffsetMinutes(iana: string): number {
     }, {});
     const hour = parts.hour === '24' ? '00' : parts.hour;
     const asUTC = Date.UTC(
-      Number(parts.year),
-      Number(parts.month) - 1,
-      Number(parts.day),
-      Number(hour),
-      Number(parts.minute),
-      Number(parts.second),
+      Number(parts.year), Number(parts.month) - 1, Number(parts.day),
+      Number(hour), Number(parts.minute), Number(parts.second),
     );
     return Math.round((asUTC - now.getTime()) / 60000);
-  } catch {
-    return 0;
-  }
+  } catch { return 0; }
 }
 
 function formatOffset(minutes: number): string {
@@ -160,10 +102,6 @@ function formatOffset(minutes: number): string {
   return `UTC${sign}${hh}:${mm}`;
 }
 
-/**
- * Tries to use `timeZoneName: 'shortOffset'` (e.g. "GMT+00:00") and falls back
- * to manual computation. Returns e.g. "UTC+00:00".
- */
 function getOffsetLabel(iana: string): string {
   try {
     const fmt = new Intl.DateTimeFormat('en-US', {
@@ -176,18 +114,10 @@ function getOffsetLabel(iana: string): string {
       return tzPart.value.replace('GMT', 'UTC');
     }
     if (tzPart && tzPart.value === 'GMT') return 'UTC+00:00';
-  } catch {
-    /* fall through */
-  }
+  } catch { /* fall through */ }
   return formatOffset(getUtcOffsetMinutes(iana));
 }
 
-/**
- * Extracts a human-readable city name from an IANA timezone identifier.
- * "Africa/Accra" -> "Accra"
- * "America/Argentina/Buenos_Aires" -> "Buenos Aires"
- * "UTC" -> "UTC"
- */
 function cityFromIana(iana: string): string {
   if (iana === 'UTC' || iana === 'Etc/UTC' || iana === 'Etc/GMT') return 'UTC';
   const last = iana.split('/').pop() ?? iana;
@@ -197,28 +127,16 @@ function cityFromIana(iana: string): string {
 function buildOption(iana: string): TimezoneOption {
   const city = cityFromIana(iana);
   const offsetLabel = getOffsetLabel(iana);
-  return {
-    iana,
-    city,
-    offsetLabel,
-    displayLabel: `${city} — ${iana} — ${offsetLabel}`,
-  };
+  return { iana, city, offsetLabel, displayLabel: `${city} — ${iana} — ${offsetLabel}` };
 }
 
-/**
- * Returns true if the supplied value is a recognized IANA timezone in this
- * runtime. Used to validate submitted values.
- */
 export function isValidTimezone(iana: string): boolean {
   if (!iana || typeof iana !== 'string') return false;
   try {
-    // Calling Intl.DateTimeFormat with an invalid timeZone throws RangeError.
     // eslint-disable-next-line no-new
     new Intl.DateTimeFormat('en-US', { timeZone: iana });
     return true;
-  } catch {
-    return false;
-  }
+  } catch { return false; }
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -233,21 +151,17 @@ export function TimezoneSelect({
   const generatedId = useId();
   const inputId = id || generatedId;
   const listboxId = `${inputId}-listbox`;
-  const triggerId = `${inputId}-trigger`;
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
+  const comboboxRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
 
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(-1);
 
-  // Build the full option list once per mount. `Intl.supportedValuesOf` can be
-  // expensive in some engines, so we memoize for the lifetime of the component.
   const allOptions = useMemo<TimezoneOption[]>(() => {
     const ianaList = getSupportedTimezones();
-    // Deduplicate & sort by city name for a stable, scannable list.
     const unique = Array.from(new Set(ianaList));
     return unique.map(buildOption).sort((a, b) => a.city.localeCompare(b.city));
   }, []);
@@ -256,16 +170,13 @@ export function TimezoneSelect({
 
   // Auto-detect browser timezone — preselect ONLY when value is empty.
   useEffect(() => {
-    if (value) return; // never overwrite a saved value
+    if (value) return;
     try {
       const detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
       if (detected && allIanaSet.has(detected)) {
         onChange(detected);
       }
-    } catch {
-      /* ignore — leave empty */
-    }
-    // We intentionally run this only on mount (and only when allOptions is set).
+    } catch { /* ignore */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allIanaSet]);
 
@@ -280,7 +191,6 @@ export function TimezoneSelect({
     );
   }, [allOptions, query]);
 
-  // Reset activeIndex when the filter changes.
   useEffect(() => {
     setActiveIndex(filtered.length > 0 ? 0 : -1);
   }, [filtered]);
@@ -317,9 +227,8 @@ export function TimezoneSelect({
   const openDropdown = useCallback(() => {
     if (disabled) return;
     setOpen(true);
-    // Focus the search field on next paint.
     requestAnimationFrame(() => {
-      searchInputRef.current?.focus();
+      comboboxRef.current?.focus();
     });
   }, [disabled]);
 
@@ -330,14 +239,14 @@ export function TimezoneSelect({
 
   const commit = useCallback(
     (iana: string) => {
-      if (!iana || !allIanaSet.has(iana)) return; // never commit unknown values
+      if (!iana || !allIanaSet.has(iana)) return;
       onChange(iana);
       closeDropdown();
     },
     [allIanaSet, onChange, closeDropdown],
   );
 
-  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+  const onComboboxKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (disabled) return;
 
     switch (e.key) {
@@ -383,69 +292,68 @@ export function TimezoneSelect({
         }
         break;
       case 'Tab':
-        // Tab closes the dropdown naturally — do not preventDefault so focus
-        // moves to the next field.
         if (open) closeDropdown();
         break;
     }
   };
 
-  const triggerLabel = selectedOption
+  const displayValue = selectedOption
     ? selectedOption.displayLabel
     : value && isValidTimezone(value)
       ? `${cityFromIana(value)} — ${value} — ${getOffsetLabel(value)}`
-      : 'Select your timezone…';
+      : '';
 
   const activeOptionId =
     open && activeIndex >= 0 ? `${inputId}-option-${activeIndex}` : undefined;
 
   return (
-    <div className="timezone-select" ref={containerRef} onKeyDown={onKeyDown}>
+    <div className="timezone-select" ref={containerRef}>
       {label && (
-        <label htmlFor={triggerId} className="input-label">
+        <label htmlFor={inputId} className="input-label">
           {label}
         </label>
       )}
 
-      {/* Trigger button (combobox) */}
-      <button
-        id={triggerId}
-        type="button"
-        className="timezone-select__trigger"
-        disabled={disabled}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-controls={open ? listboxId : undefined}
-        aria-activedescendant={activeOptionId}
-        aria-label={label || 'Timezone'}
-        onClick={() => (open ? closeDropdown() : openDropdown())}
-      >
-        <span className={`timezone-select__value${selectedOption ? '' : ' is-placeholder'}`}>
-          {triggerLabel}
-        </span>
+      {/* Editable combobox: the search input itself has role="combobox" */}
+      <div className="timezone-select__trigger" onClick={() => !open && openDropdown()}>
+        <input
+          ref={comboboxRef}
+          id={inputId}
+          type="text"
+          className="timezone-select__search-input timezone-select__search-input--trigger"
+          placeholder={displayValue || 'Search city or timezone…'}
+          value={open ? query : ''}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            if (!open) setOpen(true);
+          }}
+          onFocus={() => { if (!open) openDropdown(); }}
+          onKeyDown={onComboboxKeyDown}
+          disabled={disabled}
+          role="combobox"
+          aria-expanded={open}
+          aria-controls={open ? listboxId : undefined}
+          aria-autocomplete="list"
+          aria-activedescendant={activeOptionId}
+          aria-label={label || 'Timezone'}
+          aria-haspopup="listbox"
+          autoComplete="off"
+          spellCheck={false}
+        />
         <span className="timezone-select__chevron" aria-hidden="true">
           {open ? '▲' : '▼'}
         </span>
-      </button>
+      </div>
+
+      {/* When closed, show the selected value as a visual overlay */}
+      {!open && displayValue && (
+        <div className="timezone-select__selected-display" aria-hidden="true">
+          {displayValue}
+        </div>
+      )}
 
       {open && (
         <div className="timezone-select__dropdown" role="presentation">
-          <div className="timezone-select__search">
-            <input
-              ref={searchInputRef}
-              type="text"
-              className="timezone-select__search-input"
-              placeholder="Search city or timezone…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              aria-label="Search timezones"
-              aria-controls={listboxId}
-              aria-autocomplete="list"
-              autoComplete="off"
-              spellCheck={false}
-            />
-          </div>
-
           <ul
             id={listboxId}
             ref={listRef}
@@ -464,9 +372,8 @@ export function TimezoneSelect({
                   aria-selected={isSelected}
                   data-active={isActive ? 'true' : undefined}
                   className={`timezone-select__option${isSelected ? ' is-selected' : ''}${isActive ? ' is-active' : ''}`}
-                  // Mouse interaction should not require keyboard focus to move.
                   onMouseDown={(e) => {
-                    e.preventDefault(); // keep focus on the search input
+                    e.preventDefault();
                     commit(opt.iana);
                   }}
                   onMouseEnter={() => setActiveIndex(idx)}
@@ -479,7 +386,7 @@ export function TimezoneSelect({
             })}
             {filtered.length === 0 && (
               <li className="timezone-select__empty" role="status">
-                No timezones match “{query}”.
+                No timezones match &ldquo;{query}&rdquo;.
               </li>
             )}
           </ul>
