@@ -26,12 +26,14 @@ export class UsersService {
     return user;
   }
 
-  async findAll(page = 1, limit = 20): Promise<{ users: User[]; total: number }> {
+  async findAll(page?: number, limit?: number): Promise<{ users: User[]; total: number }> {
+    const pageNum = Number(page) || 1;
+    const limitNum = Math.min(Number(limit) || 20, 100);
     const [users, total] = await this.userRepo.findAndCount({
       relations: ['profile'],
       order: { createdAt: 'DESC' },
-      take: limit,
-      skip: (page - 1) * limit,
+      take: limitNum,
+      skip: (pageNum - 1) * limitNum,
     });
     return { users, total };
   }
