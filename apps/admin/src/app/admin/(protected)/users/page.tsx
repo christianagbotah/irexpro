@@ -9,14 +9,9 @@ import type { OnboardingStatus } from '@irexpro/types';
 /**
  * Admin users list — Sprint 29.
  *
- * Shows all users with onboarding status badges:
- *   - Incomplete (profile not done)
- *   - Risk pending (profile done, risk not done)
- *   - Broker pending (profile + risk done, broker not connected)
- *   - Ready (all steps complete + canStartTrading)
- *
- * Admins can click a user to see their onboarding detail. Broker credentials
- * are NEVER shown — the onboarding status only returns boolean flags + status.
+ * Shows all users with onboarding status badges.
+ * Admins can click a user to see their onboarding detail.
+ * Broker credentials are NEVER shown.
  */
 interface AdminUser {
   id: string;
@@ -46,7 +41,6 @@ export default function AdminUsersPage() {
     let cancelled = false;
     (async () => {
       try {
-        // The admin users endpoint returns { users, total }
         const result = await api.request<{ users: AdminUser[]; total: number }>('/admin/users?limit=50');
         if (!cancelled) setUsers(result.users);
       } catch (err) {
@@ -108,7 +102,6 @@ export default function AdminUsersPage() {
       {error && <Alert variant="error">{error}</Alert>}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-        {/* Users list */}
         <Card title={`Users (${users.length})`}>
           {users.length === 0 ? (
             <EmptyState icon="👥" title="No users" description="No users have registered yet." />
@@ -141,7 +134,6 @@ export default function AdminUsersPage() {
           )}
         </Card>
 
-        {/* Onboarding detail */}
         <Card title="Onboarding status">
           {!selectedUserId ? (
             <EmptyState icon="📋" title="Select a user" description="Click a user on the left to view their onboarding status." />
@@ -155,23 +147,19 @@ export default function AdminUsersPage() {
                   {selectedOnboarding.canStartTrading ? 'Yes' : 'No'}
                 </Badge>
               </div>
-
               <OnboardingStep label="Profile complete" done={selectedOnboarding.profileCompleted} />
               <OnboardingStep label="Risk profile complete" done={selectedOnboarding.riskProfileCompleted} />
               <OnboardingStep label="Broker connected" done={selectedOnboarding.brokerConnected} />
-
               {selectedOnboarding.brokerConnected && (
                 <div className="text-sm muted">
                   Broker status: <Badge variant="info">{selectedOnboarding.brokerConnectionStatus}</Badge>
                 </div>
               )}
-
               {selectedOnboarding.missingSteps.length > 0 && (
                 <Alert variant="warning">
                   Missing steps: {selectedOnboarding.missingSteps.join(', ')}
                 </Alert>
               )}
-
               {selectedOnboarding.canStartTrading && (
                 <Alert variant="success">This user has completed all onboarding steps and can start trading.</Alert>
               )}
