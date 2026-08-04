@@ -8,5 +8,6 @@ module.exports = {
     '^.+\\.(t|j)sx?$': ['ts-jest', { tsconfig: { jsx: 'react-jsx' } }],
   },
   testRegex: '.*\\.spec\\.tsx?$',
+  testPathIgnorePatterns: ['<rootDir>/e2e/', '/node_modules/'],
   collectCoverageFrom: ['src/**/*.{ts,tsx}'],
 };

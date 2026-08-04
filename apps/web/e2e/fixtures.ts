@@ -298,24 +298,37 @@ export async function setupUnauthenticatedInterception(page: Page): Promise<void
 interface ErrorCollector {
   consoleErrors: string[];
   failedRequests: string[];
+  allRequestHosts: Set<string>;
 }
 
 const pageCollectors = new WeakMap<Page, ErrorCollector>();
 
-// URL substrings that may legitimately return non-2xx during tests without
-// indicating a real bug. Kept conservative so real regressions still surface.
-const IGNORED_FAILURE_PATTERNS = [/favicon\.ico/i, /\/_next\//i, /localhost:3999\/api\/v1\/auth\/refresh/i];
-
-// Console-error substrings that are expected noise (typically CORS preflight
-// chatter or cross-origin blocking messages emitted by the browser even when
-// the request itself was intercepted) and should NOT fail a test. Kept narrow
-// so genuine runtime errors still surface. This is the "CORS noise allowlist"
-// referenced by assertNoConsoleErrors().
-const IGNORED_CONSOLE_ERROR_PATTERNS = [
-  /has been blocked by CORS policy/i,
-  /No 'Access-Control-Allow-Origin'/i,
-  /Cross-Origin Read Blocking/i,
+// Hosts that must NEVER be contacted by the deterministic E2E suite. Any request
+// to a production/staging API, broker, payment-provider, or external AI host is
+// a deterministic-isolation failure. The suite must only ever talk to the local
+// Playwright-started Next.js server (localhost) whose /api/v1/** calls are all
+// intercepted by setupAuthInterception().
+const FORBIDDEN_HOST_PATTERNS = [
+  /irexpro\.lightworldtech\.com/i,
+  /lightworldtech\.com/i,
+  /metatrader/i,
+  /mt[45]\./i,
+  /broker/i,
+  /stripe/i,
+  /paypal/i,
+  /paystack/i,
+  /flutterwave/i,
+  /openai/i,
+  /anthropic/i,
+  /huggingface/i,
+  /z-ai/i,
+  /zai\./i,
 ];
+
+// URL substrings that may legitimately return non-2xx during tests without
+// indicating a real bug. Kept as narrow as possible so real regressions surface.
+// Only favicon.ico (a harmless 404 when no icon asset exists) is allowlisted.
+const IGNORED_FAILURE_PATTERNS = [/favicon\.ico/i];
 
 /**
  * Attach console + network-failure collectors to a page. Must be called BEFORE
@@ -324,14 +337,12 @@ const IGNORED_CONSOLE_ERROR_PATTERNS = [
  * `assertNoFailedRequests(page)` at the end.
  */
 export function setupErrorCollectors(page: Page): void {
-  const collector: ErrorCollector = { consoleErrors: [], failedRequests: [] };
+  const collector: ErrorCollector = { consoleErrors: [], failedRequests: [], allRequestHosts: new Set() };
   pageCollectors.set(page, collector);
 
   page.on('console', (msg) => {
     if (msg.type() !== 'error') return;
     const text = msg.text();
-    // Filter out expected CORS noise so it doesn't produce spurious failures.
-    if (IGNORED_CONSOLE_ERROR_PATTERNS.some((re) => re.test(text))) return;
     collector.consoleErrors.push(`[console.error] ${text}`);
   });
 
@@ -341,8 +352,8 @@ export function setupErrorCollectors(page: Page): void {
 
   page.on('response', (response) => {
     const status = response.status();
-    if (status < 400) return;
     const url = response.url();
+    if (status < 400) return;
     if (IGNORED_FAILURE_PATTERNS.some((re) => re.test(url))) return;
     collector.failedRequests.push(`${status} ${response.request().method()} ${url}`);
   });
@@ -353,6 +364,17 @@ export function setupErrorCollectors(page: Page): void {
     collector.failedRequests.push(
       `FAILED ${request.method()} ${url} — ${request.failure()?.errorText ?? 'unknown'}`,
     );
+  });
+
+  // Track every request's host so assertNoExternalRequests() can prove no
+  // production/staging/broker/payment/AI host was ever contacted.
+  page.on('request', (request) => {
+    try {
+      const u = new URL(request.url());
+      collector.allRequestHosts.add(u.host);
+    } catch {
+      // non-URL requests (e.g. data:) — ignore
+    }
   });
 }
 
@@ -389,6 +411,32 @@ export function assertNoFailedRequests(page: Page): void {
 }
 
 // ── Viewport / layout assertions ─────────────────────────────────────────────
+
+/**
+ * Fail the test if any request was sent to a production, staging, broker,
+ * payment-provider, or external AI host. The deterministic E2E suite must only
+ * ever contact the local Playwright-started Next.js server, with every /api/v1/**
+ * call intercepted by setupAuthInterception(). This proves no real backend,
+ * broker, payment, or AI service is ever contacted.
+ */
+export function assertNoExternalRequests(page: Page): void {
+  const collector = pageCollectors.get(page);
+  if (!collector) {
+    throw new Error('assertNoExternalRequests: call setupErrorCollectors(page) first');
+  }
+  const violations: string[] = [];
+  for (const host of collector.allRequestHosts) {
+    if (FORBIDDEN_HOST_PATTERNS.some((re) => re.test(host))) {
+      violations.push(host);
+    }
+  }
+  if (violations.length > 0) {
+    throw new Error(
+      `Deterministic E2E suite contacted a forbidden external host(s):\n${violations.join('\n')}\n` +
+        `All hosts contacted: ${Array.from(collector.allRequestHosts).join(', ')}`,
+    );
+  }
+}
 
 /**
  * Assert the document has no horizontal overflow (scrollWidth <= clientWidth).

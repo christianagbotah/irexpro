@@ -28,7 +28,14 @@
  * - Styled with the existing CSS variables (--brand, --bg-input, --border, etc.).
  */
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+
+// useLayoutEffect runs synchronously before paint on the client, so the dropdown
+// is positioned correctly on its first visible frame (no flash of an overflowed
+// dropdown). On the server it is a no-op; we fall back to useEffect to avoid the
+// SSR useLayoutEffect warning. The dropdown is only rendered when `open` is true
+// (a client-only interaction), so this never affects SSR output.
+const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 
 export interface TimezoneSelectProps {
   value: string;
@@ -159,6 +166,14 @@ export function TimezoneSelect({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(-1);
+  // Responsive dropdown placement: when the combobox is low in the viewport, the
+  // default "open down with a 280px list" would overflow the bottom edge. We
+  // measure the available space above/below the trigger and either flip the
+  // dropdown above the trigger or cap the list max-height so it always fits.
+  const [dropdownPlacement, setDropdownPlacement] = useState<{
+    maxHeight: number | undefined;
+    openUp: boolean;
+  }>({ maxHeight: undefined, openUp: false });
 
   const allOptions = useMemo<TimezoneOption[]>(() => {
     const ianaList = getSupportedTimezones();
@@ -218,6 +233,45 @@ export function TimezoneSelect({
       el.scrollIntoView({ block: 'nearest' });
     }
   }, [activeIndex, open]);
+
+  // Position the dropdown so it never overflows the viewport. Measures the
+  // available space below and above the combobox container, picks the direction
+  // with more room, and caps the list max-height to the available space when
+  // there isn't enough room for the full 280px default. Runs synchronously before
+  // paint (via the isomorphic layout effect) so there is no visible flash, and
+  // re-measures on viewport resize and scroll while open.
+  useIsomorphicLayoutEffect(() => {
+    if (!open) return;
+    const container = containerRef.current;
+    if (!container) return;
+
+    const PREFERRED_MAX_HEIGHT = 280; // matches the CSS default for .timezone-select__list
+    const GAP = 4; // the calc(100% + 4px) gap between trigger and dropdown
+    const MARGIN = 8; // breathing room from the viewport edge
+
+    const measure = () => {
+      const rect = container.getBoundingClientRect();
+      const spaceBelow = Math.max(0, window.innerHeight - rect.bottom - GAP - MARGIN);
+      const spaceAbove = Math.max(0, rect.top - GAP - MARGIN);
+      // Choose the direction with more space; tie breaks to "down" (default).
+      const openUp = spaceAbove > spaceBelow;
+      const available = openUp ? spaceAbove : spaceBelow;
+      // If there's plenty of room, leave the CSS default (no inline cap).
+      // Otherwise cap the list to the available space so the dropdown always
+      // stays within the viewport.
+      const maxHeight = available >= PREFERRED_MAX_HEIGHT ? undefined : Math.floor(available);
+      setDropdownPlacement({ maxHeight, openUp });
+    };
+
+    measure();
+    window.addEventListener('resize', measure);
+    // capture: true so scroll events from any scrollable ancestor re-trigger.
+    window.addEventListener('scroll', measure, true);
+    return () => {
+      window.removeEventListener('resize', measure);
+      window.removeEventListener('scroll', measure, true);
+    };
+  }, [open]);
 
   const selectedOption = useMemo<TimezoneOption | undefined>(() => {
     if (!value) return undefined;
@@ -353,13 +407,17 @@ export function TimezoneSelect({
       )}
 
       {open && (
-        <div className="timezone-select__dropdown" role="presentation">
+        <div
+          className={`timezone-select__dropdown${dropdownPlacement.openUp ? ' timezone-select__dropdown--up' : ''}`}
+          role="presentation"
+        >
           <ul
             id={listboxId}
             ref={listRef}
             role="listbox"
             aria-label={label || 'Timezone'}
             className="timezone-select__list"
+            style={dropdownPlacement.maxHeight ? { maxHeight: `${dropdownPlacement.maxHeight}px` } : undefined}
           >
             {filtered.map((opt, idx) => {
               const isSelected = opt.iana === value;

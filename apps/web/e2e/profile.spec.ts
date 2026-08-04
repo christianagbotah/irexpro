@@ -244,14 +244,29 @@ test.describe('Onboarding / Profile', () => {
     const listbox = page.getByRole('listbox', { name: /timezone/i });
     await expect(listbox).toBeVisible();
     await expect(combobox).toHaveAttribute('aria-activedescendant', /.+/, { timeout: 5000 });
+    const firstActiveId = await combobox.getAttribute('aria-activedescendant');
 
-    // Move to the next option (guarantees a change from the currently-selected one).
-    await page.keyboard.press('ArrowDown');
-    await expect(combobox).toHaveAttribute('aria-activedescendant', /.+/, { timeout: 5000 });
-    const activeId = await combobox.getAttribute('aria-activedescendant');
-    expect(activeId).toBeTruthy();
-    const activeOptionEl = page.locator(`[id="${activeId}"]`)
-    const ianaText = (await activeOptionEl.locator('.timezone-select__option-iana').textContent()) ?? '';
+    // Move to a timezone that is DIFFERENT from the currently-selected one.
+    // The list is sorted by city; the selected "Africa/Accra" sits at index 1,
+    // so a single ArrowDown from index 0 (Abidjan) lands on the already-selected
+    // value and would not change the display. Press ArrowDown until the active
+    // option's IANA differs from the selected value.
+    let activeId = firstActiveId;
+    let ianaText = '';
+    for (let step = 0; step < 6; step++) {
+      await page.keyboard.press('ArrowDown');
+      // Wait until the active id actually CHANGES (not just non-empty) so we
+      // read the new option rather than a stale pre-render value.
+      await expect(combobox).not.toHaveAttribute('aria-activedescendant', activeId ?? '', { timeout: 5000 });
+      activeId = await combobox.getAttribute('aria-activedescendant');
+      expect(activeId, 'active id must be set after ArrowDown').toBeTruthy();
+      const activeOptionEl = page.locator(`[id="${activeId}"]`);
+      ianaText = (await activeOptionEl.locator('.timezone-select__option-iana').textContent()) ?? '';
+      if (ianaText && !displayBefore.includes(ianaText)) break;
+    }
+    expect(activeId, 'active id must have moved from the first option').not.toBe(firstActiveId);
+    expect(ianaText, 'must have navigated to a timezone').toBeTruthy();
+    expect(displayBefore, 'must have navigated to a DIFFERENT timezone than selected').not.toContain(ianaText);
 
     await page.keyboard.press('Enter');
     // Listbox closes.
@@ -385,24 +400,58 @@ test.describe('Onboarding / Profile', () => {
     await combobox.click();
     const listbox = page.getByRole('listbox', { name: /timezone/i });
     await expect(listbox).toBeVisible();
-    // The dropdown container has max-height via CSS on the list. The
-    // dropdown panel itself should stay within viewport. We check the
-    // dropdown container, not the scrollable list.
+    // The dropdown container is the absolutely-positioned panel. Its bounding
+    // box (including the bottom edge) must stay fully within the viewport —
+    // no relaxation for "slightly below the viewport". The component caps the
+    // list max-height and flips the dropdown above the trigger when needed.
     const dropdown = page.locator('.timezone-select__dropdown');
     await expect(dropdown).toBeVisible();
-    const box = await dropdown.boundingBox();
-    const viewport = page.viewportSize();
-    expect(box).not.toBeNull();
-    expect(viewport).not.toBeNull();
-    if (box && viewport) {
-      // Horizontal: must be fully within viewport
-      expect(box.x).toBeGreaterThanOrEqual(-1);
-      expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 1);
-      // Vertical: the dropdown may extend slightly below the viewport on
-      // small screens — check that it starts within the viewport and its
-      // visible height is reasonable (not fully off-screen)
-      expect(box.y).toBeGreaterThanOrEqual(-1);
-      expect(box.y).toBeLessThan(viewport.height);
-    }
+    await assertBoundingBoxInViewport(dropdown);
+  });
+
+  // ── Short-screen listbox regression ───────────────────────────────────────
+  // Regression for the defect where the timezone listbox extended below the
+  // viewport on shorter screens (the combobox is low in the page and the
+  // default 280px list overflowed the bottom edge). Covers every project's
+  // viewport: the listbox must stay within the viewport, the active option
+  // (reached via End) must be scrolled into view and remain visible, keyboard
+  // navigation must keep working, and there must be no horizontal overflow.
+  test('short-screen: End selects last option, active option visible, listbox in viewport', async ({ page }) => {
+    const combobox = page.getByRole('combobox', { name: /timezone/i });
+    await combobox.click();
+    const listbox = page.getByRole('listbox', { name: /timezone/i });
+    await expect(listbox).toBeVisible();
+    await expect(combobox).toHaveAttribute('aria-activedescendant', /.+/, { timeout: 5000 });
+    const initialId = await combobox.getAttribute('aria-activedescendant');
+
+    // End → last option.
+    await page.keyboard.press('End');
+    await expect(combobox).not.toHaveAttribute('aria-activedescendant', initialId ?? '', { timeout: 5000 });
+    await expect(combobox).toHaveAttribute('aria-activedescendant', /.+/, { timeout: 5000 });
+    const endActiveId = await combobox.getAttribute('aria-activedescendant');
+    expect(endActiveId, 'active id must be set after End').toBeTruthy();
+    expect(endActiveId, 'End must move to a different option').not.toBe(initialId);
+
+    // The active (last) option must be scrolled into view within the list.
+    const activeOption = page.locator(`[id="${endActiveId}"]`);
+    await expect(activeOption).toBeVisible();
+    await expect(activeOption).toHaveAttribute('role', 'option');
+
+    // The dropdown panel must remain fully within the viewport (bottom edge
+    // included) — this is the core of the short-screen regression.
+    const dropdown = page.locator('.timezone-select__dropdown');
+    await assertBoundingBoxInViewport(dropdown);
+
+    // No horizontal overflow introduced by the open listbox.
+    await assertNoHorizontalOverflow(page);
+
+    // Keyboard navigation still works: ArrowUp from the last option moves back.
+    await page.keyboard.press('ArrowUp');
+    await expect(combobox).not.toHaveAttribute('aria-activedescendant', endActiveId ?? '', { timeout: 5000 });
+    const upActiveId = await combobox.getAttribute('aria-activedescendant');
+    expect(upActiveId).not.toBe(endActiveId);
+    await expect(page.locator(`[id="${upActiveId}"]`)).toHaveAttribute('role', 'option');
+    // Still within viewport after navigation.
+    await assertBoundingBoxInViewport(dropdown);
   });
 });

@@ -26,16 +26,11 @@ test.describe('Accessibility (axe)', () => {
     test.skip(browserName !== 'chromium', 'Axe scans run on Chromium only');
     await gotoAsAuthenticated(page, '/onboarding/profile', { heading: /trader profile/i });
 
-    // NOTE: the profile page has a pre-existing source-code accessibility
-    // issue — the trading-experience <select> has no associated <label> (the
-    // <label> lacks htmlFor and the <select> lacks id/aria-label). This is
-    // flagged by axe as `select-name` (critical). We cannot fix it without
-    // modifying src/ files (forbidden by the task constraints), so we disable
-    // that specific rule here and document it. All other critical/serious
-    // violations must still be zero.
+    // No axe rules are disabled. The trading-experience <select> now has an
+    // associated <label> (htmlFor + id), so the former `select-name` violation
+    // is resolved at the source rather than suppressed.
     const results = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
-      .disableRules(['select-name'])
       .analyze();
 
     const severe = results.violations.filter(
@@ -55,10 +50,8 @@ test.describe('Accessibility (axe)', () => {
     await page.getByRole('combobox', { name: /timezone/i }).click();
     await expect(page.getByRole('listbox', { name: /timezone/i })).toBeVisible();
 
-    // Same pre-existing select-name issue as above (see default-state test).
     const results = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
-      .disableRules(['select-name'])
       .analyze();
 
     const severe = results.violations.filter(

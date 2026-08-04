@@ -620,6 +620,14 @@ h2 { font-size: 1.3rem; font-weight: 600; }
   box-shadow: var(--shadow-lg);
   overflow: hidden;
 }
+/* When there is more room above the trigger than below (short screens / combobox
+   low in the viewport), the dropdown flips to open upward so it never overflows
+   the bottom of the viewport. The list max-height is also capped dynamically by
+   the component to the available space. */
+.timezone-select__dropdown--up {
+  top: auto;
+  bottom: calc(100% + 4px);
+}
 
 .timezone-select__search {
   padding: var(--space-2);
