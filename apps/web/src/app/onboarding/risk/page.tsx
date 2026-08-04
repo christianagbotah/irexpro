@@ -196,7 +196,7 @@ export default function OnboardingRiskPage() {
             <h3 className="form-section__title">Monetary limits</h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-4)' }}>
               <div className="input-group">
-                <label className="input-label">
+                <label className="input-label" htmlFor="risk-max-daily-loss">
                   Max daily loss (%)
                   <InfoTooltip
                     label="Explain maximum daily loss"
@@ -204,6 +204,7 @@ export default function OnboardingRiskPage() {
                   />
                 </label>
                 <input
+                  id="risk-max-daily-loss"
                   type="number"
                   step="0.5"
                   min="0.5"
@@ -216,7 +217,7 @@ export default function OnboardingRiskPage() {
                 <p className="helper-text">Range: 0.5% – 20%. Trading pauses when hit.</p>
               </div>
               <div className="input-group">
-                <label className="input-label">
+                <label className="input-label" htmlFor="risk-max-drawdown">
                   Max drawdown (%)
                   <InfoTooltip
                     label="Explain maximum drawdown"
@@ -224,6 +225,7 @@ export default function OnboardingRiskPage() {
                   />
                 </label>
                 <input
+                  id="risk-max-drawdown"
                   type="number"
                   step="0.5"
                   min="1"
@@ -236,7 +238,7 @@ export default function OnboardingRiskPage() {
                 <p className="helper-text">Range: 1% – 30%. Activates protective restrictions.</p>
               </div>
               <div className="input-group">
-                <label className="input-label">
+                <label className="input-label" htmlFor="risk-max-trade-risk">
                   Max risk per trade (%)
                   <InfoTooltip
                     label="Explain maximum risk per trade"
@@ -244,6 +246,7 @@ export default function OnboardingRiskPage() {
                   />
                 </label>
                 <input
+                  id="risk-max-trade-risk"
                   type="number"
                   step="0.5"
                   min="0.5"
@@ -265,7 +268,7 @@ export default function OnboardingRiskPage() {
             <h3 className="form-section__title">Exposure limits</h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-4)' }}>
               <div className="input-group">
-                <label className="input-label">
+                <label className="input-label" htmlFor="risk-max-open-trades">
                   Max open trades
                   <InfoTooltip
                     label="Explain maximum open trades"
@@ -273,6 +276,7 @@ export default function OnboardingRiskPage() {
                   />
                 </label>
                 <input
+                  id="risk-max-open-trades"
                   type="number"
                   min="1"
                   max="20"
@@ -284,7 +288,7 @@ export default function OnboardingRiskPage() {
                 <p className="helper-text">Range: 1 – 20 simultaneous positions.</p>
               </div>
               <div className="input-group">
-                <label className="input-label">
+                <label className="input-label" htmlFor="risk-max-leverage">
                   Max leverage
                   <InfoTooltip
                     label="Explain maximum leverage"
@@ -292,6 +296,7 @@ export default function OnboardingRiskPage() {
                   />
                 </label>
                 <input
+                  id="risk-max-leverage"
                   type="number"
                   min="1"
                   max="500"

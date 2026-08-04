@@ -692,7 +692,7 @@ h2 { font-size: 1.3rem; font-weight: 600; }
   white-space: nowrap;
 }
 .timezone-select__option-offset {
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-family: var(--font-mono);
   font-size: 0.78rem;
   flex-shrink: 0;
