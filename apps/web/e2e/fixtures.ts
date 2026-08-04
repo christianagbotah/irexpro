@@ -460,13 +460,80 @@ export async function assertNoHorizontalOverflow(page: Page): Promise<void> {
  * Assert an element's bounding box is entirely inside the viewport (both
  * horizontally and vertically). Used to verify dropdowns, tooltips, and
  * dialogs don't get clipped by the viewport edge.
+ *
+ * Determinism: waits for the page scroll position to stabilize (no `scroll`
+ * event for one animation frame) AND for the element's bounding box to be
+ * stable across two consecutive reads before asserting viewport bounds. This
+ * eliminates transient failures caused by reading the box mid-scroll or
+ * mid-reflow (e.g. `scrollIntoViewIfNeeded` resolves on scroll-command ack,
+ * but under load the actual scroll may still be animating). No fixed sleeps.
  */
 export async function assertBoundingBoxInViewport(locator: Locator): Promise<void> {
-  const box = await locator.boundingBox();
+  const page = locator.page();
+
+  // 1. Wait for the page scroll position to stabilize. We attach a one-shot
+  //    scroll listener and wait for one requestAnimationFrame with no scroll
+  //    event. This proves any in-flight scroll (e.g. from scrollIntoViewIfNeeded
+  //    in the calling test) has completed before we read the bounding box.
+  await page.evaluate(() => {
+    return new Promise<void>((resolve) => {
+      let lastScroll = window.scrollY;
+      let rafId = 0;
+      const check = () => {
+        if (window.scrollY === lastScroll) {
+          // No scroll since last frame — scroll has settled.
+          resolve();
+        } else {
+          lastScroll = window.scrollY;
+          rafId = requestAnimationFrame(check);
+        }
+      };
+      // Also resolve immediately if no scroll happens within a short budget
+      // (covers the case where the page isn't scrollable at all).
+      const timeoutId = window.setTimeout(() => {
+        cancelAnimationFrame(rafId);
+        resolve();
+      }, 150);
+      rafId = requestAnimationFrame(check);
+      // If scroll settles before the timeout, clear the timeout.
+      const origResolve = resolve;
+      resolve = () => {
+        window.clearTimeout(timeoutId);
+        cancelAnimationFrame(rafId);
+        origResolve();
+      };
+    });
+  });
+
+  // 2. Wait for the bounding box to be stable across two consecutive reads.
+  //    This proves layout has settled (no in-flight reflow) before we assert.
+  const deadline = Date.now() + 3000;
+  let box: { x: number; y: number; width: number; height: number } | null = null;
+  while (Date.now() < deadline) {
+    const first = await locator.boundingBox();
+    if (!first) break; // element not visible — handled by the null check below
+    const second = await locator.boundingBox();
+    if (!second) break;
+    const isStable =
+      Math.abs(first.x - second.x) < 0.5 &&
+      Math.abs(first.y - second.y) < 0.5 &&
+      Math.abs(first.width - second.width) < 0.5 &&
+      Math.abs(first.height - second.height) < 0.5;
+    if (isStable) {
+      box = second;
+      break;
+    }
+    // Layout still settling; loop and re-read. No fixed sleep.
+  }
+  // If we never reached stability, fall back to a single read so the
+  // not-visible / null case is still reported clearly.
+  if (!box) {
+    box = await locator.boundingBox();
+  }
   expect(box, 'Element has no bounding box (not visible)').not.toBeNull();
   if (!box) return;
 
-  const viewport = locator.page().viewportSize();
+  const viewport = page.viewportSize();
   expect(viewport, 'Page has no viewport size').not.toBeNull();
   if (!viewport) return;
 
