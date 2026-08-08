@@ -75,7 +75,9 @@ async function getFunctionMetadata(
        d.deptype AS dependency_type
      FROM pg_proc p
      JOIN pg_namespace n ON n.oid = p.pronamespace
-     LEFT JOIN pg_depend d ON d.objid = p.oid AND d.classid = 'pg_proc'::regclass
+     LEFT JOIN pg_depend d ON d.objid = p.oid
+       AND d.classid = 'pg_proc'::regclass
+       AND d.refclassid = 'pg_extension'::regclass
      LEFT JOIN pg_extension e ON e.oid = d.refobjid
      WHERE n.nspname = $1 AND p.proname = $2 AND p.pronargs = 0`,
     [schema, name],
