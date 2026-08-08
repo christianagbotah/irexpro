@@ -729,7 +729,7 @@ Last verified status (Sprint 18):
 
 Branch: `test/playwright-responsive-smoke`
 PR: https://github.com/christianagbotah/irexpro/pull/28
-Status: Audit fixes applied; PR open (not merged).
+Status: **MERGED.** GitHub Actions Web E2E check passed on the final head (`b250b03`); merge commit `6effd1f`.
 
 ### What was added
 - **Playwright E2E suite** (`apps/web/e2e/`): 5 spec files (profile, risk, broker, dashboard, accessibility) + `fixtures.ts` + `network-isolation.spec.ts`, covering routes `/onboarding/profile`, `/onboarding/risk`, `/onboarding/broker`, `/dashboard`.
@@ -770,8 +770,9 @@ Status: Audit fixes applied; PR open (not merged).
 - **Regression test added**: "short-screen: End selects last option, active option visible, listbox in viewport" — opens the combobox, presses End, asserts the active (last) option is scrolled into view and visible, asserts the dropdown stays within the viewport (bottom edge included), asserts no horizontal overflow, and verifies ArrowUp navigation still works — across all 5 projects.
 
 ### CI workflow
-- `.github/workflows/web-e2e.yml` is **prepared and locally linted**; remote addition and GitHub Actions execution remain pending. The workflow file could not be pushed from the audit sandbox because no credential with the GitHub `workflow` OAuth scope was available (GitHub requires `workflow` scope for any commit touching `.github/workflows/*.yml`). The repository owner must add the audited file to the `test/playwright-responsive-smoke` branch via the GitHub web UI or a workflow-scoped credential. Until then, no `web-e2e` CI run can execute.
-- Intended behavior (locally validated with `actionlint` and YAML parsing): runs on push/PR to main/develop (path-filtered to `apps/web/**`, `packages/api-client/**`, `packages/types/**`, lockfile, workspace, workflow file) and on manual `workflow_dispatch`. Node 22, pnpm 10, frozen lockfile. Builds the web app with `NEXT_PUBLIC_API_BASE_URL=http://localhost:3999/api/v1`, installs Playwright Chromium + system deps, runs the full suite (all 5 projects, CI mode with retries=2), then runs the mandatory evidence command (`pnpm --filter @irexpro/web test:e2e:evidence`). Uploads the HTML report always; uploads failure artifacts on failure; uploads evidence artifacts always. Concurrency cancels duplicate runs per ref. No live backend or production secrets required.
+- `.github/workflows/web-e2e.yml` is **present on the remote repository and GitHub Actions successfully executed it on PR #28** (conclusion: success). The full five-viewport suite passed; the mandatory successful-state evidence capture passed; HTML reports and artifacts are uploaded according to policy.
+- **GitHub Action dependencies were upgraded to Node-24-compatible versions**: `actions/checkout@v5`, `actions/setup-node@v5`, `actions/upload-artifact@v6` (all 5 occurrences), `pnpm/action-setup@v4.4.0`. Application/test runtime remains Node 22 (`NODE_VERSION: '22'`).
+- Triggers: `workflow_dispatch`, `pull_request` (path-filtered to `apps/web/**`, `packages/api-client/**`, `packages/types/**`, lockfile, workspace, workflow file), `push` to main/develop (path-filtered). `permissions: contents: read`. Safe concurrency (cancel per ref). 30-minute timeout. No live backend or production secrets required.
 
 ### Artifact policy
 - `playwright-report/`, `test-results/`, `.playwright/` are gitignored (both root `.gitignore` and `apps/web/.gitignore`).
