@@ -49,6 +49,18 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  *      `DEFAULT uuid_generate_v4()` clauses in migrations #6 and #7 without
  *      requiring uuid-ossp.
  *
+ * Volatility & parallel classification
+ * -------------------------------------
+ * The wrapper is declared VOLATILE (NOT IMMUTABLE). `gen_random_uuid()` is
+ * VOLATILE in PostgreSQL (provolatile='v' in pg_proc.dat, OID 3432) because it
+ * returns a different random UUID on every invocation. An IMMUTABLE wrapper
+ * would make an invalid promise to the planner and is unacceptable for a
+ * random UUID generator.
+ *
+ * The wrapper is declared PARALLEL SAFE, matching `gen_random_uuid()`
+ * (proparallel='s', the default in pg_proc.h BKI_DEFAULT(s)). Random UUID
+ * generation is safe for parallel execution.
+ *
  * Idempotency
  * -----------
  * The entire `up()` is idempotent: re-running it on a database where the
@@ -56,11 +68,14 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  *
  * Reversibility
  * -------------
- * The `down()` only drops the function IF this migration created it (tracked
- * via the `irexpro_uuid_v4_compat` mark in `pg_proc.proacl`). It will NEVER
- * drop a pre-existing function (uuid-ossp-owned or a standalone fallback).
- * If the function existed before this migration, `down()` is a no-op. This
- * prioritizes safety over a "clean" destructive rollback.
+ * The `down()` only drops the function IF this migration created it, tracked
+ * via an EXACT marker comment set by `up()`. The marker is a single exact
+ * string value; `down()` uses strict equality (not substring/contains matching)
+ * to decide whether the function is bridge-owned. It will NEVER drop a
+ * pre-existing function (uuid-ossp-owned or a standalone fallback). If the
+ * function existed before this migration (or has a non-matching comment),
+ * `down()` is a no-op. This prioritizes safety over a "clean" destructive
+ * rollback.
  *
  * Ordering
  * --------
@@ -71,6 +86,17 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * pending (it has no prior record in `migrations_table`) and execute it; the
  * `up()` no-ops safely because the function already exists.
  */
+/**
+ * Exact marker comment applied to the bridge-created function. `down()` uses
+ * strict equality (comment === BRIDGE_MARKER) — NOT substring/contains matching
+ * — to decide whether the function is bridge-owned and therefore safe to drop.
+ * A DBA cannot accidentally trigger a drop by placing the migration identifier
+ * inside an unrelated function comment, because the comment must EXACTLY equal
+ * this string.
+ */
+const BRIDGE_MARKER =
+  'iRexPro::EnsureLegacyUuidV4Compatibility1751150000000::bridge-owned';
+
 export class EnsureLegacyUuidV4Compatibility1751150000000 implements MigrationInterface {
   name = 'EnsureLegacyUuidV4Compatibility1751150000000';
 
@@ -114,31 +140,39 @@ export class EnsureLegacyUuidV4Compatibility1751150000000 implements MigrationIn
     }
 
     // 3. Create a thin compatibility wrapper that returns gen_random_uuid().
-    //    Use SECURITY INVOKER and LANGUAGE sql for determinism. The function
-    //    is marked via a comment so down() can identify it as ours.
+    //    VOLATILE matches gen_random_uuid() (provolatile='v' in pg_proc.dat,
+    //    OID 3432) — a random UUID generator must NOT be IMMUTABLE.
+    //    PARALLEL SAFE matches gen_random_uuid() (proparallel='s', the
+    //    pg_proc.h BKI_DEFAULT(s)).
+    //    SECURITY INVOKER is the PostgreSQL default (no SECURITY DEFINER).
+    //    The function is marked via an EXACT comment string so down() can
+    //    identify it as ours via strict equality (not substring matching).
     await queryRunner.query(`
       CREATE FUNCTION public.uuid_generate_v4()
       RETURNS uuid
       LANGUAGE sql
-      IMMUTABLE
+      VOLATILE
       PARALLEL SAFE
       AS $$ SELECT gen_random_uuid() $$
     `);
 
     // Mark this function as created by this migration so down() can
     // distinguish it from a uuid-ossp-owned or standalone-fallback function.
-    // pg_proc does not have a native "owner migration" field, so we use an
-    // ACL annotation via COMMENT as a lightweight, introspectable mark.
+    // The marker is a single exact string value; down() uses strict equality
+    // (comment = marker) rather than substring/contains matching, so a DBA
+    // cannot accidentally trigger a drop by placing the migration identifier
+    // inside an unrelated function comment.
     await queryRunner.query(`
-      COMMENT ON FUNCTION public.uuid_generate_v4() IS
-        'iRexPro compatibility bridge (migration EnsureLegacyUuidV4Compatibility1751150000000). Wraps gen_random_uuid(). Safe to drop after NormalizeLegacyUuidDefaults runs.'
+      COMMENT ON FUNCTION public.uuid_generate_v4() IS '${BRIDGE_MARKER}'
     `);
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
     // Only drop the function if this migration created it. Detect via the
-    // comment mark we set in up(). If the comment does not match (function is
-    // uuid-ossp-owned or a standalone fallback), this is a NO-OP.
+    // EXACT marker comment set by up() — strict equality, not substring
+    // matching. If the comment is NULL, missing, or does not EXACTLY equal
+    // the marker (function is uuid-ossp-owned, a standalone fallback, or a
+    // DBA-created function with a different comment), this is a NO-OP.
     const markCheck = await queryRunner.query(`
       SELECT pg_description.description
       FROM pg_description
@@ -148,8 +182,9 @@ export class EnsureLegacyUuidV4Compatibility1751150000000 implements MigrationIn
         AND p.pronargs = 0
     `);
     const mark = markCheck?.[0]?.description ?? '';
-    if (!mark || !mark.includes('EnsureLegacyUuidV4Compatibility1751150000000')) {
-      // Function was not created by this migration. Do NOT drop it.
+    if (mark !== BRIDGE_MARKER) {
+      // Function was not created by this migration (comment is NULL, missing,
+      // or a non-matching value). Do NOT drop it.
       return;
     }
 
