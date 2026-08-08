@@ -89,9 +89,13 @@ async function loadMigrationInstance(filename: string): Promise<any> {
   const full = path.join(MIGRATIONS_DIR, filename);
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const mod = require(full);
-  const className = Object.keys(mod).find(
-    (k) => k !== 'default' && /Migration|Schema|Compatibility|Defaults|Guard|Tokens|Fields/i.test(k),
-  );
+  // Find the first exported class (migration files export a single class
+  // implementing MigrationInterface). Use a broad match: any key that is a
+  // function (class constructor) and not 'default'.
+  const className = Object.keys(mod).find((k) => {
+    if (k === 'default') return false;
+    return typeof mod[k] === 'function' && /^([A-Z])/.test(k);
+  });
   if (!className) throw new Error(`No migration class found in ${filename}`);
   return new mod[className]();
 }
