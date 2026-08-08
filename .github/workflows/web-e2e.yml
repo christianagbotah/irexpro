@@ -1,0 +1,131 @@
+name: Web E2E
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'apps/web/**'
+      - 'packages/api-client/**'
+      - 'packages/types/**'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'package.json'
+      - '.github/workflows/web-e2e.yml'
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'apps/web/**'
+      - 'packages/api-client/**'
+      - 'packages/types/**'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'package.json'
+      - '.github/workflows/web-e2e.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+  PNPM_VERSION: '10.34.5'
+  NEXT_PUBLIC_API_BASE_URL: 'http://localhost:3999/api/v1'
+
+jobs:
+  e2e:
+    name: Playwright (5 viewports)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4.4.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Build web app (deterministic localhost API URL)
+        working-directory: apps/web
+        run: pnpm exec next build
+        env:
+          NEXT_PUBLIC_API_BASE_URL: ${{ env.NEXT_PUBLIC_API_BASE_URL }}
+
+      - name: Install Playwright Chromium and system dependencies
+        working-directory: apps/web
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run Playwright E2E suite (all five viewport projects)
+        id: full_suite
+        working-directory: apps/web
+        run: pnpm exec playwright test
+        env:
+          CI: 'true'
+          PLAYWRIGHT_HTML_OUTPUT_DIR: 'playwright-report/full-suite'
+
+      - name: Upload full-suite HTML report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: playwright-full-suite-report
+          path: apps/web/playwright-report/full-suite
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Upload full-suite failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: playwright-full-suite-test-results
+          path: apps/web/test-results
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Capture successful-run screenshot evidence
+        id: evidence
+        run: pnpm --filter @irexpro/web test:e2e:evidence
+        env:
+          CI: 'true'
+          PLAYWRIGHT_HTML_OUTPUT_DIR: 'playwright-report/evidence'
+
+      - name: Upload evidence HTML report
+        if: always() && steps.evidence.outcome != 'skipped'
+        uses: actions/upload-artifact@v6
+        with:
+          name: playwright-evidence-report
+          path: apps/web/playwright-report/evidence
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Upload successful-run screenshot evidence
+        if: always() && steps.evidence.outcome != 'skipped'
+        uses: actions/upload-artifact@v6
+        with:
+          name: playwright-evidence
+          path: apps/web/test-results/evidence
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Upload evidence failure artifacts
+        if: always() && steps.evidence.outcome == 'failure'
+        uses: actions/upload-artifact@v6
+        with:
+          name: playwright-evidence-test-results
+          path: apps/web/test-results
+          retention-days: 14
+          if-no-files-found: ignore

@@ -723,3 +723,93 @@ Last verified status (Sprint 18):
 
 \- Opus 4.8 only for rare final/deep audits because it consumes too many tokens.
 
+---
+
+## Sprint 28 — Playwright Responsive & Accessibility Smoke Suite (PR #28)
+
+Branch: `test/playwright-responsive-smoke`
+PR: https://github.com/christianagbotah/irexpro/pull/28
+Status: Audit fixes applied; PR open (not merged).
+
+### What was added
+- **Playwright E2E suite** (`apps/web/e2e/`): 5 spec files (profile, risk, broker, dashboard, accessibility) + `fixtures.ts` + `network-isolation.spec.ts`, covering routes `/onboarding/profile`, `/onboarding/risk`, `/onboarding/broker`, `/dashboard`.
+- **Playwright version**: `@playwright/test` 1.62.1. Chromium revision 1234 (Chrome for Testing 151.0.7922.34).
+- **axe integration**: `@axe-core/playwright` 4.12.1. Scans run on Chromium across profile-default, profile-combobox-open, risk-tooltip-open, broker-dialog-open, dashboard-onboarding, and unauthenticated-dashboard states. Tags: `wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa`. No rules disabled (the former `select-name` disable was removed after fixing the source).
+
+### Deterministic route-interception strategy
+- A SINGLE `page.route('**/api/v1/**')` handler intercepts every API call and dispatches by path + method, returning deterministic fixture data (mock auth user, tokens, profile, onboarding status, risk profile, supported brokers, broker connections, trading sessions). No real backend is contacted.
+- Authentication isolation: the AuthProvider's `/auth/refresh` and `/auth/me` calls are intercepted. No real refresh-token cookie, no real JWT, no test passwords in source. Access token is a mock string (`mock-access-token-for-e2e-tests-not-a-real-jwt`).
+- A catch-all returns an empty 200 for any unhandled `/api/v1/` route so no request escapes to a real server.
+- `favicon.ico` is intercepted with 204 to avoid 404 noise.
+
+### Five viewport projects
+| Project | Viewport |
+|---|---|
+| mobile-small | 360 × 800 |
+| mobile-standard | 390 × 844 |
+| tablet-portrait | 768 × 1024 |
+| tablet-landscape | 1024 × 768 |
+| desktop | 1440 × 900 |
+
+### Browser-test totals (verified)
+- **Total E2E tests: 420 (84 per project × 5 projects).**
+- **Passed: 420. Failed: 0. Skipped: 0. Retried: 0 (local, retries=0).**
+- Total E2E duration (sum of per-project): ~280s (~4m 40s).
+- Console errors: 0. Failed network requests: 0. Page exceptions: 0. Axe critical/serious violations: 0. Horizontal-overflow failures: 0. Bounding-box failures: 0.
+- Network-isolation tests: 30 passed (6 tests × 5 projects) — no request to any production/staging/broker/payment/AI host.
+
+### Accessibility issues found and fixed
+1. **Risk input label associations** (`apps/web/src/app/onboarding/risk/page.tsx`): added `htmlFor` on each `<label>` and matching `id` on each `<input>` for the 5 risk limit fields (max daily loss, max drawdown, max risk per trade, max open trades, max leverage). Each generated `id` is unique and correctly linked to its label.
+2. **Timezone offset color contrast** (`apps/web/src/app/globals.css`): changed `.timezone-select__option-offset` color from `var(--text-muted)` to `var(--text-secondary)` to meet WCAG AA contrast.
+3. **Profile trading-experience `<select>` label** (`apps/web/src/app/onboarding/profile/page.tsx`): added `htmlFor="profile-trading-experience"` on the label and `id="profile-trading-experience"` on the `<select>`, resolving the axe `select-name` (critical) violation. The `disableRules(['select-name'])` in the accessibility spec was removed.
+
+### Short-screen listbox defect and fix
+- **Defect**: the timezone combobox dropdown (`.timezone-select__dropdown`, `position: absolute; top: calc(100% + 4px)`; inner list `max-height: 280px`) extended below the viewport on 4 of 5 viewports because the combobox sits low in the page. Reproduced overflow: mobile-standard +223px, tablet-portrait +223px, tablet-landscape +226px, desktop +94px. The original relaxed assertion only checked the dropdown's top edge (not the bottom), hiding the defect.
+- **Fix** (`apps/web/src/components/forms/TimezoneSelect.tsx`): added a `useIsomorphicLayoutEffect` that measures available space below/above the combobox container, picks the direction with more room (flipping the dropdown above the trigger via a new `.timezone-select__dropdown--up` CSS modifier when needed), and caps the list `max-height` to the available viewport space so the dropdown always stays within the viewport. Re-measures on resize and scroll. Runs synchronously before paint (no flash). CSS: `.timezone-select__dropdown--up { top: auto; bottom: calc(100% + 4px); }` added to `globals.css`.
+- **Relaxed assertion removed**: the profile spec's "open listbox bounding box stays within viewport" test now uses `assertBoundingBoxInViewport` (strict bottom-edge check, 1px subpixel tolerance).
+- **Regression test added**: "short-screen: End selects last option, active option visible, listbox in viewport" — opens the combobox, presses End, asserts the active (last) option is scrolled into view and visible, asserts the dropdown stays within the viewport (bottom edge included), asserts no horizontal overflow, and verifies ArrowUp navigation still works — across all 5 projects.
+
+### CI workflow
+- `.github/workflows/web-e2e.yml` is **prepared and locally linted**; remote addition and GitHub Actions execution remain pending. The workflow file could not be pushed from the audit sandbox because no credential with the GitHub `workflow` OAuth scope was available (GitHub requires `workflow` scope for any commit touching `.github/workflows/*.yml`). The repository owner must add the audited file to the `test/playwright-responsive-smoke` branch via the GitHub web UI or a workflow-scoped credential. Until then, no `web-e2e` CI run can execute.
+- Intended behavior (locally validated with `actionlint` and YAML parsing): runs on push/PR to main/develop (path-filtered to `apps/web/**`, `packages/api-client/**`, `packages/types/**`, lockfile, workspace, workflow file) and on manual `workflow_dispatch`. Node 22, pnpm 10, frozen lockfile. Builds the web app with `NEXT_PUBLIC_API_BASE_URL=http://localhost:3999/api/v1`, installs Playwright Chromium + system deps, runs the full suite (all 5 projects, CI mode with retries=2), then runs the mandatory evidence command (`pnpm --filter @irexpro/web test:e2e:evidence`). Uploads the HTML report always; uploads failure artifacts on failure; uploads evidence artifacts always. Concurrency cancels duplicate runs per ref. No live backend or production secrets required.
+
+### Artifact policy
+- `playwright-report/`, `test-results/`, `.playwright/` are gitignored (both root `.gitignore` and `apps/web/.gitignore`).
+- Screenshots: `only-on-failure`. Traces: `on-first-retry`. Videos: `retain-on-failure`.
+- No screenshots are committed. Broker secrets are never rendered (password inputs verified by the credential-leak invariant test). No tokens/passwords appear in traces.
+
+### Web unit-test count
+- 44 tests across 4 suites (TimezoneSelect, ConfirmDialog, InfoTooltip, error-mapping). Jest config updated to ignore `e2e/` so Playwright specs aren't loaded under jest.
+
+### API test and suite count
+- 1054 tests across 70 suites (jest --silent, apps/api). All passing.
+
+### Successful-run screenshot evidence
+- **Mechanism**: `apps/web/e2e/evidence.spec.ts` captures representative success-state screenshots. The entire suite is skipped unless `E2E_CAPTURE_EVIDENCE=1` is set, so normal runs incur no overhead.
+- **Cross-platform script**: `pnpm --filter @irexpro/web test:e2e:evidence` uses `cross-env` (added as a devDependency) to set `E2E_CAPTURE_EVIDENCE=1` portably, so the same script works on Linux CI, macOS, and Windows PowerShell/Command Prompt. The script invokes the locally installed Playwright binary directly (no `npx` version resolution).
+- **Coverage** (16 screenshots total):
+  - Mobile Standard (390×844): profile default, profile timezone combobox open, selected timezone, risk tooltip open, risk validation error, broker empty state, broker confirmation dialog, dashboard onboarding-incomplete state.
+  - Tablet Portrait (768×1024): profile combobox open, risk tooltip open, broker dialog open, dashboard onboarding state.
+  - Desktop (1440×900): profile default, profile combobox open, broker dialog, dashboard ready state.
+- **No fixed Playwright sleeps**: the spec contains zero `page.waitForTimeout` calls. All waits are state-based: locator visibility, ARIA attribute assertions, `expect.poll` for computed-style stability, two-consecutive-measurement bounding-box stability checks, and a `requestAnimationFrame`-based scroll-stabilization loop in the hardened `assertBoundingBoxInViewport`. The rAF loop uses a bounded 150 ms timeout fallback to prevent indefinite waiting on non-scrollable pages; this is a safety fallback, not a fixed sleep.
+- **Determinism**: every API call is intercepted with fixture data. "Incomplete" and "empty" states use deterministic mock overrides (onboarding-status / broker connections). No real backend, no real credentials, no broker secrets.
+- **Storage**: `apps/web/test-results/evidence/<viewport>/<state>.png` (gitignored via the existing `test-results/` entry). No screenshots committed.
+- **Safety** (three layers, clearly distinguished):
+  1. **DOM safety assertions (automatic, before every screenshot)**: `assertDomSafeForScreenshot(page)` verifies the rendered DOM text contains no credential markers (`sk_live`, `pk_live`, `github_pat_`, `ghp_`, `gho_`, `Bearer `, JWT-shaped strings); every password/secret input is `type="password"`; password/secret input values are empty or known non-sensitive fixture values; no text input is named/labeled as a secret; no access token, refresh token, or broker API secret is rendered as page text. This is a DOM-text and input-property check.
+  2. **Filename keyword check (automatic, defense-in-depth)**: verifies the static screenshot filenames contain no credential-bearing keywords. This is a FILENAME check only — it does not inspect screenshot pixels.
+  3. **No pixel/OCR analysis**: the tests do not perform OCR, screenshot-pixel scanning, or image content analysis. Substantive content safety is provided entirely by layer 1 (DOM assertions before capture).
+
+### Bounding-box assertion hardening (flake fix)
+- `assertBoundingBoxInViewport` in `fixtures.ts` was hardened to eliminate a transient failure in `dashboard.spec.ts › cards remain within viewport`. The helper now (1) waits for the page scroll position to stabilize via a `requestAnimationFrame` loop (resolves when `window.scrollY` is unchanged across one rAF tick, with a 150 ms bounded fallback for non-scrollable pages) and (2) reads the bounding box twice and requires the two reads to match within 0.5 px before asserting viewport bounds. This proves layout has settled (no in-flight scroll or reflow) before the assertion, removing the race where `scrollIntoViewIfNeeded` resolved before the browser finished reflowing. No fixed Playwright sleep was added; no retry increase; no assertion loosening.
+
+### Updated browser-test totals (with evidence spec)
+- **Total tests discovered: 505** (7 spec files × 5 projects).
+- **Active tests: 420** (84 per project × 5 projects) — all passing.
+- **Evidence-skipped tests: 85** (17 per project × 5 projects) — skipped unless `E2E_CAPTURE_EVIDENCE=1`.
+- **Evidence capture run: 19 passed** (16 screenshots + 3 safety checks) across mobile-standard, tablet-portrait, desktop.
+- Playwright 1.62.1; Chromium revision 1234 (Chrome for Testing 151.0.7922.34).
+
+### Remaining limitations
+- **pnpm version distinction**: the repository accepts pnpm versions greater than or equal to 9 (`pnpm >= 9.0.0` in `package.json` `engines`), while CI currently uses pnpm 10 (per `.github/workflows/api-ci.yml` and the new `.github/workflows/web-e2e.yml`). The surgical lockfile change was therefore validated independently with pnpm 10 using `pnpm install --frozen-lockfile` — pnpm 10.34.5 accepts the +14-line lockfile delta (only `cross-env@7.0.3` and its already-present transitive dep `cross-spawn@7.0.6`) without modification. Under pnpm 9/10, `pnpm install` may print an "Ignored build scripts" warning for workspace native deps (argon2, bufferutil, utf-8-validate, msgpackr-extract, unrs-resolver, @nestjs/core, @scarf/scarf) — these are pre-existing workspace dependencies unrelated to PR #28, and the warning is informational only (it does not prevent installation or tests). All validations in this audit were run via direct tool commands (`npx jest`, `npx next build`, `npx tsc`, `pnpm exec playwright test`) which succeed without the ignored-builds side effect. CI (pnpm 10) is unaffected.
+- Axe scans run on Chromium only (skipped on other browsers); this is standard because axe violations are overwhelmingly viewport-independent.
+- The E2E suite is deterministic (no real backend); it does not exercise the real NestJS API, real broker adapters, or real payment providers.

@@ -158,8 +158,11 @@ export default function OnboardingProfilePage() {
           <section className="form-section">
             <h3 className="form-section__title">Trading experience</h3>
             <div className="input-group">
-              <label className="input-label">Trading experience level</label>
+              <label className="input-label" htmlFor="profile-trading-experience">
+                Trading experience level
+              </label>
               <select
+                id="profile-trading-experience"
                 className="input"
                 value={tradingExperienceLevel}
                 onChange={(e) => setTradingExperienceLevel(e.target.value as TradingExperienceLevel)}
