@@ -44,15 +44,15 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v3
+        uses: pnpm/action-setup@v4.4.0
         with:
           version: ${{ env.PNPM_VERSION }}
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
@@ -80,7 +80,7 @@ jobs:
 
       - name: Upload full-suite HTML report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: playwright-full-suite-report
           path: apps/web/playwright-report/full-suite
@@ -89,7 +89,7 @@ jobs:
 
       - name: Upload full-suite failure artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: playwright-full-suite-test-results
           path: apps/web/test-results
@@ -105,7 +105,7 @@ jobs:
 
       - name: Upload evidence HTML report
         if: always() && steps.evidence.outcome != 'skipped'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: playwright-evidence-report
           path: apps/web/playwright-report/evidence
@@ -114,7 +114,7 @@ jobs:
 
       - name: Upload successful-run screenshot evidence
         if: always() && steps.evidence.outcome != 'skipped'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: playwright-evidence
           path: apps/web/test-results/evidence
@@ -123,7 +123,7 @@ jobs:
 
       - name: Upload evidence failure artifacts
         if: always() && steps.evidence.outcome == 'failure'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: playwright-evidence-test-results
           path: apps/web/test-results
