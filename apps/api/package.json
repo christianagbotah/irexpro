@@ -1,7 +1,7 @@
 {
   "name": "@irexpro/api",
   "version": "0.1.0",
-  "description": "iRexPro — Global AI Forex Trading Platform — Backend API",
+  "description": "iRexPro \u2014 Global AI Forex Trading Platform \u2014 Backend API",
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
@@ -61,7 +61,6 @@
     "uuid": "^11.1.0"
   },
   "devDependencies": {
-    "@eslint/js": "^9.0.0",
     "@nestjs/cli": "^10.4.9",
     "@nestjs/schematics": "^10.2.3",
     "@nestjs/testing": "^10.4.15",
