@@ -239,9 +239,9 @@ async function main(): Promise<void> {
     const subId = subResult.rows[0].id;
     console.log(`  subscription id: ${subId}`);
 
-    // Broker connection — encryption_key_id EXACTLY 100 chars (old schema max)
-    const oldKeyId = 'env-key-v1-' + 'x'.repeat(89); // 10 + 89 = 99 chars... let's make it exactly 100
-    const oldKeyIdExact = 'env-key-v1-' + 'x'.repeat(90); // 10 + 90 = 100 chars
+    // Broker connection — encryption_key_id EXACTLY 100 chars (old schema max: varchar(100))
+    // 'env-key-v1-' is 11 chars, so 89 x's = 100 total.
+    const oldKeyIdExact = 'env-key-v1-' + 'x'.repeat(89);
     assert(oldKeyIdExact.length === 100, `old encryption_key_id is exactly 100 chars (got ${oldKeyIdExact.length})`);
     const bcResult = await seedClient.query(`
       INSERT INTO broker.broker_connections (user_id, broker_id, broker_name, account_type, status, display_name, account_id, demo_validated, live_trading_enabled, encryption_key_id)
