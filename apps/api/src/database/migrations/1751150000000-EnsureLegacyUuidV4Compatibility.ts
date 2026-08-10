@@ -94,8 +94,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * inside an unrelated function comment, because the comment must EXACTLY equal
  * this string.
  */
-const BRIDGE_MARKER =
-  'iRexPro::EnsureLegacyUuidV4Compatibility1751150000000::bridge-owned';
+const BRIDGE_MARKER = 'iRexPro::EnsureLegacyUuidV4Compatibility1751150000000::bridge-owned';
 
 export class EnsureLegacyUuidV4Compatibility1751150000000 implements MigrationInterface {
   name = 'EnsureLegacyUuidV4Compatibility1751150000000';
@@ -112,7 +111,8 @@ export class EnsureLegacyUuidV4Compatibility1751150000000 implements MigrationIn
         WHERE n.nspname = 'pg_catalog' AND p.proname = 'gen_random_uuid'
       ) AS exists
     `);
-    const genRandomExists = genRandomCheck?.[0]?.exists === true || genRandomCheck?.[0]?.exists === 't';
+    const genRandomExists =
+      genRandomCheck?.[0]?.exists === true || genRandomCheck?.[0]?.exists === 't';
     if (!genRandomExists) {
       throw new Error(
         'EnsureLegacyUuidV4Compatibility: gen_random_uuid() is not available. ' +
