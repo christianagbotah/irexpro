@@ -22,9 +22,9 @@ import { DomainEventBus } from '../events/event-bus.service';
 import { DomainEventType } from '../events/enums/domain-event-type.enum';
 
 /** Default pip size for standard 5-digit pairs (EURUSD, GBPUSD, etc.) */
-const DEFAULT_PIP_SIZE = 0.00010;
+const DEFAULT_PIP_SIZE = 0.0001;
 /** Default pip size for JPY pairs (USDJPY, GBPJPY, etc.) */
-const JPY_PIP_SIZE = 0.01000;
+const JPY_PIP_SIZE = 0.01;
 
 /**
  * RiskService — The mandatory, non-bypassable pre-trade validation gateway.
@@ -488,8 +488,7 @@ export class RiskService {
     if (dto.maxDailyTrades !== undefined) profile.maxDailyTrades = dto.maxDailyTrades;
     if (dto.maxPositionSizeLot !== undefined)
       profile.maxPositionSizeLot = dto.maxPositionSizeLot.toFixed(4);
-    if (dto.minStopLossPips !== undefined)
-      profile.minStopLossPips = dto.minStopLossPips.toFixed(2);
+    if (dto.minStopLossPips !== undefined) profile.minStopLossPips = dto.minStopLossPips.toFixed(2);
     if (dto.allowedInstruments !== undefined) profile.allowedInstruments = dto.allowedInstruments;
     if (dto.maxVolatilityScore !== undefined)
       profile.maxVolatilityScore = dto.maxVolatilityScore.toFixed(2);
@@ -499,7 +498,8 @@ export class RiskService {
     if (dto.maxTradeRiskPercent !== undefined)
       profile.maxTradeRiskPercent = dto.maxTradeRiskPercent.toFixed(2);
     if (dto.maxLeverageAllowed !== undefined) profile.maxLeverageAllowed = dto.maxLeverageAllowed;
-    if (dto.allowedTradingModes !== undefined) profile.allowedTradingModes = dto.allowedTradingModes;
+    if (dto.allowedTradingModes !== undefined)
+      profile.allowedTradingModes = dto.allowedTradingModes;
 
     // Sprint 29: risk acknowledgement — only record when transitioning to true
     const wasAccepted = profile.riskAcknowledgementAccepted;
@@ -547,7 +547,9 @@ export class RiskService {
 
     await this.auditService.log({
       actorUserId: userId,
-      action: active ? AuditAction.RISK_KILL_SWITCH_ACTIVATED : AuditAction.RISK_KILL_SWITCH_DEACTIVATED,
+      action: active
+        ? AuditAction.RISK_KILL_SWITCH_ACTIVATED
+        : AuditAction.RISK_KILL_SWITCH_DEACTIVATED,
       resourceType: 'RiskProfile',
       resourceId: profile.id,
       ipAddress,
@@ -562,10 +564,7 @@ export class RiskService {
     return profile;
   }
 
-  async getViolations(
-    userId: string,
-    limit = 50,
-  ): Promise<RiskViolation[]> {
+  async getViolations(userId: string, limit = 50): Promise<RiskViolation[]> {
     return this.violationRepo.find({
       where: { userId },
       order: { evaluatedAt: 'DESC' },
@@ -636,7 +635,13 @@ export class RiskService {
     reason: string,
     evaluatedAt: Date,
   ): RiskRejectionResult {
-    return { decision: 'REJECTED', signalId, rejectionCode: code, rejectionReason: reason, evaluatedAt };
+    return {
+      decision: 'REJECTED',
+      signalId,
+      rejectionCode: code,
+      rejectionReason: reason,
+      evaluatedAt,
+    };
   }
 
   private async rejectAndRecord(
@@ -648,10 +653,11 @@ export class RiskService {
     evaluatedAt: Date,
   ): Promise<RiskRejectionResult> {
     const decision: RiskRejectionResult = {
-      decision: code === RiskRejectionCode.DAILY_LOSS_LIMIT_REACHED ||
-               code === RiskRejectionCode.MAX_DRAWDOWN_REACHED
-        ? 'SUSPENDED'
-        : 'REJECTED',
+      decision:
+        code === RiskRejectionCode.DAILY_LOSS_LIMIT_REACHED ||
+        code === RiskRejectionCode.MAX_DRAWDOWN_REACHED
+          ? 'SUSPENDED'
+          : 'REJECTED',
       signalId: trade.signalId,
       rejectionCode: code,
       rejectionReason: reason,
@@ -673,9 +679,7 @@ export class RiskService {
         this.logger.error(`Failed to record risk violation: ${(err as Error).message}`),
       );
 
-    this.logger.warn(
-      `Signal ${trade.signalId} REJECTED for user ${userId}: [${code}] ${reason}`,
-    );
+    this.logger.warn(`Signal ${trade.signalId} REJECTED for user ${userId}: [${code}] ${reason}`);
 
     return decision;
   }

@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  OnModuleDestroy,
-  ServiceUnavailableException,
-} from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import MetaApi from 'metaapi.cloud-sdk';
 
@@ -11,7 +6,11 @@ import MetaApi from 'metaapi.cloud-sdk';
  * RPC connection entry in the pool.
  */
 export interface MetaApiConnectionEntry {
-  account: ReturnType<InstanceType<typeof MetaApi>['metatraderAccountApi']['getAccount']> extends Promise<infer T> ? T : never;
+  account: ReturnType<
+    InstanceType<typeof MetaApi>['metatraderAccountApi']['getAccount']
+  > extends Promise<infer T>
+    ? T
+    : never;
   connection: any;
   connectedAt: Date;
   accountId: string;
@@ -73,9 +72,7 @@ export class MetaApiClientService implements OnModuleDestroy {
       if (typeof conn.isSynchronized === 'function' && conn.isSynchronized()) {
         return conn;
       }
-      this.logger.warn(
-        `Connection for account ${metaApiAccountId} lost sync — reconnecting`,
-      );
+      this.logger.warn(`Connection for account ${metaApiAccountId} lost sync — reconnecting`);
       this.connectionPool.delete(metaApiAccountId);
     }
 
@@ -176,9 +173,7 @@ export class MetaApiClientService implements OnModuleDestroy {
   }
 
   async onModuleDestroy() {
-    this.logger.log(
-      `Closing ${this.connectionPool.size} MetaAPI connection(s) on module destroy`,
-    );
+    this.logger.log(`Closing ${this.connectionPool.size} MetaAPI connection(s) on module destroy`);
     const closePromises = Array.from(this.connectionPool.entries()).map(
       async ([accountId, entry]) => {
         try {

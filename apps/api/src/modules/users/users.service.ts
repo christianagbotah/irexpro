@@ -62,13 +62,15 @@ export class UsersService {
     // Update User-level fields
     if (dto.countryCode !== undefined) user.countryCode = dto.countryCode.toUpperCase();
     if (dto.timezone !== undefined) user.timezone = dto.timezone;
-    if (dto.preferredCurrency !== undefined) user.preferredCurrency = dto.preferredCurrency.toUpperCase();
+    if (dto.preferredCurrency !== undefined)
+      user.preferredCurrency = dto.preferredCurrency.toUpperCase();
 
     // Update UserProfile fields
     if (user.profile) {
       if (dto.firstName !== undefined) user.profile.firstName = dto.firstName;
       if (dto.lastName !== undefined) user.profile.lastName = dto.lastName;
-      if (dto.tradingExperienceLevel !== undefined) user.profile.tradingExperienceLevel = dto.tradingExperienceLevel;
+      if (dto.tradingExperienceLevel !== undefined)
+        user.profile.tradingExperienceLevel = dto.tradingExperienceLevel;
       await this.profileRepo.save(user.profile);
     }
 
@@ -80,7 +82,9 @@ export class UsersService {
     for (const name of Object.values(RoleName)) {
       const exists = await this.roleRepo.findOne({ where: { name } });
       if (!exists) {
-        await this.roleRepo.save(this.roleRepo.create({ name, description: `Default ${name} role` }));
+        await this.roleRepo.save(
+          this.roleRepo.create({ name, description: `Default ${name} role` }),
+        );
       }
     }
   }

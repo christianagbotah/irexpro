@@ -68,9 +68,7 @@ export class MarketDataService {
       };
     } catch (err) {
       const message =
-        err instanceof ForbiddenException
-          ? err.message
-          : 'Market data temporarily unavailable';
+        err instanceof ForbiddenException ? err.message : 'Market data temporarily unavailable';
 
       await this.auditService.log({
         actorUserId: userId,
@@ -107,9 +105,7 @@ export class MarketDataService {
     timeframe: string,
   ): NormalizedOhlcvCandle {
     const ts =
-      candle.timestamp instanceof Date
-        ? candle.timestamp.toISOString()
-        : String(candle.timestamp);
+      candle.timestamp instanceof Date ? candle.timestamp.toISOString() : String(candle.timestamp);
 
     return {
       timestamp: ts,

@@ -48,9 +48,7 @@ export class BrokerHealthCheckProducer implements OnModuleInit {
         },
       );
 
-      this.logger.log(
-        `Broker health check scheduled every ${HEALTH_CHECK_INTERVAL_MS / 1000}s`,
-      );
+      this.logger.log(`Broker health check scheduled every ${HEALTH_CHECK_INTERVAL_MS / 1000}s`);
     } catch (err) {
       // Don't crash the application if Redis is unavailable at startup
       this.logger.warn(

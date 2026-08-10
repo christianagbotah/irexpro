@@ -80,9 +80,7 @@ describe('MarketDataController — internal endpoint', () => {
     const makeContext = (headerValue?: string) => ({
       switchToHttp: () => ({
         getRequest: () => ({
-          headers: headerValue
-            ? { 'x-irexpro-internal-api-key': headerValue }
-            : {},
+          headers: headerValue ? { 'x-irexpro-internal-api-key': headerValue } : {},
         }),
       }),
     });

@@ -152,15 +152,11 @@ export class CreateBrokerReconciliationSchema1751200000000 implements MigrationI
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(
-      `DROP TABLE IF EXISTS broker_reconciliation.broker_reconciled_trades`,
-    );
+    await queryRunner.query(`DROP TABLE IF EXISTS broker_reconciliation.broker_reconciled_trades`);
     await queryRunner.query(
       `DROP TABLE IF EXISTS broker_reconciliation.broker_trade_reconciliation_runs`,
     );
-    await queryRunner.query(
-      `DROP TYPE IF EXISTS broker_reconciliation.trade_source_type_enum`,
-    );
+    await queryRunner.query(`DROP TYPE IF EXISTS broker_reconciliation.trade_source_type_enum`);
     await queryRunner.query(
       `DROP TYPE IF EXISTS broker_reconciliation.reconciliation_run_status_enum`,
     );

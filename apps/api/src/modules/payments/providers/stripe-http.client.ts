@@ -25,11 +25,7 @@ export interface StripeHttpResult<T> {
  * `line_items[0][price_data][currency]=usd`. Required because Stripe's REST
  * API expects `application/x-www-form-urlencoded` bodies, not JSON.
  */
-function flattenToFormParams(
-  value: unknown,
-  prefix: string,
-  out: URLSearchParams,
-): void {
+function flattenToFormParams(value: unknown, prefix: string, out: URLSearchParams): void {
   if (value === undefined || value === null) return;
 
   if (Array.isArray(value)) {

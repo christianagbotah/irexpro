@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
@@ -335,7 +340,8 @@ export class PaystackPaymentProvider extends BasePaymentProvider {
       return {
         providerReference,
         status: 'FAILED',
-        failureMessage: this.safeMessage(result.errorMessage) ?? 'Unable to verify transaction status',
+        failureMessage:
+          this.safeMessage(result.errorMessage) ?? 'Unable to verify transaction status',
       };
     }
 
@@ -347,11 +353,14 @@ export class PaystackPaymentProvider extends BasePaymentProvider {
       currency: typeof data.currency === 'string' ? data.currency : undefined,
       paidAt: data.paid_at ? new Date(data.paid_at) : undefined,
       failureCode: data.status === 'failed' ? 'PAYSTACK_CHARGE_FAILED' : undefined,
-      failureMessage: data.status === 'failed' ? this.safeMessage(data.gateway_response) : undefined,
+      failureMessage:
+        data.status === 'failed' ? this.safeMessage(data.gateway_response) : undefined,
     };
   }
 
-  private mapTransactionStatus(status: string | undefined): PaymentProviderTransactionStatus['status'] {
+  private mapTransactionStatus(
+    status: string | undefined,
+  ): PaymentProviderTransactionStatus['status'] {
     switch (status) {
       case 'success':
         return 'SUCCEEDED';

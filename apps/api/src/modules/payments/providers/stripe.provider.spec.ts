@@ -35,10 +35,17 @@ function buildHttpClientMock() {
 }
 
 function signPayload(timestamp: number, rawBody: Buffer, secret: string): string {
-  return crypto.createHmac('sha256', secret).update(`${timestamp}.${rawBody.toString('utf8')}`).digest('hex');
+  return crypto
+    .createHmac('sha256', secret)
+    .update(`${timestamp}.${rawBody.toString('utf8')}`)
+    .digest('hex');
 }
 
-function buildSignatureHeader(rawBody: Buffer, secret: string, timestamp = Math.floor(Date.now() / 1000)): string {
+function buildSignatureHeader(
+  rawBody: Buffer,
+  secret: string,
+  timestamp = Math.floor(Date.now() / 1000),
+): string {
   const signature = signPayload(timestamp, rawBody, secret);
   return `t=${timestamp},v1=${signature}`;
 }
@@ -65,7 +72,10 @@ describe('StripePaymentProvider', () => {
     });
 
     it('isLive is false when enabled but secret key missing', () => {
-      const provider = new StripePaymentProvider(buildConfigService({ enabled: true }), buildHttpClientMock());
+      const provider = new StripePaymentProvider(
+        buildConfigService({ enabled: true }),
+        buildHttpClientMock(),
+      );
       expect(provider.isLive).toBe(false);
     });
 
@@ -99,8 +109,13 @@ describe('StripePaymentProvider', () => {
     });
 
     it('getTransactionStatus throws when disabled', async () => {
-      const provider = new StripePaymentProvider(buildConfigService({ enabled: false }), buildHttpClientMock());
-      await expect(provider.getTransactionStatus('cs_1')).rejects.toThrow(ServiceUnavailableException);
+      const provider = new StripePaymentProvider(
+        buildConfigService({ enabled: false }),
+        buildHttpClientMock(),
+      );
+      await expect(provider.getTransactionStatus('cs_1')).rejects.toThrow(
+        ServiceUnavailableException,
+      );
     });
 
     it('verifyWebhookSignature returns false when disabled', () => {
@@ -114,7 +129,10 @@ describe('StripePaymentProvider', () => {
     });
 
     it('fail-closed errors never contain the secret key', async () => {
-      const provider = new StripePaymentProvider(buildConfigService({ enabled: false }), buildHttpClientMock());
+      const provider = new StripePaymentProvider(
+        buildConfigService({ enabled: false }),
+        buildHttpClientMock(),
+      );
       try {
         await provider.createCheckoutSession(CHECKOUT_REQUEST);
         fail('expected to throw');
@@ -183,7 +201,11 @@ describe('StripePaymentProvider', () => {
 
     it('lowercases the currency for Stripe while the rest of the platform stays uppercase', async () => {
       const http = buildHttpClientMock();
-      http.request.mockResolvedValue({ ok: true, status: 200, body: { id: 'cs_x', url: 'https://x' } });
+      http.request.mockResolvedValue({
+        ok: true,
+        status: 200,
+        body: { id: 'cs_x', url: 'https://x' },
+      });
       const provider = buildEnabledProvider(http);
       await provider.createCheckoutSession({ ...CHECKOUT_REQUEST, currency: 'GBP' });
       const [, options] = http.request.mock.calls[0];
@@ -192,7 +214,10 @@ describe('StripePaymentProvider', () => {
 
     it('throws BadRequestException when success/cancel URLs are not configured and not passed per-request', async () => {
       const http = buildHttpClientMock();
-      const provider = new StripePaymentProvider(buildConfigService({ enabled: true, secretKey: SECRET_KEY }), http);
+      const provider = new StripePaymentProvider(
+        buildConfigService({ enabled: true, secretKey: SECRET_KEY }),
+        http,
+      );
       await expect(provider.createCheckoutSession(CHECKOUT_REQUEST)).rejects.toThrow(
         'Stripe checkout requires success_url/cancel_url to be configured',
       );
@@ -201,7 +226,11 @@ describe('StripePaymentProvider', () => {
 
     it('uses per-request successUrl/cancelUrl when provided, overriding config defaults', async () => {
       const http = buildHttpClientMock();
-      http.request.mockResolvedValue({ ok: true, status: 200, body: { id: 'cs_x', url: 'https://x' } });
+      http.request.mockResolvedValue({
+        ok: true,
+        status: 200,
+        body: { id: 'cs_x', url: 'https://x' },
+      });
       const provider = buildEnabledProvider(http);
       await provider.createCheckoutSession({
         ...CHECKOUT_REQUEST,
@@ -223,7 +252,9 @@ describe('StripePaymentProvider', () => {
       });
       const provider = buildEnabledProvider(http);
 
-      await expect(provider.createCheckoutSession(CHECKOUT_REQUEST)).rejects.toThrow('Invalid currency');
+      await expect(provider.createCheckoutSession(CHECKOUT_REQUEST)).rejects.toThrow(
+        'Invalid currency',
+      );
     });
 
     it('handles network failure safely without leaking internals', async () => {
@@ -243,7 +274,11 @@ describe('StripePaymentProvider', () => {
 
     it('omits subscriptionId/assessmentId from metadata when not provided', async () => {
       const http = buildHttpClientMock();
-      http.request.mockResolvedValue({ ok: true, status: 200, body: { id: 'cs_x', url: 'https://x' } });
+      http.request.mockResolvedValue({
+        ok: true,
+        status: 200,
+        body: { id: 'cs_x', url: 'https://x' },
+      });
       const provider = buildEnabledProvider(http);
       await provider.createCheckoutSession(CHECKOUT_REQUEST);
       const [, options] = http.request.mock.calls[0];
@@ -253,7 +288,11 @@ describe('StripePaymentProvider', () => {
 
     it('marks paymentPurpose as PERFORMANCE_FEE and uses the performance-fee product name when metadata.type is set', async () => {
       const http = buildHttpClientMock();
-      http.request.mockResolvedValue({ ok: true, status: 200, body: { id: 'cs_y', url: 'https://y' } });
+      http.request.mockResolvedValue({
+        ok: true,
+        status: 200,
+        body: { id: 'cs_y', url: 'https://y' },
+      });
       const provider = buildEnabledProvider(http);
       await provider.createCheckoutSession({
         ...CHECKOUT_REQUEST,
@@ -262,12 +301,17 @@ describe('StripePaymentProvider', () => {
       const [, options] = http.request.mock.calls[0];
       expect(options.body.metadata.paymentPurpose).toBe('PERFORMANCE_FEE');
       expect(options.body.metadata.assessmentId).toBe('assess-1');
-      expect(options.body.line_items[0].price_data.product_data.name).toBe('iRexPro Performance Fee');
+      expect(options.body.line_items[0].price_data.product_data.name).toBe(
+        'iRexPro Performance Fee',
+      );
     });
   });
 
   describe('verifyWebhookSignature', () => {
-    function buildProvider(secretKey = SECRET_KEY, webhookSecret: string | undefined = WEBHOOK_SECRET) {
+    function buildProvider(
+      secretKey = SECRET_KEY,
+      webhookSecret: string | undefined = WEBHOOK_SECRET,
+    ) {
       return new StripePaymentProvider(
         buildConfigService({ enabled: true, secretKey, webhookSecret }),
         buildHttpClientMock(),
@@ -276,7 +320,9 @@ describe('StripePaymentProvider', () => {
 
     it('succeeds with a valid signature', () => {
       const provider = buildProvider();
-      const rawBody = Buffer.from(JSON.stringify({ type: 'checkout.session.completed', data: { object: {} } }));
+      const rawBody = Buffer.from(
+        JSON.stringify({ type: 'checkout.session.completed', data: { object: {} } }),
+      );
       const header = buildSignatureHeader(rawBody, WEBHOOK_SECRET);
       expect(provider.verifyWebhookSignature(rawBody, { 'stripe-signature': header })).toBe(true);
     });
@@ -295,7 +341,9 @@ describe('StripePaymentProvider', () => {
       const rawBody = Buffer.from(JSON.stringify({ type: 'checkout.session.completed' }));
       const timestamp = Math.floor(Date.now() / 1000);
       expect(
-        provider.verifyWebhookSignature(rawBody, { 'stripe-signature': `t=${timestamp},v1=deadbeef` }),
+        provider.verifyWebhookSignature(rawBody, {
+          'stripe-signature': `t=${timestamp},v1=deadbeef`,
+        }),
       ).toBe(false);
     });
 
@@ -314,7 +362,9 @@ describe('StripePaymentProvider', () => {
 
     it('fails when rawBody is empty', () => {
       const provider = buildProvider();
-      expect(provider.verifyWebhookSignature(Buffer.from(''), { 'stripe-signature': 'anything' })).toBe(false);
+      expect(
+        provider.verifyWebhookSignature(Buffer.from(''), { 'stripe-signature': 'anything' }),
+      ).toBe(false);
     });
 
     it('fails when webhook secret is missing', () => {
@@ -339,11 +389,15 @@ describe('StripePaymentProvider', () => {
       const provider = buildProvider();
       const rawBody = Buffer.from(JSON.stringify({ type: 'checkout.session.completed' }));
       expect(() =>
-        provider.verifyWebhookSignature(rawBody, { 'stripe-signature': 'not-a-valid-header-at-all' }),
+        provider.verifyWebhookSignature(rawBody, {
+          'stripe-signature': 'not-a-valid-header-at-all',
+        }),
       ).not.toThrow();
-      expect(provider.verifyWebhookSignature(rawBody, { 'stripe-signature': 'not-a-valid-header-at-all' })).toBe(
-        false,
-      );
+      expect(
+        provider.verifyWebhookSignature(rawBody, {
+          'stripe-signature': 'not-a-valid-header-at-all',
+        }),
+      ).toBe(false);
     });
 
     it('never throws on malformed header arrays', () => {
@@ -357,7 +411,9 @@ describe('StripePaymentProvider', () => {
 
     it('never logs or returns the raw body, signature, or secret', () => {
       const provider = buildProvider();
-      const rawBody = Buffer.from(JSON.stringify({ type: 'checkout.session.completed', sensitive: 'card-4111' }));
+      const rawBody = Buffer.from(
+        JSON.stringify({ type: 'checkout.session.completed', sensitive: 'card-4111' }),
+      );
       const header = buildSignatureHeader(rawBody, WEBHOOK_SECRET);
       const result = provider.verifyWebhookSignature(rawBody, { 'stripe-signature': header });
       expect(typeof result).toBe('boolean');
@@ -385,7 +441,11 @@ describe('StripePaymentProvider', () => {
               amount_total: 2900,
               currency: 'usd',
               customer: 'cus_123',
-              metadata: { invoiceId: 'invoice-1', userId: 'user-1', cardNumber: '4111111111111111' },
+              metadata: {
+                invoiceId: 'invoice-1',
+                userId: 'user-1',
+                cardNumber: '4111111111111111',
+              },
             },
           },
         }),
@@ -418,7 +478,11 @@ describe('StripePaymentProvider', () => {
     it('maps checkout.session.expired to PAYMENT_FAILED', () => {
       const provider = buildProvider();
       const rawBody = Buffer.from(
-        JSON.stringify({ id: 'evt_3', type: 'checkout.session.expired', data: { object: { id: 'cs_expired' } } }),
+        JSON.stringify({
+          id: 'evt_3',
+          type: 'checkout.session.expired',
+          data: { object: { id: 'cs_expired' } },
+        }),
       );
       const event = provider.parseWebhookEvent(rawBody, {});
       expect(event.eventType).toBe(PaymentEventType.PAYMENT_FAILED);
@@ -444,7 +508,9 @@ describe('StripePaymentProvider', () => {
         JSON.stringify({
           id: 'evt_5',
           type: 'payment_intent.succeeded',
-          data: { object: { id: 'pi_123', amount: 5000, currency: 'gbp', metadata: { userId: 'user-2' } } },
+          data: {
+            object: { id: 'pi_123', amount: 5000, currency: 'gbp', metadata: { userId: 'user-2' } },
+          },
         }),
       );
       const event = provider.parseWebhookEvent(rawBody, {});
@@ -457,7 +523,11 @@ describe('StripePaymentProvider', () => {
     it('maps payment_intent.payment_failed to PAYMENT_FAILED', () => {
       const provider = buildProvider();
       const rawBody = Buffer.from(
-        JSON.stringify({ id: 'evt_6', type: 'payment_intent.payment_failed', data: { object: { id: 'pi_fail' } } }),
+        JSON.stringify({
+          id: 'evt_6',
+          type: 'payment_intent.payment_failed',
+          data: { object: { id: 'pi_fail' } },
+        }),
       );
       const event = provider.parseWebhookEvent(rawBody, {});
       expect(event.eventType).toBe(PaymentEventType.PAYMENT_FAILED);
@@ -465,7 +535,9 @@ describe('StripePaymentProvider', () => {
 
     it('maps unknown events to UNKNOWN safely (no throw)', () => {
       const provider = buildProvider();
-      const rawBody = Buffer.from(JSON.stringify({ id: 'evt_7', type: 'customer.created', data: { object: {} } }));
+      const rawBody = Buffer.from(
+        JSON.stringify({ id: 'evt_7', type: 'customer.created', data: { object: {} } }),
+      );
       const event = provider.parseWebhookEvent(rawBody, {});
       expect(event.eventType).toBe(PaymentEventType.UNKNOWN);
     });
@@ -480,7 +552,11 @@ describe('StripePaymentProvider', () => {
     it('uses Stripe’s own dedicated event id for idempotency (stable across re-parses)', () => {
       const provider = buildProvider();
       const rawBody = Buffer.from(
-        JSON.stringify({ id: 'evt_stable_1', type: 'checkout.session.completed', data: { object: { id: 'cs_1', payment_status: 'paid' } } }),
+        JSON.stringify({
+          id: 'evt_stable_1',
+          type: 'checkout.session.completed',
+          data: { object: { id: 'cs_1', payment_status: 'paid' } },
+        }),
       );
       const first = provider.parseWebhookEvent(rawBody, {});
       const second = provider.parseWebhookEvent(rawBody, {});
@@ -512,7 +588,10 @@ describe('StripePaymentProvider', () => {
 
   describe('getTransactionStatus', () => {
     function buildProvider(http: StripeHttpClient & { request: jest.Mock }) {
-      return new StripePaymentProvider(buildConfigService({ enabled: true, secretKey: SECRET_KEY }), http);
+      return new StripePaymentProvider(
+        buildConfigService({ enabled: true, secretKey: SECRET_KEY }),
+        http,
+      );
     }
 
     it('maps a completed/paid checkout session to SUCCEEDED', async () => {
@@ -531,7 +610,11 @@ describe('StripePaymentProvider', () => {
 
     it('maps an open checkout session to PENDING', async () => {
       const http = buildHttpClientMock();
-      http.request.mockResolvedValue({ ok: true, status: 200, body: { status: 'open', payment_status: 'unpaid' } });
+      http.request.mockResolvedValue({
+        ok: true,
+        status: 200,
+        body: { status: 'open', payment_status: 'unpaid' },
+      });
       const provider = buildProvider(http);
       const status = await provider.getTransactionStatus('cs_open');
       expect(status.status).toBe('PENDING');
@@ -539,7 +622,11 @@ describe('StripePaymentProvider', () => {
 
     it('maps an expired checkout session to CANCELLED', async () => {
       const http = buildHttpClientMock();
-      http.request.mockResolvedValue({ ok: true, status: 200, body: { status: 'expired', payment_status: 'unpaid' } });
+      http.request.mockResolvedValue({
+        ok: true,
+        status: 200,
+        body: { status: 'expired', payment_status: 'unpaid' },
+      });
       const provider = buildProvider(http);
       const status = await provider.getTransactionStatus('cs_expired');
       expect(status.status).toBe('CANCELLED');
@@ -547,7 +634,11 @@ describe('StripePaymentProvider', () => {
 
     it('routes a pi_ reference to the PaymentIntent endpoint and maps succeeded', async () => {
       const http = buildHttpClientMock();
-      http.request.mockResolvedValue({ ok: true, status: 200, body: { status: 'succeeded', amount: 5000, currency: 'gbp' } });
+      http.request.mockResolvedValue({
+        ok: true,
+        status: 200,
+        body: { status: 'succeeded', amount: 5000, currency: 'gbp' },
+      });
       const provider = buildProvider(http);
       const status = await provider.getTransactionStatus('pi_123');
       expect(http.request.mock.calls[0][0]).toContain('/v1/payment_intents/pi_123');
@@ -560,7 +651,10 @@ describe('StripePaymentProvider', () => {
       http.request.mockResolvedValue({
         ok: true,
         status: 200,
-        body: { status: 'requires_payment_method', last_payment_error: { message: 'Your card was declined.' } },
+        body: {
+          status: 'requires_payment_method',
+          last_payment_error: { message: 'Your card was declined.' },
+        },
       });
       const provider = buildProvider(http);
       const status = await provider.getTransactionStatus('pi_declined');
@@ -570,7 +664,12 @@ describe('StripePaymentProvider', () => {
 
     it('returns FAILED (never throws) when the retrieval call itself fails', async () => {
       const http = buildHttpClientMock();
-      http.request.mockResolvedValue({ ok: false, status: 404, body: null, errorMessage: 'No such checkout session' });
+      http.request.mockResolvedValue({
+        ok: false,
+        status: 404,
+        body: null,
+        errorMessage: 'No such checkout session',
+      });
       const provider = buildProvider(http);
       const status = await provider.getTransactionStatus('cs_unknown');
       expect(status.status).toBe('FAILED');
@@ -606,7 +705,9 @@ describe('StripePaymentProvider', () => {
       );
       await expect(provider.refundPayment('ref')).rejects.toThrow();
       await expect(provider.cancelSubscription('sub')).rejects.toThrow();
-      await expect(provider.createCustomer({ userId: 'u1', email: 'u@test.com' })).rejects.toThrow();
+      await expect(
+        provider.createCustomer({ userId: 'u1', email: 'u@test.com' }),
+      ).rejects.toThrow();
     });
   });
 

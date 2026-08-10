@@ -65,9 +65,7 @@ describe('AuditService', () => {
     mockAuditLogRepo.create.mockReturnValue({});
     mockAuditLogRepo.save.mockRejectedValue(new Error('DB error'));
 
-    await expect(
-      service.log({ action: AuditAction.USER_LOGIN_SUCCESS }),
-    ).resolves.not.toThrow();
+    await expect(service.log({ action: AuditAction.USER_LOGIN_SUCCESS })).resolves.not.toThrow();
 
     jest.restoreAllMocks();
   });

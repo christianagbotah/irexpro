@@ -18,8 +18,8 @@ const validTrade = (): ProposedTrade => ({
   direction: 'BUY',
   requestedLotSize: '0.05',
   entryPrice: '1.08500',
-  stopLoss: '1.07500',       // 100 pips below entry
-  takeProfit: '1.09500',     // 100 pips above entry
+  stopLoss: '1.07500', // 100 pips below entry
+  takeProfit: '1.09500', // 100 pips above entry
   idempotencyKey: 'idem-abc',
   volatilityScore: 0.4,
   regime: 'TRENDING',
@@ -96,7 +96,10 @@ describe('RiskService', () => {
         { provide: BrokerService, useFactory: mockBrokerService },
         { provide: AuditService, useFactory: mockAuditService },
         { provide: ExecutionService, useFactory: mockExecutionService },
-        { provide: DomainEventBus, useValue: { publish: jest.fn(), subscribe: jest.fn().mockReturnValue(() => {}) } },
+        {
+          provide: DomainEventBus,
+          useValue: { publish: jest.fn(), subscribe: jest.fn().mockReturnValue(() => {}) },
+        },
       ],
     }).compile();
 
@@ -297,7 +300,7 @@ describe('RiskService', () => {
       const trade = {
         ...validTrade(),
         entryPrice: '1.08500',
-        stopLoss: '1.08498',   // only ~0.2 pips — below 5-pip minimum
+        stopLoss: '1.08498', // only ~0.2 pips — below 5-pip minimum
       };
       const result = await service.validateProposedTrade('user-1', trade);
 
@@ -320,7 +323,7 @@ describe('RiskService', () => {
         ...validTrade(),
         direction: 'BUY' as const,
         entryPrice: '1.08500',
-        takeProfit: '1.08000',  // below entry — invalid for BUY
+        takeProfit: '1.08000', // below entry — invalid for BUY
       };
       const result = await service.validateProposedTrade('user-1', trade);
 
@@ -336,7 +339,7 @@ describe('RiskService', () => {
         direction: 'SELL' as const,
         entryPrice: '1.08500',
         stopLoss: '1.09500',
-        takeProfit: '1.09000',  // above entry — invalid for SELL
+        takeProfit: '1.09000', // above entry — invalid for SELL
       };
       const result = await service.validateProposedTrade('user-1', trade);
 
@@ -387,8 +390,12 @@ describe('RiskService', () => {
   // ─── Fail-closed behavior ─────────────────────────────────────────────────
 
   describe('Fail-closed guarantee', () => {
-    beforeEach(() => { jest.spyOn(Logger.prototype, 'error').mockImplementation(() => {}); });
-    afterEach(() => { jest.restoreAllMocks(); });
+    beforeEach(() => {
+      jest.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
+    });
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
 
     it('returns REJECTED with RISK_ENGINE_ERROR on any unexpected exception', async () => {
       profileRepo.findOne.mockRejectedValue(new Error('database connection lost'));

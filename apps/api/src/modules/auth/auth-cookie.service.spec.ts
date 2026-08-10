@@ -17,10 +17,7 @@ describe('AuthCookieService (Sprint 25 — hybrid httpOnly cookie)', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     module = await Test.createTestingModule({
-      providers: [
-        AuthCookieService,
-        { provide: ConfigService, useValue: mockConfigService },
-      ],
+      providers: [AuthCookieService, { provide: ConfigService, useValue: mockConfigService }],
     }).compile();
     service = module.get<AuthCookieService>(AuthCookieService);
   });

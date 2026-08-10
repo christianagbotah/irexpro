@@ -16,8 +16,8 @@ const makeDto = (overrides: Partial<InternalSignalDto> = {}): InternalSignalDto 
   instrument: 'EURUSD',
   direction: 'BUY',
   confidenceScore: 0.75,
-  suggestedStopLoss: 1.07500,
-  suggestedTakeProfit: 1.09500,
+  suggestedStopLoss: 1.075,
+  suggestedTakeProfit: 1.095,
   suggestedVolume: 0.01,
   timeframe: 'H1',
   strategyCode: 'baseline-h1',
@@ -109,9 +109,7 @@ describe('AiController — internal endpoint', () => {
     const makeContext = (headerValue?: string) => ({
       switchToHttp: () => ({
         getRequest: () => ({
-          headers: headerValue
-            ? { 'x-irexpro-internal-api-key': headerValue }
-            : {},
+          headers: headerValue ? { 'x-irexpro-internal-api-key': headerValue } : {},
         }),
       }),
     });

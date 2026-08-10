@@ -2,7 +2,6 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { UnauthorizedException } from '@nestjs/common';
-import { Repository } from 'typeorm';
 import { JwtStrategy, JwtPayload } from './jwt.strategy';
 import { User, UserStatus } from '../../users/entities/user.entity';
 

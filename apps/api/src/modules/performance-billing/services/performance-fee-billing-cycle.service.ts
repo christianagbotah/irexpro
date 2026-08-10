@@ -174,10 +174,7 @@ export class PerformanceFeeBillingCycleService {
     }
 
     // ── Guard: only DRAFT or FAILED may start a new run ───────────────────────
-    if (
-      cycle.status !== BillingCycleStatus.DRAFT &&
-      cycle.status !== BillingCycleStatus.FAILED
-    ) {
+    if (cycle.status !== BillingCycleStatus.DRAFT && cycle.status !== BillingCycleStatus.FAILED) {
       throw new BadRequestException(
         `Billing cycle ${cycleId} is currently in status ${cycle.status}. ` +
           `Only DRAFT or FAILED cycles can be run.`,
@@ -250,7 +247,9 @@ export class PerformanceFeeBillingCycleService {
           actorId,
           ipAddress,
         );
-        return this.cycleRepo.findOne({ where: { id: cycleId } }) as Promise<PerformanceFeeBillingCycle>;
+        return this.cycleRepo.findOne({
+          where: { id: cycleId },
+        }) as Promise<PerformanceFeeBillingCycle>;
       }
 
       await this.auditService.log({
@@ -339,14 +338,18 @@ export class PerformanceFeeBillingCycleService {
       });
 
       this.logger.log(`[BillingCycle] Cycle ${cycleId} completed: NO_FEE_DUE`);
-      return this.cycleRepo.findOne({ where: { id: cycleId } }) as Promise<PerformanceFeeBillingCycle>;
+      return this.cycleRepo.findOne({
+        where: { id: cycleId },
+      }) as Promise<PerformanceFeeBillingCycle>;
     }
 
     // assessment.status must be ASSESSED to invoice
     if (assessment.status !== AssessmentStatus.ASSESSED) {
       const errorSummary = `Assessment ${assessment.id} is in status ${assessment.status} — cannot invoice`;
       await this.failCycle(cycleId, errorSummary, actorId, ipAddress);
-      return this.cycleRepo.findOne({ where: { id: cycleId } }) as Promise<PerformanceFeeBillingCycle>;
+      return this.cycleRepo.findOne({
+        where: { id: cycleId },
+      }) as Promise<PerformanceFeeBillingCycle>;
     }
 
     let invoicedAssessment: Awaited<ReturnType<typeof this.perfFeeService.invoiceAssessment>>;
@@ -359,7 +362,9 @@ export class PerformanceFeeBillingCycleService {
     } catch (err) {
       const errorSummary = this.safeErrorSummary(err);
       await this.failCycle(cycleId, errorSummary, actorId, ipAddress);
-      return this.cycleRepo.findOne({ where: { id: cycleId } }) as Promise<PerformanceFeeBillingCycle>;
+      return this.cycleRepo.findOne({
+        where: { id: cycleId },
+      }) as Promise<PerformanceFeeBillingCycle>;
     }
 
     await this.cycleRepo.update(cycleId, {
@@ -389,7 +394,9 @@ export class PerformanceFeeBillingCycleService {
       `[BillingCycle] Cycle ${cycleId} INVOICED: invoice=${invoicedAssessment.invoiceId}, ` +
         `feeAmount=${assessment.feeAmount} ${cycle.currency}`,
     );
-    return this.cycleRepo.findOne({ where: { id: cycleId } }) as Promise<PerformanceFeeBillingCycle>;
+    return this.cycleRepo.findOne({
+      where: { id: cycleId },
+    }) as Promise<PerformanceFeeBillingCycle>;
   }
 
   /**
@@ -407,7 +414,12 @@ export class PerformanceFeeBillingCycleService {
     ipAddress?: string,
   ): Promise<PerformanceFeeBillingCycle> {
     // Check for an existing cycle first — reuse FAILED, reject other states
-    const existing = await this.findExistingCycle(userId, brokerConnectionId, periodStart, periodEnd);
+    const existing = await this.findExistingCycle(
+      userId,
+      brokerConnectionId,
+      periodStart,
+      periodEnd,
+    );
 
     if (existing) {
       if (FINAL_BILLING_CYCLE_STATUSES.has(existing.status)) {
@@ -486,7 +498,9 @@ export class PerformanceFeeBillingCycleService {
     });
 
     this.logger.log(`[BillingCycle] Cycle ${cycleId} CANCELLED: ${reason}`);
-    return this.cycleRepo.findOne({ where: { id: cycleId } }) as Promise<PerformanceFeeBillingCycle>;
+    return this.cycleRepo.findOne({
+      where: { id: cycleId },
+    }) as Promise<PerformanceFeeBillingCycle>;
   }
 
   // ── Private helpers ──────────────────────────────────────────────────────────
@@ -512,10 +526,7 @@ export class PerformanceFeeBillingCycleService {
     }
   }
 
-  private async transition(
-    cycleId: string,
-    newStatus: BillingCycleStatus,
-  ): Promise<void> {
+  private async transition(cycleId: string, newStatus: BillingCycleStatus): Promise<void> {
     await this.cycleRepo.update(cycleId, { status: newStatus });
   }
 

@@ -61,10 +61,7 @@ export class BrokerService {
     });
   }
 
-  async findConnectionById(
-    connectionId: string,
-    userId: string,
-  ): Promise<BrokerConnection> {
+  async findConnectionById(connectionId: string, userId: string): Promise<BrokerConnection> {
     const connection = await this.connectionRepo.findOne({
       where: { id: connectionId, userId },
     });
@@ -298,11 +295,7 @@ export class BrokerService {
   /**
    * Disconnect a broker connection. Suspends trading if active.
    */
-  async disconnectBroker(
-    connectionId: string,
-    userId: string,
-    ipAddress?: string,
-  ): Promise<void> {
+  async disconnectBroker(connectionId: string, userId: string, ipAddress?: string): Promise<void> {
     const connection = await this.findConnectionById(connectionId, userId);
 
     if (connection.status === BrokerConnectionStatus.CONNECTED) {
@@ -334,11 +327,7 @@ export class BrokerService {
    * Soft-delete a broker connection.
    * Disconnects first if connected.
    */
-  async deleteConnection(
-    connectionId: string,
-    userId: string,
-    ipAddress?: string,
-  ): Promise<void> {
+  async deleteConnection(connectionId: string, userId: string, ipAddress?: string): Promise<void> {
     const connection = await this.findConnectionById(connectionId, userId);
 
     if (connection.status === BrokerConnectionStatus.CONNECTED) {
@@ -368,11 +357,7 @@ export class BrokerService {
    *
    * Live trading without prior DEMO validation is an architectural violation.
    */
-  async enableLiveTrading(
-    connectionId: string,
-    userId: string,
-    ipAddress?: string,
-  ): Promise<void> {
+  async enableLiveTrading(connectionId: string, userId: string, ipAddress?: string): Promise<void> {
     const connection = await this.findConnectionById(connectionId, userId);
 
     if (connection.accountType !== BrokerMode.LIVE) {
@@ -481,9 +466,7 @@ export class BrokerService {
         consecutiveFailureCount: failureCount,
         lastErrorMessage: (err as Error).message,
         lastHealthCheckAt: new Date(),
-        ...(failureCount >= SUSPEND_THRESHOLD
-          ? { status: BrokerConnectionStatus.SUSPENDED }
-          : {}),
+        ...(failureCount >= SUSPEND_THRESHOLD ? { status: BrokerConnectionStatus.SUSPENDED } : {}),
       });
 
       if (failureCount >= SUSPEND_THRESHOLD) {
@@ -537,11 +520,7 @@ export class BrokerService {
 
     const adapter = this.adapterRegistry.getAdapter(connection.brokerId);
 
-    if (
-      !connection.encryptedCredentials ||
-      !connection.credentialIv ||
-      !connection.credentialTag
-    ) {
+    if (!connection.encryptedCredentials || !connection.credentialIv || !connection.credentialTag) {
       throw new ForbiddenException('Broker connection credentials unavailable');
     }
 
@@ -581,7 +560,10 @@ export class BrokerService {
     userId: string,
     from: Date,
     to: Date,
-  ): Promise<{ connection: BrokerConnection; trades: import('./interfaces/broker-adapter.interface').BrokerClosedTrade[] }> {
+  ): Promise<{
+    connection: BrokerConnection;
+    trades: import('./interfaces/broker-adapter.interface').BrokerClosedTrade[];
+  }> {
     const connection = await this.findConnectionById(connectionId, userId);
 
     if (connection.status !== BrokerConnectionStatus.CONNECTED) {
@@ -592,11 +574,7 @@ export class BrokerService {
 
     const adapter = this.adapterRegistry.getAdapter(connection.brokerId);
 
-    if (
-      !connection.encryptedCredentials ||
-      !connection.credentialIv ||
-      !connection.credentialTag
-    ) {
+    if (!connection.encryptedCredentials || !connection.credentialIv || !connection.credentialTag) {
       throw new ForbiddenException('Broker connection credentials unavailable');
     }
 

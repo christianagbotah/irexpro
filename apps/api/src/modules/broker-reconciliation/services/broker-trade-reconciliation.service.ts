@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, QueryFailedError, Repository } from 'typeorm';
 import { isSupportedCurrency } from './currency-minor-units';
@@ -10,16 +6,16 @@ import {
   BrokerTradeReconciliationRun,
   ReconciliationRunStatus,
 } from '../entities/broker-trade-reconciliation-run.entity';
-import {
-  BrokerReconciledTrade,
-  TradeSourceType,
-} from '../entities/broker-reconciled-trade.entity';
+import { BrokerReconciledTrade, TradeSourceType } from '../entities/broker-reconciled-trade.entity';
 import {
   PerformanceFeeLedgerEntry,
   LedgerEntryType,
 } from '../../performance-fees/entities/performance-fee-ledger-entry.entity';
 import { PerformanceFeePolicy } from '../../performance-fees/entities/performance-fee-policy.entity';
-import { UserSubscription, SubscriptionStatus } from '../../subscriptions/entities/user-subscription.entity';
+import {
+  UserSubscription,
+  SubscriptionStatus,
+} from '../../subscriptions/entities/user-subscription.entity';
 import { BrokerService } from '../../broker/broker.service';
 import { BrokerMode } from '../../broker/interfaces/broker-adapter.interface';
 import { AuditService } from '../../audit/audit.service';
@@ -130,10 +126,7 @@ export class BrokerTradeReconciliationService {
     this.validateTimeRange(fromTime, toTime);
 
     // ── 2. Verify broker connection ─────────────────────────────────────────
-    const connection = await this.brokerService.findConnectionById(
-      brokerConnectionId,
-      userId,
-    );
+    const connection = await this.brokerService.findConnectionById(brokerConnectionId, userId);
 
     // Only LIVE accounts are eligible for performance fee reconciliation
     if (connection.accountType !== BrokerMode.LIVE) {
@@ -219,10 +212,10 @@ export class BrokerTradeReconciliationService {
         metadata: { userId, brokerConnectionId, error: errorMsg },
         severity: AuditSeverity.WARNING,
       });
-      this.logger.error(
-        `[Recon] Run ${run.id} FAILED — adapter error: ${errorMsg}`,
-      );
-      return this.runRepo.findOne({ where: { id: run.id } }) as Promise<BrokerTradeReconciliationRun>;
+      this.logger.error(`[Recon] Run ${run.id} FAILED — adapter error: ${errorMsg}`);
+      return this.runRepo.findOne({
+        where: { id: run.id },
+      }) as Promise<BrokerTradeReconciliationRun>;
     }
 
     // ── 7. Normalize trades (currency-aware minor-unit conversion) ──────────
@@ -420,9 +413,8 @@ export class BrokerTradeReconciliationService {
     }
 
     // Create performance fee ledger entry
-    const entryType = netPnl > 0n
-      ? LedgerEntryType.REALISED_TRADE_PROFIT
-      : LedgerEntryType.REALISED_TRADE_LOSS;
+    const entryType =
+      netPnl > 0n ? LedgerEntryType.REALISED_TRADE_PROFIT : LedgerEntryType.REALISED_TRADE_LOSS;
 
     const ledgerEntry = await this.ledgerRepo.save(
       this.ledgerRepo.create({
@@ -499,9 +491,8 @@ export class BrokerTradeReconciliationService {
     const netPnl = BigInt(existing.netRealisedPnl);
     if (netPnl === 0n) return false;
 
-    const entryType = netPnl > 0n
-      ? LedgerEntryType.REALISED_TRADE_PROFIT
-      : LedgerEntryType.REALISED_TRADE_LOSS;
+    const entryType =
+      netPnl > 0n ? LedgerEntryType.REALISED_TRADE_PROFIT : LedgerEntryType.REALISED_TRADE_LOSS;
 
     const ledgerEntry = await this.ledgerRepo.save(
       this.ledgerRepo.create({
@@ -564,10 +555,7 @@ export class BrokerTradeReconciliationService {
    * NOTE: The trade itself must already be normalised (closedAt in past,
    * valid P&L, non-empty brokerTradeId). Those checks are done in the normalizer.
    */
-  private isFeeEligible(
-    trade: NormalizedClosedTrade,
-    context: FeeEligibilityContext,
-  ): boolean {
+  private isFeeEligible(trade: NormalizedClosedTrade, context: FeeEligibilityContext): boolean {
     if (!context.hasActiveSubscription) return false;
     if (!context.hasPerformanceFeePolicy) return false;
     if (BigInt(trade.netRealisedPnl) === 0n) return false;

@@ -65,10 +65,7 @@ export class BrokerReconciliationController {
    * - Normal user: always filtered to own userId regardless of query param.
    */
   @Get('runs')
-  getRuns(
-    @CurrentUser() principal: AuthenticatedPrincipal,
-    @Query('userId') queryUserId?: string,
-  ) {
+  getRuns(@CurrentUser() principal: AuthenticatedPrincipal, @Query('userId') queryUserId?: string) {
     const isAdmin = principal.roles?.some(
       (r) => r === RoleName.ADMIN || r === RoleName.SUPER_ADMIN,
     );

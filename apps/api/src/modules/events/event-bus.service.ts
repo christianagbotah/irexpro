@@ -29,11 +29,7 @@ export class DomainEventBus implements OnModuleDestroy {
   /**
    * Publish a domain event to all registered listeners.
    */
-  publish<T = Record<string, unknown>>(
-    type: DomainEventType,
-    userId: string,
-    payload: T,
-  ): void {
+  publish<T = Record<string, unknown>>(type: DomainEventType, userId: string, payload: T): void {
     const event: DomainEvent<T> = { type, userId, payload, timestamp: new Date() };
     this.emitter.emit(type, event);
     this.logger.debug(`Event published: ${type} for user=${userId}`);

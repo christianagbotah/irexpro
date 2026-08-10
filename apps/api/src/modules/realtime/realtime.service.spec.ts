@@ -15,10 +15,7 @@ describe('RealtimeService', () => {
     jest.clearAllMocks();
 
     module = await Test.createTestingModule({
-      providers: [
-        RealtimeService,
-        DomainEventBus,
-      ],
+      providers: [RealtimeService, DomainEventBus],
     }).compile();
 
     service = module.get<RealtimeService>(RealtimeService);
@@ -44,9 +41,7 @@ describe('RealtimeService', () => {
 
     it('does not throw when server is not set', () => {
       service.setServer(null as never);
-      expect(() =>
-        service.emitToUser('user-1', RealtimeEvent.TRADE_OPENED, {}),
-      ).not.toThrow();
+      expect(() => service.emitToUser('user-1', RealtimeEvent.TRADE_OPENED, {})).not.toThrow();
     });
   });
 
@@ -62,7 +57,9 @@ describe('RealtimeService', () => {
     it('emits event to admin:global room', () => {
       service.emitToAdmins(RealtimeEvent.SYSTEM_NOTIFICATION, { title: 'Test' });
       expect(mockServer.to).toHaveBeenCalledWith('admin:global');
-      expect(mockRoom.emit).toHaveBeenCalledWith(RealtimeEvent.SYSTEM_NOTIFICATION, { title: 'Test' });
+      expect(mockRoom.emit).toHaveBeenCalledWith(RealtimeEvent.SYSTEM_NOTIFICATION, {
+        title: 'Test',
+      });
     });
   });
 

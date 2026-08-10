@@ -9,10 +9,7 @@ import { BrokerAccount } from './entities/broker-account.entity';
 import { BrokerAdapterRegistry } from './adapters/broker-adapter.registry';
 import { CredentialEncryptionService } from './services/credential-encryption.service';
 import { AuditService } from '../audit/audit.service';
-import {
-  BrokerConnectionStatus,
-  BrokerMode,
-} from './interfaces/broker-adapter.interface';
+import { BrokerConnectionStatus, BrokerMode } from './interfaces/broker-adapter.interface';
 import { DomainEventBus } from '../events/event-bus.service';
 
 // ─── Mock factories ───────────────────────────────────────────────────────────
@@ -36,9 +33,11 @@ const mockAccountRepo = () => ({
 const mockRegistry = () => ({
   isSupported: jest.fn().mockReturnValue(true),
   getAdapter: jest.fn(),
-  getSupportedBrokers: jest.fn().mockReturnValue([
-    { brokerId: 'metatrader5', brokerName: 'MetaTrader 5 (via MetaAPI)', supportsDemo: true },
-  ]),
+  getSupportedBrokers: jest
+    .fn()
+    .mockReturnValue([
+      { brokerId: 'metatrader5', brokerName: 'MetaTrader 5 (via MetaAPI)', supportsDemo: true },
+    ]),
 });
 
 const mockEncryption = () => ({
@@ -241,7 +240,10 @@ describe('BrokerService', () => {
 
   describe('hasActiveConnection()', () => {
     it('returns true when a connected broker exists', async () => {
-      connectionRepo.findOne.mockResolvedValue({ id: 'conn-1', status: BrokerConnectionStatus.CONNECTED });
+      connectionRepo.findOne.mockResolvedValue({
+        id: 'conn-1',
+        status: BrokerConnectionStatus.CONNECTED,
+      });
       expect(await service.hasActiveConnection('user-1')).toBe(true);
     });
 
@@ -387,9 +389,7 @@ describe('BrokerService', () => {
     it('returns true and resets failure count on successful health check', async () => {
       const adapter = healthyAdapter();
       registry.getAdapter.mockReturnValue(adapter);
-      connectionRepo.findOne.mockResolvedValue(
-        connectedConnection({ consecutiveFailureCount: 1 }),
-      );
+      connectionRepo.findOne.mockResolvedValue(connectedConnection({ consecutiveFailureCount: 1 }));
 
       const result = await service.healthCheck('conn-1');
 
@@ -408,9 +408,7 @@ describe('BrokerService', () => {
       jest.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
       const adapter = failingAdapter();
       registry.getAdapter.mockReturnValue(adapter);
-      connectionRepo.findOne.mockResolvedValue(
-        connectedConnection({ consecutiveFailureCount: 0 }),
-      );
+      connectionRepo.findOne.mockResolvedValue(connectedConnection({ consecutiveFailureCount: 0 }));
 
       const result = await service.healthCheck('conn-1');
 
@@ -424,9 +422,7 @@ describe('BrokerService', () => {
       jest.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
       const adapter = failingAdapter();
       registry.getAdapter.mockReturnValue(adapter);
-      connectionRepo.findOne.mockResolvedValue(
-        connectedConnection({ consecutiveFailureCount: 1 }),
-      );
+      connectionRepo.findOne.mockResolvedValue(connectedConnection({ consecutiveFailureCount: 1 }));
 
       const result = await service.healthCheck('conn-1');
 
@@ -440,9 +436,7 @@ describe('BrokerService', () => {
       jest.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
       const adapter = failingAdapter('connection timeout');
       registry.getAdapter.mockReturnValue(adapter);
-      connectionRepo.findOne.mockResolvedValue(
-        connectedConnection({ consecutiveFailureCount: 2 }),
-      );
+      connectionRepo.findOne.mockResolvedValue(connectedConnection({ consecutiveFailureCount: 2 }));
 
       const result = await service.healthCheck('conn-1');
 

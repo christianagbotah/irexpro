@@ -101,10 +101,20 @@ export class ReconcileBrokerConnectionSchema1752100000000 implements MigrationIn
   public async down(queryRunner: QueryRunner): Promise<void> {
     // Reverse the ADD COLUMNs. Does NOT recreate the old failure_count/currency
     // columns — those are preserved by the up() migration (not dropped there).
-    await queryRunner.query(`ALTER TABLE broker.broker_connections DROP COLUMN IF EXISTS account_leverage`);
-    await queryRunner.query(`ALTER TABLE broker.broker_connections DROP COLUMN IF EXISTS account_currency`);
-    await queryRunner.query(`ALTER TABLE broker.broker_connections DROP COLUMN IF EXISTS live_trading_enabled`);
-    await queryRunner.query(`ALTER TABLE broker.broker_connections DROP COLUMN IF EXISTS consecutive_failure_count`);
-    await queryRunner.query(`ALTER TABLE broker.broker_connections DROP COLUMN IF EXISTS last_sync_at`);
+    await queryRunner.query(
+      `ALTER TABLE broker.broker_connections DROP COLUMN IF EXISTS account_leverage`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE broker.broker_connections DROP COLUMN IF EXISTS account_currency`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE broker.broker_connections DROP COLUMN IF EXISTS live_trading_enabled`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE broker.broker_connections DROP COLUMN IF EXISTS consecutive_failure_count`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE broker.broker_connections DROP COLUMN IF EXISTS last_sync_at`,
+    );
   }
 }

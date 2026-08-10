@@ -114,9 +114,21 @@ describe('PerformanceFeePaymentService — Stripe checkout integration (Sprint 1
       status: 200,
       body: { id: 'cs_pf_1', url: 'https://checkout.stripe.com/pf1' },
     });
-    const provider = new StripePaymentProvider(enabledConfigService(), http as unknown as StripeHttpClient);
-    routingService = { routeForCheckout: jest.fn(async () => ({ provider, reason: 'country_config' })) };
-    service = new PerformanceFeePaymentService(invoiceRepo, transactionRepo, assessmentRepo, userRepo, routingService, auditService);
+    const provider = new StripePaymentProvider(
+      enabledConfigService(),
+      http as unknown as StripeHttpClient,
+    );
+    routingService = {
+      routeForCheckout: jest.fn(async () => ({ provider, reason: 'country_config' })),
+    };
+    service = new PerformanceFeePaymentService(
+      invoiceRepo,
+      transactionRepo,
+      assessmentRepo,
+      userRepo,
+      routingService,
+      auditService,
+    );
 
     const result = await service.initiatePerformanceFeeCheckout(base);
 
@@ -136,13 +148,28 @@ describe('PerformanceFeePaymentService — Stripe checkout integration (Sprint 1
         provider: 'stripe',
         status: PaymentTransactionStatus.PROCESSING,
         providerTransactionReference: 'cs_existing',
-        providerPayloadSummary: { checkoutUrl: 'https://checkout.stripe.com/existing', sessionId: 'cs_existing' },
+        providerPayloadSummary: {
+          checkoutUrl: 'https://checkout.stripe.com/existing',
+          sessionId: 'cs_existing',
+        },
       }),
     );
     const http = { request: jest.fn() };
-    const provider = new StripePaymentProvider(enabledConfigService(), http as unknown as StripeHttpClient);
-    routingService = { routeForCheckout: jest.fn(async () => ({ provider, reason: 'country_config' })) };
-    service = new PerformanceFeePaymentService(invoiceRepo, transactionRepo, assessmentRepo, userRepo, routingService, auditService);
+    const provider = new StripePaymentProvider(
+      enabledConfigService(),
+      http as unknown as StripeHttpClient,
+    );
+    routingService = {
+      routeForCheckout: jest.fn(async () => ({ provider, reason: 'country_config' })),
+    };
+    service = new PerformanceFeePaymentService(
+      invoiceRepo,
+      transactionRepo,
+      assessmentRepo,
+      userRepo,
+      routingService,
+      auditService,
+    );
 
     const result = await service.initiatePerformanceFeeCheckout(base);
 
@@ -153,10 +180,26 @@ describe('PerformanceFeePaymentService — Stripe checkout integration (Sprint 1
 
   it('does not mark the invoice paid on a successful checkout initiation', async () => {
     const http = { request: jest.fn() };
-    http.request.mockResolvedValue({ ok: true, status: 200, body: { id: 'cs_pf_2', url: 'https://x' } });
-    const provider = new StripePaymentProvider(enabledConfigService(), http as unknown as StripeHttpClient);
-    routingService = { routeForCheckout: jest.fn(async () => ({ provider, reason: 'country_config' })) };
-    service = new PerformanceFeePaymentService(invoiceRepo, transactionRepo, assessmentRepo, userRepo, routingService, auditService);
+    http.request.mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: { id: 'cs_pf_2', url: 'https://x' },
+    });
+    const provider = new StripePaymentProvider(
+      enabledConfigService(),
+      http as unknown as StripeHttpClient,
+    );
+    routingService = {
+      routeForCheckout: jest.fn(async () => ({ provider, reason: 'country_config' })),
+    };
+    service = new PerformanceFeePaymentService(
+      invoiceRepo,
+      transactionRepo,
+      assessmentRepo,
+      userRepo,
+      routingService,
+      auditService,
+    );
 
     await service.initiatePerformanceFeeCheckout(base);
     expect(invoiceRepo.update).not.toHaveBeenCalled();
@@ -164,10 +207,26 @@ describe('PerformanceFeePaymentService — Stripe checkout integration (Sprint 1
 
   it('does not mark the assessment paid on a successful checkout initiation', async () => {
     const http = { request: jest.fn() };
-    http.request.mockResolvedValue({ ok: true, status: 200, body: { id: 'cs_pf_3', url: 'https://x' } });
-    const provider = new StripePaymentProvider(enabledConfigService(), http as unknown as StripeHttpClient);
-    routingService = { routeForCheckout: jest.fn(async () => ({ provider, reason: 'country_config' })) };
-    service = new PerformanceFeePaymentService(invoiceRepo, transactionRepo, assessmentRepo, userRepo, routingService, auditService);
+    http.request.mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: { id: 'cs_pf_3', url: 'https://x' },
+    });
+    const provider = new StripePaymentProvider(
+      enabledConfigService(),
+      http as unknown as StripeHttpClient,
+    );
+    routingService = {
+      routeForCheckout: jest.fn(async () => ({ provider, reason: 'country_config' })),
+    };
+    service = new PerformanceFeePaymentService(
+      invoiceRepo,
+      transactionRepo,
+      assessmentRepo,
+      userRepo,
+      routingService,
+      auditService,
+    );
 
     await service.initiatePerformanceFeeCheckout(base);
     expect(assessmentRepo.findOne).toHaveBeenCalled();
@@ -176,10 +235,26 @@ describe('PerformanceFeePaymentService — Stripe checkout integration (Sprint 1
 
   it('does not update the high-water mark on a successful checkout initiation (no perf repo dependency)', async () => {
     const http = { request: jest.fn() };
-    http.request.mockResolvedValue({ ok: true, status: 200, body: { id: 'cs_pf_4', url: 'https://x' } });
-    const provider = new StripePaymentProvider(enabledConfigService(), http as unknown as StripeHttpClient);
-    routingService = { routeForCheckout: jest.fn(async () => ({ provider, reason: 'country_config' })) };
-    service = new PerformanceFeePaymentService(invoiceRepo, transactionRepo, assessmentRepo, userRepo, routingService, auditService);
+    http.request.mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: { id: 'cs_pf_4', url: 'https://x' },
+    });
+    const provider = new StripePaymentProvider(
+      enabledConfigService(),
+      http as unknown as StripeHttpClient,
+    );
+    routingService = {
+      routeForCheckout: jest.fn(async () => ({ provider, reason: 'country_config' })),
+    };
+    service = new PerformanceFeePaymentService(
+      invoiceRepo,
+      transactionRepo,
+      assessmentRepo,
+      userRepo,
+      routingService,
+      auditService,
+    );
 
     await service.initiatePerformanceFeeCheckout(base);
     // PerformanceFeePaymentService is constructed without a TradingAccountPerformance
@@ -189,8 +264,17 @@ describe('PerformanceFeePaymentService — Stripe checkout integration (Sprint 1
 
   it('Stripe provider failure (disabled) leaves invoice ISSUED and assessment INVOICED', async () => {
     const provider = new StripePaymentProvider(disabledConfigService(), new StripeHttpClient());
-    routingService = { routeForCheckout: jest.fn(async () => ({ provider, reason: 'country_config' })) };
-    service = new PerformanceFeePaymentService(invoiceRepo, transactionRepo, assessmentRepo, userRepo, routingService, auditService);
+    routingService = {
+      routeForCheckout: jest.fn(async () => ({ provider, reason: 'country_config' })),
+    };
+    service = new PerformanceFeePaymentService(
+      invoiceRepo,
+      transactionRepo,
+      assessmentRepo,
+      userRepo,
+      routingService,
+      auditService,
+    );
 
     await expect(service.initiatePerformanceFeeCheckout(base)).rejects.toThrow(BadRequestException);
 
@@ -204,10 +288,26 @@ describe('PerformanceFeePaymentService — Stripe checkout integration (Sprint 1
 
   it('never leaks the Stripe secret key in the checkout result or audit metadata', async () => {
     const http = { request: jest.fn() };
-    http.request.mockResolvedValue({ ok: true, status: 200, body: { id: 'cs_pf_5', url: 'https://x' } });
-    const provider = new StripePaymentProvider(enabledConfigService(), http as unknown as StripeHttpClient);
-    routingService = { routeForCheckout: jest.fn(async () => ({ provider, reason: 'country_config' })) };
-    service = new PerformanceFeePaymentService(invoiceRepo, transactionRepo, assessmentRepo, userRepo, routingService, auditService);
+    http.request.mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: { id: 'cs_pf_5', url: 'https://x' },
+    });
+    const provider = new StripePaymentProvider(
+      enabledConfigService(),
+      http as unknown as StripeHttpClient,
+    );
+    routingService = {
+      routeForCheckout: jest.fn(async () => ({ provider, reason: 'country_config' })),
+    };
+    service = new PerformanceFeePaymentService(
+      invoiceRepo,
+      transactionRepo,
+      assessmentRepo,
+      userRepo,
+      routingService,
+      auditService,
+    );
 
     const result = await service.initiatePerformanceFeeCheckout(base);
     expect(JSON.stringify(result)).not.toContain('sk_test_perf_fee_checkout');

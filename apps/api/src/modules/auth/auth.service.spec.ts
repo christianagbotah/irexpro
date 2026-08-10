@@ -86,24 +86,35 @@ describe('AuthService', () => {
     // Timeout is generous to stay safe under parallel worker load on Windows.
     const ARGON2_TEST_TIMEOUT = 10_000;
 
-    it('should hash and verify a password correctly', async () => {
-      const password = 'TestP@ssw0rd!';
-      const hash = await service.hashPassword(password);
-      expect(hash).not.toBe(password);
-      const isValid = await service.verifyPassword(hash, password);
-      expect(isValid).toBe(true);
-    }, ARGON2_TEST_TIMEOUT);
+    it(
+      'should hash and verify a password correctly',
+      async () => {
+        const password = 'TestP@ssw0rd!';
+        const hash = await service.hashPassword(password);
+        expect(hash).not.toBe(password);
+        const isValid = await service.verifyPassword(hash, password);
+        expect(isValid).toBe(true);
+      },
+      ARGON2_TEST_TIMEOUT,
+    );
 
-    it('should reject a wrong password', async () => {
-      const hash = await service.hashPassword('CorrectP@ss1!');
-      const isValid = await service.verifyPassword(hash, 'WrongP@ss1!');
-      expect(isValid).toBe(false);
-    }, ARGON2_TEST_TIMEOUT);
+    it(
+      'should reject a wrong password',
+      async () => {
+        const hash = await service.hashPassword('CorrectP@ss1!');
+        const isValid = await service.verifyPassword(hash, 'WrongP@ss1!');
+        expect(isValid).toBe(false);
+      },
+      ARGON2_TEST_TIMEOUT,
+    );
   });
 
   describe('register', () => {
     it('should throw ConflictException if email already exists', async () => {
-      mockUserRepo.findOne.mockResolvedValueOnce({ id: 'existing-user', email: 'test@example.com' });
+      mockUserRepo.findOne.mockResolvedValueOnce({
+        id: 'existing-user',
+        email: 'test@example.com',
+      });
       await expect(
         service.register({ email: 'test@example.com', password: 'Pass@1234!' }),
       ).rejects.toThrow(ConflictException);
@@ -112,10 +123,16 @@ describe('AuthService', () => {
     it('should register a new user and return tokens', async () => {
       mockUserRepo.findOne.mockResolvedValueOnce(null);
       mockRoleRepo.findOne.mockResolvedValueOnce({ id: 'role-id', name: RoleName.USER });
-      mockQueryRunner.manager.create.mockReturnValue({ id: 'new-user-id', email: 'new@example.com' });
+      mockQueryRunner.manager.create.mockReturnValue({
+        id: 'new-user-id',
+        email: 'new@example.com',
+      });
       mockQueryRunner.manager.save.mockResolvedValue({ id: 'new-user-id' });
 
-      const result = await service.register({ email: 'new@example.com', password: 'SecureP@ssw0rd!' });
+      const result = await service.register({
+        email: 'new@example.com',
+        password: 'SecureP@ssw0rd!',
+      });
       expect(result).toHaveProperty('accessToken');
       expect(result).toHaveProperty('refreshToken');
       expect(mockAuditService.log).toHaveBeenCalledTimes(1);
@@ -129,24 +146,33 @@ describe('AuthService', () => {
     // ── Sprint 27: phone registration ──────────────────────────────────────────
 
     it('should throw BadRequestException if neither email nor phone is provided', async () => {
-      await expect(
-        service.register({ password: 'SecureP@ssw0rd!' }),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.register({ password: 'SecureP@ssw0rd!' })).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('should register a user with phone only (no email)', async () => {
       mockUserRepo.findOne.mockResolvedValueOnce(null); // no duplicate phone
       mockRoleRepo.findOne.mockResolvedValueOnce({ id: 'role-id', name: RoleName.USER });
-      mockQueryRunner.manager.create.mockReturnValue({ id: 'phone-user-id', phone: '+233241234567' });
+      mockQueryRunner.manager.create.mockReturnValue({
+        id: 'phone-user-id',
+        phone: '+233241234567',
+      });
       mockQueryRunner.manager.save.mockResolvedValue({ id: 'phone-user-id' });
 
-      const result = await service.register({ phone: '+233241234567', password: 'SecureP@ssw0rd!' });
+      const result = await service.register({
+        phone: '+233241234567',
+        password: 'SecureP@ssw0rd!',
+      });
       expect(result).toHaveProperty('accessToken');
       expect(result).toHaveProperty('refreshToken');
     });
 
     it('should throw ConflictException if phone already exists', async () => {
-      mockUserRepo.findOne.mockResolvedValueOnce({ id: 'existing-phone-user', phone: '+233241234567' });
+      mockUserRepo.findOne.mockResolvedValueOnce({
+        id: 'existing-phone-user',
+        phone: '+233241234567',
+      });
       await expect(
         service.register({ phone: '+233241234567', password: 'SecureP@ssw0rd!' }),
       ).rejects.toThrow(ConflictException);
@@ -236,9 +262,7 @@ describe('AuthService', () => {
         throw new Error('invalid token');
       });
 
-      await expect(
-        service.refreshTokens('invalid-token'),
-      ).rejects.toThrow(UnauthorizedException);
+      await expect(service.refreshTokens('invalid-token')).rejects.toThrow(UnauthorizedException);
     });
 
     it('should throw UnauthorizedException if user is not found', async () => {
@@ -246,9 +270,7 @@ describe('AuthService', () => {
       mockJwtService.verify.mockReturnValueOnce(mockPayload);
       mockUserRepo.findOne.mockResolvedValueOnce(null);
 
-      await expect(
-        service.refreshTokens('some-token'),
-      ).rejects.toThrow(UnauthorizedException);
+      await expect(service.refreshTokens('some-token')).rejects.toThrow(UnauthorizedException);
     });
 
     it('should throw UnauthorizedException if user status is SUSPENDED', async () => {
@@ -260,9 +282,7 @@ describe('AuthService', () => {
         userRoles: [],
       });
 
-      await expect(
-        service.refreshTokens('some-token'),
-      ).rejects.toThrow(UnauthorizedException);
+      await expect(service.refreshTokens('some-token')).rejects.toThrow(UnauthorizedException);
     });
 
     it('should throw UnauthorizedException if user status is CLOSED', async () => {
@@ -274,9 +294,7 @@ describe('AuthService', () => {
         userRoles: [],
       });
 
-      await expect(
-        service.refreshTokens('some-token'),
-      ).rejects.toThrow(UnauthorizedException);
+      await expect(service.refreshTokens('some-token')).rejects.toThrow(UnauthorizedException);
     });
 
     // ── Hotfix: refresh works for phone-only users (email is null) ──────────
@@ -365,9 +383,7 @@ describe('AuthService', () => {
         throw err;
       });
 
-      await expect(
-        service.refreshTokens('expired-token'),
-      ).rejects.toThrow(UnauthorizedException);
+      await expect(service.refreshTokens('expired-token')).rejects.toThrow(UnauthorizedException);
     });
 
     // ── Hotfix: refresh does not expose sensitive fields ────────────────────
@@ -459,10 +475,7 @@ describe('AuthService', () => {
       };
       mockUserRepo.findOne.mockResolvedValueOnce(mockUser);
 
-      const dto = await service.getAuthUserDto('admin-123', [
-        RoleName.ADMIN,
-        RoleName.SUPER_ADMIN,
-      ]);
+      const dto = await service.getAuthUserDto('admin-123', [RoleName.ADMIN, RoleName.SUPER_ADMIN]);
 
       expect(dto.roles).toContain(RoleName.ADMIN);
       expect(dto.roles).toContain(RoleName.SUPER_ADMIN);
@@ -507,9 +520,9 @@ describe('AuthService', () => {
 
     it('should throw UnauthorizedException if user is not found', async () => {
       mockUserRepo.findOne.mockResolvedValueOnce(null);
-      await expect(
-        service.getAuthUserDto('nonexistent-id', [RoleName.USER]),
-      ).rejects.toThrow(UnauthorizedException);
+      await expect(service.getAuthUserDto('nonexistent-id', [RoleName.USER])).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
 
     it('should handle null profile gracefully (firstName/lastName = null)', async () => {

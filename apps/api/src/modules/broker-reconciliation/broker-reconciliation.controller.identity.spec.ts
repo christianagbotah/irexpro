@@ -36,7 +36,9 @@ describe('BrokerReconciliationController (Hotfix — UUID identity contract)', (
       getRuns: jest.fn().mockResolvedValue({ runs: [], total: 0 }),
       getReconciledTrades: jest.fn().mockResolvedValue({ trades: [], total: 0 }),
     };
-    controller = new BrokerReconciliationController(svc as unknown as BrokerTradeReconciliationService);
+    controller = new BrokerReconciliationController(
+      svc as unknown as BrokerTradeReconciliationService,
+    );
   });
 
   it('runReconciliation passes admin UUID string', async () => {

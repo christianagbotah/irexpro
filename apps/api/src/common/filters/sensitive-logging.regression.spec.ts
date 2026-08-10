@@ -1,4 +1,3 @@
-import { AllExceptionsFilter } from './all-exceptions.filter';
 import { redactSensitive, sanitizeDatabaseError } from '../utils/redact-sensitive.util';
 
 /**

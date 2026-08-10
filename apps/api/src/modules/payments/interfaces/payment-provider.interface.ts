@@ -43,14 +43,19 @@ export interface IPaymentProvider {
    * Returns a checkout URL or reference the frontend can use to redirect/display.
    * NEVER returns or stores raw card data.
    */
-  createCheckoutSession(request: CreateCheckoutSessionRequest): Promise<CreateCheckoutSessionResult>;
+  createCheckoutSession(
+    request: CreateCheckoutSessionRequest,
+  ): Promise<CreateCheckoutSessionResult>;
 
   /**
    * Verify the signature on an incoming webhook.
    * Must be called BEFORE processing ANY webhook payload.
    * Must fail closed — any error or missing secret should return false.
    */
-  verifyWebhookSignature(rawBody: Buffer, headers: Record<string, string | string[] | undefined>): boolean;
+  verifyWebhookSignature(
+    rawBody: Buffer,
+    headers: Record<string, string | string[] | undefined>,
+  ): boolean;
 
   /**
    * Parse a verified webhook payload into a normalised event.

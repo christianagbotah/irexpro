@@ -34,7 +34,11 @@ describe('AiSignalService', () => {
     jest.clearAllMocks();
 
     orchestrator = {
-      processSignal: jest.fn().mockResolvedValue({ outcome: 'EXECUTION_SUCCEEDED', signalId: 'sig-001', tradeId: 'trade-1' }),
+      processSignal: jest.fn().mockResolvedValue({
+        outcome: 'EXECUTION_SUCCEEDED',
+        signalId: 'sig-001',
+        tradeId: 'trade-1',
+      }),
     };
 
     auditService = {
@@ -78,25 +82,33 @@ describe('AiSignalService', () => {
     });
 
     it('returns error for invalid instrument', () => {
-      expect(service.validateCandidate(validCandidate({ instrument: 'X' }))).toBe('Invalid instrument');
+      expect(service.validateCandidate(validCandidate({ instrument: 'X' }))).toBe(
+        'Invalid instrument',
+      );
     });
 
     it('returns error for invalid direction', () => {
-      expect(
-        service.validateCandidate(validCandidate({ direction: 'HOLD' as 'BUY' })),
-      ).toBe('Invalid direction');
+      expect(service.validateCandidate(validCandidate({ direction: 'HOLD' as 'BUY' }))).toBe(
+        'Invalid direction',
+      );
     });
 
     it('returns error for out-of-range confidence score', () => {
-      expect(service.validateCandidate(validCandidate({ confidenceScore: 1.5 }))).toContain('confidenceScore');
+      expect(service.validateCandidate(validCandidate({ confidenceScore: 1.5 }))).toContain(
+        'confidenceScore',
+      );
     });
 
     it('returns error for missing stopLoss', () => {
-      expect(service.validateCandidate(validCandidate({ suggestedStopLoss: 0 }))).toBe('Invalid suggestedStopLoss');
+      expect(service.validateCandidate(validCandidate({ suggestedStopLoss: 0 }))).toBe(
+        'Invalid suggestedStopLoss',
+      );
     });
 
     it('returns error for missing strategyCode', () => {
-      expect(service.validateCandidate(validCandidate({ strategyCode: '' }))).toBe('Missing strategyCode');
+      expect(service.validateCandidate(validCandidate({ strategyCode: '' }))).toBe(
+        'Missing strategyCode',
+      );
     });
   });
 
@@ -143,8 +155,14 @@ describe('AiSignalService', () => {
 
   describe('buildSimulatedCandidate()', () => {
     it('assigns a new signalId (UUID)', () => {
-      const c1 = service.buildSimulatedCandidate('user-1', { instrument: 'EURUSD', direction: 'BUY' } as AiSignalCandidate);
-      const c2 = service.buildSimulatedCandidate('user-1', { instrument: 'EURUSD', direction: 'BUY' } as AiSignalCandidate);
+      const c1 = service.buildSimulatedCandidate('user-1', {
+        instrument: 'EURUSD',
+        direction: 'BUY',
+      } as AiSignalCandidate);
+      const c2 = service.buildSimulatedCandidate('user-1', {
+        instrument: 'EURUSD',
+        direction: 'BUY',
+      } as AiSignalCandidate);
       expect(c1.signalId).toBeTruthy();
       expect(c1.signalId).not.toBe(c2.signalId);
     });

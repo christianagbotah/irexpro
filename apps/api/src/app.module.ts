@@ -64,9 +64,7 @@ import { PerformanceBillingModule } from './modules/performance-billing/performa
         database: configService.get<string>('database.name'),
         username: configService.get<string>('database.user'),
         password: configService.get<string>('database.password'),
-        ssl: configService.get<boolean>('database.ssl')
-          ? { rejectUnauthorized: false }
-          : false,
+        ssl: configService.get<boolean>('database.ssl') ? { rejectUnauthorized: false } : false,
         synchronize: false,
         logging: configService.get<boolean>('database.logging'),
         autoLoadEntities: true,

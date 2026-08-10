@@ -15,7 +15,7 @@ jest.mock('metaapi.cloud-sdk', () => ({
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
-import { Logger, ServiceUnavailableException } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import { MetaTraderAdapter } from './metatrader.adapter';
 import { MetaApiClientService } from '../services/metaapi-client.service';
 import { BrokerMode } from '../interfaces/broker-adapter.interface';
@@ -33,9 +33,9 @@ const mockConnection = {
     type: 'ACCOUNT_TRADE_MODE_DEMO',
     currency: 'USD',
     leverage: 100,
-    balance: 10000.50,
+    balance: 10000.5,
     equity: 10050.25,
-    margin: 200.00,
+    margin: 200.0,
     freeMargin: 9850.25,
     marginLevel: 5025.12,
   }),
@@ -45,11 +45,11 @@ const mockConnection = {
       symbol: 'EURUSD',
       type: 'POSITION_TYPE_BUY',
       volume: 0.1,
-      openPrice: 1.08500,
-      currentPrice: 1.08650,
-      stopLoss: 1.08000,
-      takeProfit: 1.09000,
-      profit: 15.00,
+      openPrice: 1.085,
+      currentPrice: 1.0865,
+      stopLoss: 1.08,
+      takeProfit: 1.09,
+      profit: 15.0,
       time: new Date('2026-01-01T10:00:00Z'),
       commission: -0.5,
       swap: 0.0,
@@ -60,8 +60,8 @@ const mockConnection = {
   subscribeToMarketData: jest.fn().mockResolvedValue(undefined),
   unsubscribeFromMarketData: jest.fn().mockResolvedValue(undefined),
   getSymbolPrice: jest.fn().mockResolvedValue({
-    bid: 1.08640,
-    ask: 1.08650,
+    bid: 1.0864,
+    ask: 1.0865,
     time: new Date(),
   }),
   createMarketBuyOrder: jest.fn().mockResolvedValue({
@@ -97,7 +97,7 @@ const mockConnection = {
       type: 'DEAL_TYPE_SELL',
       symbol: 'EURUSD',
       volume: 0.1,
-      price: 1.09000,
+      price: 1.09,
       profit: 50.0,
       time: new Date('2026-01-02T15:00:00Z'),
       commission: -0.5,
@@ -114,18 +114,44 @@ const mockAccount = {
   waitDeployed: jest.fn(),
   getRPCConnection: jest.fn().mockReturnValue(mockConnection),
   getHistoricalCandles: jest.fn().mockResolvedValue([
-    { time: new Date('2026-01-01'), open: 1.08, high: 1.09, low: 1.07, close: 1.085, tickVolume: 5000 },
-    { time: new Date('2026-01-02'), open: 1.085, high: 1.095, low: 1.083, close: 1.09, tickVolume: 4800 },
+    {
+      time: new Date('2026-01-01'),
+      open: 1.08,
+      high: 1.09,
+      low: 1.07,
+      close: 1.085,
+      tickVolume: 5000,
+    },
+    {
+      time: new Date('2026-01-02'),
+      open: 1.085,
+      high: 1.095,
+      low: 1.083,
+      close: 1.09,
+      tickVolume: 4800,
+    },
   ]),
 };
 
 const mockMetaApiClientService = () => ({
   isAvailable: jest.fn().mockReturnValue(true),
   getOrCreateConnection: jest.fn().mockResolvedValue(mockConnection),
-  testAccountAccess: jest.fn().mockResolvedValue({ success: true, accountType: 'DEMO', currency: 'USD' }),
+  testAccountAccess: jest
+    .fn()
+    .mockResolvedValue({ success: true, accountType: 'DEMO', currency: 'USD' }),
   removeConnection: jest.fn().mockResolvedValue(undefined),
   hasConnection: jest.fn().mockReturnValue(true),
-  connectionPool: new Map([['acc-uuid-123', { account: mockAccount, connection: mockConnection, connectedAt: new Date(), accountId: 'acc-uuid-123' }]]),
+  connectionPool: new Map([
+    [
+      'acc-uuid-123',
+      {
+        account: mockAccount,
+        connection: mockConnection,
+        connectedAt: new Date(),
+        accountId: 'acc-uuid-123',
+      },
+    ],
+  ]),
 });
 
 // ─── Tests ────────────────────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
 import { BrokerAdapterRegistry } from './broker-adapter.registry';
-import { IBrokerAdapter, BrokerMode } from '../interfaces/broker-adapter.interface';
+import { IBrokerAdapter } from '../interfaces/broker-adapter.interface';
 
 const makeAdapter = (brokerId: string, brokerName: string): IBrokerAdapter => ({
   brokerId,

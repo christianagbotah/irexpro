@@ -214,9 +214,7 @@ export class TradingService {
     void this.aiEngineClient
       .notifySessionStopped({ tradingSessionId: sessionId })
       .catch((err: Error) =>
-        this.logger.warn(
-          `AI engine stop notification failed session=${sessionId}: ${err.message}`,
-        ),
+        this.logger.warn(`AI engine stop notification failed session=${sessionId}: ${err.message}`),
       );
   }
 
@@ -236,10 +234,7 @@ export class TradingService {
    * Resolve the broker connection. If a specific ID is requested, load it and
    * verify ownership + CONNECTED status. Otherwise find the active connection.
    */
-  private async resolveConnection(
-    userId: string,
-    requestedId?: string,
-  ): Promise<BrokerConnection> {
+  private async resolveConnection(userId: string, requestedId?: string): Promise<BrokerConnection> {
     if (requestedId) {
       const conn = await this.brokerService.findConnectionById(requestedId, userId);
       if (!conn) {

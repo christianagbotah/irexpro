@@ -8,12 +8,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiResponse,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
 import { Public } from '../../common/decorators/public.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -73,10 +68,7 @@ export class PaymentsController {
   })
   @ApiResponse({ status: 200, description: 'Webhook accepted' })
   @ApiResponse({ status: 400, description: 'Invalid signature or provider' })
-  async handleWebhook(
-    @Param('provider') provider: string,
-    @Req() req: RawBodyRequest<Request>,
-  ) {
+  async handleWebhook(@Param('provider') provider: string, @Req() req: RawBodyRequest<Request>) {
     const rawBody = req.rawBody ?? Buffer.from('');
     const headers: Record<string, string | string[] | undefined> = {};
     for (const [key, value] of Object.entries(req.headers)) {

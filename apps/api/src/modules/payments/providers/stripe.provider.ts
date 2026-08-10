@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import { BasePaymentProvider } from './base-provider';
@@ -87,8 +92,35 @@ export class StripePaymentProvider extends BasePaymentProvider {
 
   readonly providerId = 'stripe';
   readonly displayName = 'Stripe';
-  readonly supportedCountries = ['GB', 'US', 'CA', 'AU', 'SG', 'AE', 'DE', 'FR', 'NL', 'IE', 'NG', 'KE', 'GH', 'ZA'];
-  readonly supportedCurrencies = ['GBP', 'USD', 'EUR', 'AUD', 'CAD', 'SGD', 'AED', 'NGN', 'KES', 'GHS', 'ZAR'];
+  readonly supportedCountries = [
+    'GB',
+    'US',
+    'CA',
+    'AU',
+    'SG',
+    'AE',
+    'DE',
+    'FR',
+    'NL',
+    'IE',
+    'NG',
+    'KE',
+    'GH',
+    'ZA',
+  ];
+  readonly supportedCurrencies = [
+    'GBP',
+    'USD',
+    'EUR',
+    'AUD',
+    'CAD',
+    'SGD',
+    'AED',
+    'NGN',
+    'KES',
+    'GHS',
+    'ZAR',
+  ];
   readonly supportedPaymentMethods = ['card'];
   /** True only when explicitly enabled AND a secret key is configured. */
   readonly isLive: boolean;
@@ -276,7 +308,10 @@ export class StripePaymentProvider extends BasePaymentProvider {
 
       return signatures.some((sig) => {
         const providedBuf = Buffer.from(sig, 'utf8');
-        return providedBuf.length === expectedBuf.length && crypto.timingSafeEqual(providedBuf, expectedBuf);
+        return (
+          providedBuf.length === expectedBuf.length &&
+          crypto.timingSafeEqual(providedBuf, expectedBuf)
+        );
       });
     } catch {
       // Any parsing/crypto error must fail closed, never throw.
@@ -336,7 +371,8 @@ export class StripePaymentProvider extends BasePaymentProvider {
       case 'checkout.session.completed':
       case 'checkout.session.async_payment_succeeded': {
         const session = dataObject as StripeCheckoutSessionResponse;
-        const paid = session.payment_status === 'paid' || session.payment_status === 'no_payment_required';
+        const paid =
+          session.payment_status === 'paid' || session.payment_status === 'no_payment_required';
         return {
           eventType: paid ? PaymentEventType.PAYMENT_SUCCEEDED : PaymentEventType.UNKNOWN,
           providerEventId,
@@ -430,7 +466,8 @@ export class StripePaymentProvider extends BasePaymentProvider {
       return {
         providerReference,
         status: 'FAILED',
-        failureMessage: this.safeMessage(result.errorMessage) ?? 'Unable to verify transaction status',
+        failureMessage:
+          this.safeMessage(result.errorMessage) ?? 'Unable to verify transaction status',
       };
     }
 
@@ -456,7 +493,8 @@ export class StripePaymentProvider extends BasePaymentProvider {
       return {
         providerReference,
         status: 'FAILED',
-        failureMessage: this.safeMessage(result.errorMessage) ?? 'Unable to verify transaction status',
+        failureMessage:
+          this.safeMessage(result.errorMessage) ?? 'Unable to verify transaction status',
       };
     }
 
@@ -478,13 +516,18 @@ export class StripePaymentProvider extends BasePaymentProvider {
     paymentStatus: string | undefined,
   ): PaymentProviderTransactionStatus['status'] {
     if (status === 'expired') return 'CANCELLED';
-    if (status === 'complete' && (paymentStatus === 'paid' || paymentStatus === 'no_payment_required')) {
+    if (
+      status === 'complete' &&
+      (paymentStatus === 'paid' || paymentStatus === 'no_payment_required')
+    ) {
       return 'SUCCEEDED';
     }
     return 'PENDING';
   }
 
-  private mapPaymentIntentStatus(status: string | undefined): PaymentProviderTransactionStatus['status'] {
+  private mapPaymentIntentStatus(
+    status: string | undefined,
+  ): PaymentProviderTransactionStatus['status'] {
     switch (status) {
       case 'succeeded':
         return 'SUCCEEDED';

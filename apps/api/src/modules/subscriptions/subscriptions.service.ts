@@ -12,7 +12,11 @@ import { SubscriptionPlan } from './entities/subscription-plan.entity';
 import { PlanPricing } from './entities/plan-pricing.entity';
 import { UserSubscription, SubscriptionStatus } from './entities/user-subscription.entity';
 import { Invoice, InvoiceStatus } from '../payments/entities/invoice.entity';
-import { PaymentTransaction, PaymentPurpose, PaymentTransactionStatus } from '../payments/entities/payment-transaction.entity';
+import {
+  PaymentTransaction,
+  PaymentPurpose,
+  PaymentTransactionStatus,
+} from '../payments/entities/payment-transaction.entity';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../../common/enums/audit-action.enum';
 import { AuditSeverity } from '../audit/entities/audit-log.entity';
@@ -179,7 +183,14 @@ export class SubscriptionsService {
    * - Only verified webhooks activate subscription — checkout never does.
    */
   async initiateCheckout(request: CheckoutRequest): Promise<CheckoutResult> {
-    const { userId, email, planId, provider: preferredProvider, ipAddress, idempotencyKey } = request;
+    const {
+      userId,
+      email,
+      planId,
+      provider: preferredProvider,
+      ipAddress,
+      idempotencyKey,
+    } = request;
     const currency = request.currency.toUpperCase();
     const countryCode = request.countryCode.toUpperCase();
 
@@ -236,7 +247,13 @@ export class SubscriptionsService {
     }
 
     // 5. Look for a reusable pending checkout for this exact identity
-    let lookup = await this.findReusableCheckout(userId, planId, currency, countryCode, paymentPurpose);
+    let lookup = await this.findReusableCheckout(
+      userId,
+      planId,
+      currency,
+      countryCode,
+      paymentPurpose,
+    );
 
     if (lookup.kind === 'blocked') {
       throw new ConflictException(lookup.reason);
@@ -368,7 +385,12 @@ export class SubscriptionsService {
     if (!claim.affected) {
       const current = await this.transactionRepo.findOne({ where: { id: transaction.id } });
       if (current && this.hasActiveProviderSession(current)) {
-        return this.toCheckoutResult(invoice, current, true, CheckoutReason.PROVIDER_SESSION_REUSED);
+        return this.toCheckoutResult(
+          invoice,
+          current,
+          true,
+          CheckoutReason.PROVIDER_SESSION_REUSED,
+        );
       }
       throw new ConflictException(
         'A checkout session is already being created for this plan — please retry shortly',
@@ -423,8 +445,14 @@ export class SubscriptionsService {
     // Update transaction with provider reference; include planId so webhook handler can load billing interval
     try {
       await this.transactionRepo.update(transaction.id, {
-        providerTransactionReference: sessionResult.providerTransactionReference ?? sessionResult.sessionId,
-        providerPayloadSummary: { sessionId: sessionResult.sessionId, checkoutUrl: sessionResult.checkoutUrl, provider: provider.providerId, planId },
+        providerTransactionReference:
+          sessionResult.providerTransactionReference ?? sessionResult.sessionId,
+        providerPayloadSummary: {
+          sessionId: sessionResult.sessionId,
+          checkoutUrl: sessionResult.checkoutUrl,
+          provider: provider.providerId,
+          planId,
+        },
       });
     } catch (err) {
       if (!this.isUniqueViolation(err)) throw err;
@@ -467,7 +495,9 @@ export class SubscriptionsService {
     await this.auditService.log({
       actorUserId: userId,
       actorType: 'USER',
-      action: isNewPair ? AuditAction.PAYMENT_CHECKOUT_INITIATED : AuditAction.PAYMENT_CHECKOUT_REUSED,
+      action: isNewPair
+        ? AuditAction.PAYMENT_CHECKOUT_INITIATED
+        : AuditAction.PAYMENT_CHECKOUT_REUSED,
       resourceType: 'PaymentTransaction',
       resourceId: transaction.id,
       ipAddress,
@@ -493,7 +523,8 @@ export class SubscriptionsService {
       invoiceId: invoice.id,
       transactionId: transaction.id,
       provider: provider.providerId,
-      providerTransactionReference: sessionResult.providerTransactionReference ?? sessionResult.sessionId,
+      providerTransactionReference:
+        sessionResult.providerTransactionReference ?? sessionResult.sessionId,
       checkoutUrl: sessionResult.checkoutUrl,
       sessionId: sessionResult.sessionId,
       requiresRedirect: !!sessionResult.checkoutUrl,
@@ -507,7 +538,11 @@ export class SubscriptionsService {
    * Cancel a user's subscription.
    * Updates local subscription record and attempts to notify provider.
    */
-  async cancelSubscription(userId: string, reason?: string, ipAddress?: string): Promise<UserSubscription> {
+  async cancelSubscription(
+    userId: string,
+    reason?: string,
+    ipAddress?: string,
+  ): Promise<UserSubscription> {
     const subscription = await this.subscriptionRepo.findOne({
       where: { userId },
       order: { createdAt: 'DESC' },
@@ -785,7 +820,9 @@ export class SubscriptionsService {
         supersededReason: 'Previous payment attempt failed/cancelled — replaced by a new checkout',
       },
     });
-    this.logger.log(`[Checkout] Superseded stale invoice ${invoice.id} (previous attempt did not complete)`);
+    this.logger.log(
+      `[Checkout] Superseded stale invoice ${invoice.id} (previous attempt did not complete)`,
+    );
     void ipAddress; // reserved for future audit-trail linkage
   }
 
@@ -862,7 +899,13 @@ export class SubscriptionsService {
         this.logger.log(
           `[Checkout] Lost duplicate-invoice race for user ${userId}/plan ${planId} — reusing winner`,
         );
-        const winner = await this.findReusableCheckout(userId, planId, currency, countryCode, paymentPurpose);
+        const winner = await this.findReusableCheckout(
+          userId,
+          planId,
+          currency,
+          countryCode,
+          paymentPurpose,
+        );
         if (winner.kind === 'reuse') {
           return { invoice: winner.invoice, transaction: winner.transaction, isNewPair: false };
         }
@@ -1005,7 +1048,12 @@ export class SubscriptionsService {
       severity: AuditSeverity.INFO,
     });
 
-    return this.toCheckoutResult(existing, transaction, true, CheckoutReason.IDEMPOTENCY_KEY_REPLAY);
+    return this.toCheckoutResult(
+      existing,
+      transaction,
+      true,
+      CheckoutReason.IDEMPOTENCY_KEY_REPLAY,
+    );
   }
 
   private toCheckoutResult(
@@ -1030,7 +1078,9 @@ export class SubscriptionsService {
   }
 
   private isUniqueViolation(err: unknown): boolean {
-    return err instanceof QueryFailedError && (err as unknown as { code?: string }).code === '23505';
+    return (
+      err instanceof QueryFailedError && (err as unknown as { code?: string }).code === '23505'
+    );
   }
 
   /** SHA-256 hash of the client-supplied idempotency key. The raw key is never persisted. */
