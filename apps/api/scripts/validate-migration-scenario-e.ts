@@ -174,7 +174,7 @@ async function main(): Promise<void> {
 
   console.log(`  ${allFiles.length} total migration files (${originalFiles.length} original + ${newFiles.length} new)`);
   assert(originalFiles.length === 16, `expected 16 original migrations, found ${originalFiles.length}`);
-  assert(newFiles.length === 2, `expected 2 new migrations, found ${newFiles.length}`);
+  assert(newFiles.length === 3, `expected 3 new migrations (Sprint 29 + Sprint 30), found ${newFiles.length}`);
 
   // ─── Stage 1: Apply original 16 migrations via real TypeORM ────────────
   console.log('\n=== Stage 1: Apply original 16 migrations via TypeORM runMigrations() ===');
@@ -360,7 +360,7 @@ async function main(): Promise<void> {
   await verifyClient.connect();
   try {
     const migrationCountAfter = await verifyClient.query(`SELECT COUNT(*) AS count FROM migrations`);
-    assert(parseInt(migrationCountAfter.rows[0].count, 10) === 18, `TypeORM migrations table has 18 entries (got ${migrationCountAfter.rows[0].count})`);
+    assert(parseInt(migrationCountAfter.rows[0].count, 10) === 19, `TypeORM migrations table has 19 entries (got ${migrationCountAfter.rows[0].count})`);
   } finally {
     await verifyClient.end();
   }
