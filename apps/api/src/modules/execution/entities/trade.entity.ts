@@ -67,13 +67,13 @@ export class Trade {
    * Checked before every order submission to prevent duplicate trades.
    * Unique constraint enforced at DB level.
    */
-  @Column({ name: 'idempotency_key', type: 'varchar', length: 64, unique: true })
+  @Column({ name: 'idempotency_key', type: 'varchar', length: 255, unique: true })
   @Index({ unique: true })
   idempotencyKey: string;
 
   // ─── Order parameters (Risk Engine-validated values) ─────────────────────
 
-  @Column({ name: 'instrument', type: 'varchar', length: 20 })
+  @Column({ name: 'instrument', type: 'varchar', length: 50 })
   @Index()
   instrument: string;
 
@@ -85,17 +85,17 @@ export class Trade {
   lotSize: string;
 
   /** Requested entry price from the signal. Decimal string. */
-  @Column({ name: 'requested_entry_price', type: 'numeric', precision: 15, scale: 5 })
+  @Column({ name: 'requested_entry_price', type: 'numeric', precision: 18, scale: 8 })
   requestedEntryPrice: string;
 
   /** Actual fill price from broker. Null until broker confirms. Decimal string. */
-  @Column({ name: 'fill_price', type: 'numeric', precision: 15, scale: 5, nullable: true })
+  @Column({ name: 'fill_price', type: 'numeric', precision: 18, scale: 8, nullable: true })
   fillPrice: string | null;
 
-  @Column({ name: 'stop_loss', type: 'numeric', precision: 15, scale: 5 })
+  @Column({ name: 'stop_loss', type: 'numeric', precision: 18, scale: 8 })
   stopLoss: string;
 
-  @Column({ name: 'take_profit', type: 'numeric', precision: 15, scale: 5 })
+  @Column({ name: 'take_profit', type: 'numeric', precision: 18, scale: 8 })
   takeProfit: string;
 
   @Column({ name: 'trailing_stop_pips', type: 'numeric', precision: 8, scale: 2, nullable: true })
@@ -104,7 +104,7 @@ export class Trade {
   // ─── Broker-side identifiers ──────────────────────────────────────────────
 
   /** Order/position ID returned by the broker (MetaAPI positionId). */
-  @Column({ name: 'external_order_id', type: 'varchar', length: 100, nullable: true })
+  @Column({ name: 'external_order_id', type: 'varchar', length: 255, nullable: true })
   externalOrderId: string | null;
 
   // ─── Lifecycle state ──────────────────────────────────────────────────────
@@ -115,7 +115,7 @@ export class Trade {
 
   // ─── Closure data (populated on CLOSED) ──────────────────────────────────
 
-  @Column({ name: 'exit_price', type: 'numeric', precision: 15, scale: 5, nullable: true })
+  @Column({ name: 'exit_price', type: 'numeric', precision: 18, scale: 8, nullable: true })
   exitPrice: string | null;
 
   /**
@@ -123,7 +123,7 @@ export class Trade {
    * Positive = profit, Negative = loss.
    * Critical for daily loss limit checks in the Risk Engine.
    */
-  @Column({ name: 'realised_pnl', type: 'numeric', precision: 15, scale: 2, nullable: true })
+  @Column({ name: 'realised_pnl', type: 'numeric', precision: 18, scale: 8, nullable: true })
   realisedPnl: string | null;
 
   @Column({

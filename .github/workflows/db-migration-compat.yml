@@ -7,6 +7,7 @@ on:
       - 'apps/api/src/database/migrations/**'
       - 'apps/api/scripts/validate-uuid-bridge.ts'
       - 'apps/api/scripts/validate-migration-scenario-d.ts'
+      - 'apps/api/scripts/validate-migration-scenario-e.ts'
       - '.github/workflows/db-migration-compat.yml'
 
 permissions:
@@ -82,5 +83,69 @@ jobs:
         with:
           name: db-migration-scenario-d-log
           path: apps/api/scenario-d-output.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  existing-db-upgrade:
+    name: Existing PostgreSQL 16 Upgrade (Scenario E)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      PG_HOST: localhost
+      PG_PORT: '5432'
+      PG_USER: postgres
+      PG_PASSWORD: ci_disposable_password
+      PG_DB: irexpro_scenario_e
+
+    services:
+      postgres:
+        image: postgres:16-bookworm
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci_disposable_password
+          POSTGRES_DB: irexpro_scenario_e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d irexpro_scenario_e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4.4.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Scenario E validation (existing DB upgrade + FK enforcement)
+        working-directory: apps/api
+        run: pnpm exec ts-node scripts/validate-migration-scenario-e.ts
+        env:
+          DB_HOST: ${{ env.PG_HOST }}
+          DB_PORT: ${{ env.PG_PORT }}
+          DB_USER: ${{ env.PG_USER }}
+          DB_PASSWORD: ${{ env.PG_PASSWORD }}
+          DB_NAME: ${{ env.PG_DB }}
+
+      - name: Upload validation log on failure
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: db-migration-scenario-e-log
+          path: apps/api/scenario-e-output.log
           if-no-files-found: ignore
           retention-days: 7
