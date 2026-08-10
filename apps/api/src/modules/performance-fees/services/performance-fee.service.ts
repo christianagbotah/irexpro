@@ -9,11 +9,24 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Between, FindOptionsWhere, In, IsNull, Repository } from 'typeorm';
 import { PerformanceFeePolicy } from '../entities/performance-fee-policy.entity';
 import { TradingAccountPerformance } from '../entities/trading-account-performance.entity';
-import { PerformanceFeeAssessment, AssessmentStatus } from '../entities/performance-fee-assessment.entity';
-import { PerformanceFeeLedgerEntry, LedgerEntryType } from '../entities/performance-fee-ledger-entry.entity';
+import {
+  PerformanceFeeAssessment,
+  AssessmentStatus,
+} from '../entities/performance-fee-assessment.entity';
+import {
+  PerformanceFeeLedgerEntry,
+  LedgerEntryType,
+} from '../entities/performance-fee-ledger-entry.entity';
 import { Invoice, InvoiceStatus } from '../../payments/entities/invoice.entity';
-import { PaymentTransaction, PaymentPurpose, PaymentTransactionStatus } from '../../payments/entities/payment-transaction.entity';
-import { UserSubscription, SubscriptionStatus } from '../../subscriptions/entities/user-subscription.entity';
+import {
+  PaymentTransaction,
+  PaymentPurpose,
+  PaymentTransactionStatus,
+} from '../../payments/entities/payment-transaction.entity';
+import {
+  UserSubscription,
+  SubscriptionStatus,
+} from '../../subscriptions/entities/user-subscription.entity';
 import { AuditService } from '../../audit/audit.service';
 import { AuditAction } from '../../../common/enums/audit-action.enum';
 import { AuditSeverity } from '../../audit/entities/audit-log.entity';
@@ -87,7 +100,11 @@ export class PerformanceFeeService {
     return this.policyRepo.find({ where: { isActive: true }, order: { createdAt: 'ASC' } });
   }
 
-  async createPolicy(dto: CreatePolicyDto, adminId: string, ipAddress?: string): Promise<PerformanceFeePolicy> {
+  async createPolicy(
+    dto: CreatePolicyDto,
+    adminId: string,
+    ipAddress?: string,
+  ): Promise<PerformanceFeePolicy> {
     const policy = this.policyRepo.create({
       planId: dto.planId ?? null,
       name: dto.name,
@@ -103,7 +120,12 @@ export class PerformanceFeeService {
       resourceType: 'PerformanceFeePolicy',
       resourceId: saved.id,
       ipAddress,
-      metadata: { name: dto.name, feePercent: dto.feePercent, billingFrequency: dto.billingFrequency, planId: dto.planId ?? null },
+      metadata: {
+        name: dto.name,
+        feePercent: dto.feePercent,
+        billingFrequency: dto.billingFrequency,
+        planId: dto.planId ?? null,
+      },
       severity: AuditSeverity.INFO,
     });
 
@@ -168,20 +190,31 @@ export class PerformanceFeeService {
     });
 
     if (!subscription) {
-      throw new BadRequestException('User has no active subscription — cannot assess performance fee');
+      throw new BadRequestException(
+        'User has no active subscription — cannot assess performance fee',
+      );
     }
 
     // 2. Find applicable policy
     const policy = await this.findApplicablePolicy(subscription.subscriptionPlanId);
     if (!policy) {
-      throw new BadRequestException('No active performance fee policy found for user subscription plan');
+      throw new BadRequestException(
+        'No active performance fee policy found for user subscription plan',
+      );
     }
 
     // 3. Check for duplicate assessment (same user/broker/period)
-    const existing = await this.findExistingAssessment(userId, brokerConnectionId, periodStart, periodEnd);
+    const existing = await this.findExistingAssessment(
+      userId,
+      brokerConnectionId,
+      periodStart,
+      periodEnd,
+    );
     if (existing) {
       if (existing.status === AssessmentStatus.DRAFT) {
-        this.logger.log(`[PerfFee] Returning existing DRAFT assessment ${existing.id} for user ${userId}`);
+        this.logger.log(
+          `[PerfFee] Returning existing DRAFT assessment ${existing.id} for user ${userId}`,
+        );
         return existing;
       }
       throw new ConflictException(
@@ -248,9 +281,10 @@ export class PerformanceFeeService {
     const realisedProfitForFee = profitAboveHWM > 0n ? profitAboveHWM : 0n;
 
     // 9. Compute fee
-    const feeAmount = realisedProfitForFee > 0n
-      ? computeFeeAmount(realisedProfitForFee.toString(), policy.feePercent)
-      : '0';
+    const feeAmount =
+      realisedProfitForFee > 0n
+        ? computeFeeAmount(realisedProfitForFee.toString(), policy.feePercent)
+        : '0';
 
     // 10. Create assessment (starts as DRAFT, promoted to ASSESSED if feeAmount > 0)
     const status = BigInt(feeAmount) > 0n ? AssessmentStatus.ASSESSED : AssessmentStatus.DRAFT;
@@ -333,7 +367,11 @@ export class PerformanceFeeService {
    * - Does NOT mark paid — payment happens via verified webhook flow.
    * - Does NOT auto-withdraw from broker account.
    */
-  async invoiceAssessment(assessmentId: string, adminId: string, ipAddress?: string): Promise<PerformanceFeeAssessment> {
+  async invoiceAssessment(
+    assessmentId: string,
+    adminId: string,
+    ipAddress?: string,
+  ): Promise<PerformanceFeeAssessment> {
     const assessment = await this.assessmentRepo.findOne({ where: { id: assessmentId } });
     if (!assessment) throw new NotFoundException('Assessment not found');
 
@@ -484,7 +522,11 @@ export class PerformanceFeeService {
    * - Must not record demo/paper/backtest entries.
    * - Losses should be passed as negative amounts.
    */
-  async recordLedgerEntry(dto: CreateLedgerEntryDto, adminId: string, ipAddress?: string): Promise<PerformanceFeeLedgerEntry> {
+  async recordLedgerEntry(
+    dto: CreateLedgerEntryDto,
+    adminId: string,
+    ipAddress?: string,
+  ): Promise<PerformanceFeeLedgerEntry> {
     const entry = this.ledgerRepo.create({
       userId: dto.userId,
       assessmentId: dto.assessmentId ?? null,
@@ -523,9 +565,16 @@ export class PerformanceFeeService {
   // Helpers
   // -------------------------------------------------------------------------
 
-  async getCurrentHighWaterMark(userId: string, brokerConnectionId: string | null, currency: string): Promise<string> {
+  async getCurrentHighWaterMark(
+    userId: string,
+    brokerConnectionId: string | null,
+    currency: string,
+  ): Promise<string> {
     const performance = await this.performanceRepo.findOne({
-      where: { userId, brokerConnectionId: this.brokerScope(brokerConnectionId) } as FindOptionsWhere<TradingAccountPerformance>,
+      where: {
+        userId,
+        brokerConnectionId: this.brokerScope(brokerConnectionId),
+      } as FindOptionsWhere<TradingAccountPerformance>,
     });
     return performance?.currentHighWaterMark ?? '0';
   }
@@ -536,7 +585,10 @@ export class PerformanceFeeService {
     currency: string,
   ): Promise<TradingAccountPerformance> {
     const existing = await this.performanceRepo.findOne({
-      where: { userId, brokerConnectionId: this.brokerScope(brokerConnectionId) } as FindOptionsWhere<TradingAccountPerformance>,
+      where: {
+        userId,
+        brokerConnectionId: this.brokerScope(brokerConnectionId),
+      } as FindOptionsWhere<TradingAccountPerformance>,
     });
     if (existing) return existing;
 

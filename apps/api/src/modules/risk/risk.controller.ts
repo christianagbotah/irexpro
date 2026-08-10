@@ -9,13 +9,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiQuery,
-  ApiResponse,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { RiskService } from './risk.service';
 import { ToggleKillSwitchDto } from './dto/kill-switch.dto';
 import { UpdateRiskProfileDto } from './dto/update-risk-profile.dto';
@@ -51,15 +45,8 @@ export class RiskController {
       'Can be toggled back off to resume trading.',
   })
   @ApiResponse({ status: 200, description: 'Kill switch state updated' })
-  async toggleKillSwitch(
-    @Body() dto: ToggleKillSwitchDto,
-    @CurrentUserId() userId: string,
-  ) {
-    const profile = await this.riskService.toggleKillSwitch(
-      userId,
-      dto.active,
-      dto.reason,
-    );
+  async toggleKillSwitch(@Body() dto: ToggleKillSwitchDto, @CurrentUserId() userId: string) {
+    const profile = await this.riskService.toggleKillSwitch(userId, dto.active, dto.reason);
     return {
       killSwitchActive: profile.killSwitchActive,
       killSwitchReason: profile.killSwitchReason,
@@ -86,10 +73,7 @@ export class RiskController {
       'Open trades are not retroactively affected.',
   })
   @ApiResponse({ status: 200, description: 'Updated risk profile' })
-  async updateRiskProfile(
-    @Body() dto: UpdateRiskProfileDto,
-    @CurrentUserId() userId: string,
-  ) {
+  async updateRiskProfile(@Body() dto: UpdateRiskProfileDto, @CurrentUserId() userId: string) {
     return this.riskService.updateProfile(userId, dto);
   }
 
@@ -99,10 +83,7 @@ export class RiskController {
   @ApiOperation({ summary: 'Get recent risk violations (rejected signals)' })
   @ApiQuery({ name: 'limit', required: false, description: 'Max results (default 50)' })
   @ApiResponse({ status: 200, description: 'List of recent risk violations' })
-  async getViolations(
-    @CurrentUserId() userId: string,
-    @Query('limit') limit?: string,
-  ) {
+  async getViolations(@CurrentUserId() userId: string, @Query('limit') limit?: string) {
     const take = limit ? Math.min(parseInt(limit, 10), 200) : 50;
     return this.riskService.getViolations(userId, take);
   }

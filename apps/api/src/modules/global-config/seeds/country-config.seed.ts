@@ -79,7 +79,7 @@ export const COUNTRY_CONFIG_SEEDS: Partial<CountryConfig>[] = [
     isActive: true,
     forexTradingAllowed: true,
     kycRequirements: { level: 'STANDARD', documents: ['PASSPORT', 'DRIVING_LICENCE'] },
-    taxRulesPlaceholder: { vatApplicable: true, vatRate: 0.20, vatDescription: 'VAT (UK 20%)' },
+    taxRulesPlaceholder: { vatApplicable: true, vatRate: 0.2, vatDescription: 'VAT (UK 20%)' },
   },
   {
     countryCode: 'US',
@@ -95,7 +95,8 @@ export const COUNTRY_CONFIG_SEEDS: Partial<CountryConfig>[] = [
     isActive: true,
     forexTradingAllowed: true,
     specialDisclosureRequired: true,
-    specialDisclosureText: 'Forex trading with leverage is regulated by the CFTC/NFA. US residents must ensure compliance with applicable regulations.',
+    specialDisclosureText:
+      'Forex trading with leverage is regulated by the CFTC/NFA. US residents must ensure compliance with applicable regulations.',
     kycRequirements: { level: 'ENHANCED', documents: ['PASSPORT', 'SSN', 'GOVERNMENT_ID'] },
     taxRulesPlaceholder: { vatApplicable: false, salesTaxNote: 'State sales tax may apply' },
   },

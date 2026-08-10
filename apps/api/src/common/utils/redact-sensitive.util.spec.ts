@@ -81,7 +81,11 @@ describe('redactSensitive (Hotfix)', () => {
   });
 
   it('should NOT redact non-sensitive fields', () => {
-    const result = redactSensitive({ email: 'user@example.com', phone: '+233243618186', status: 'ACTIVE' });
+    const result = redactSensitive({
+      email: 'user@example.com',
+      phone: '+233243618186',
+      status: 'ACTIVE',
+    });
     expect(result.email).toBe('user@example.com');
     expect(result.phone).toBe('+233243618186');
     expect(result.status).toBe('ACTIVE');

@@ -9,7 +9,10 @@ import { StripeHttpClient } from '../providers/stripe-http.client';
 import { PaymentWebhookEvent } from '../entities/payment-webhook-event.entity';
 import { PaymentTransaction, PaymentPurpose } from '../entities/payment-transaction.entity';
 import { Invoice } from '../entities/invoice.entity';
-import { PerformanceFeeAssessment, AssessmentStatus } from '../../performance-fees/entities/performance-fee-assessment.entity';
+import {
+  PerformanceFeeAssessment,
+  AssessmentStatus,
+} from '../../performance-fees/entities/performance-fee-assessment.entity';
 import { PerformanceFeeLedgerEntry } from '../../performance-fees/entities/performance-fee-ledger-entry.entity';
 import { TradingAccountPerformance } from '../../performance-fees/entities/trading-account-performance.entity';
 import { AuditService } from '../../audit/audit.service';
@@ -127,7 +130,9 @@ describe('WebhookProcessorService — Stripe integration (Sprint 17)', () => {
       });
       mockSubscriptionsService.activateSubscriptionFromPayment.mockResolvedValue({ id: 'sub-1' });
 
-      const result = await service.processWebhook('stripe', rawBody, { 'stripe-signature': signature });
+      const result = await service.processWebhook('stripe', rawBody, {
+        'stripe-signature': signature,
+      });
 
       expect(result.accepted).toBe(true);
       expect(mockSubscriptionsService.activateSubscriptionFromPayment).toHaveBeenCalled();
@@ -140,7 +145,9 @@ describe('WebhookProcessorService — Stripe integration (Sprint 17)', () => {
       const rawBody = checkoutSessionCompletedPayload('evt_sub_bad', 'cs_sub_ref_bad');
 
       await expect(
-        service.processWebhook('stripe', rawBody, { 'stripe-signature': 't=1,v1=not-a-real-signature' }),
+        service.processWebhook('stripe', rawBody, {
+          'stripe-signature': 't=1,v1=not-a-real-signature',
+        }),
       ).rejects.toThrow(BadRequestException);
 
       expect(mockSubscriptionsService.activateSubscriptionFromPayment).not.toHaveBeenCalled();
@@ -161,7 +168,9 @@ describe('WebhookProcessorService — Stripe integration (Sprint 17)', () => {
       mockWebhookEventRepo.save.mockRejectedValue(dupError);
       mockWebhookEventRepo.findOne.mockResolvedValue({ id: 'wh-dup', processed: true });
 
-      const result = await service.processWebhook('stripe', rawBody, { 'stripe-signature': signature });
+      const result = await service.processWebhook('stripe', rawBody, {
+        'stripe-signature': signature,
+      });
 
       expect(result.idempotent).toBe(true);
       expect(mockSubscriptionsService.activateSubscriptionFromPayment).not.toHaveBeenCalled();
@@ -200,11 +209,17 @@ describe('WebhookProcessorService — Stripe integration (Sprint 17)', () => {
         currentHighWaterMark: '4000000',
       });
 
-      const result = await service.processWebhook('stripe', rawBody, { 'stripe-signature': signature });
+      const result = await service.processWebhook('stripe', rawBody, {
+        'stripe-signature': signature,
+      });
 
       expect(result.accepted).toBe(true);
-      expect(mockAssessmentRepo.update).toHaveBeenCalledWith('assess-pf-1', { status: AssessmentStatus.PAID });
-      expect(mockLedgerRepo.save).toHaveBeenCalledWith(expect.objectContaining({ assessmentId: 'assess-pf-1' }));
+      expect(mockAssessmentRepo.update).toHaveBeenCalledWith('assess-pf-1', {
+        status: AssessmentStatus.PAID,
+      });
+      expect(mockLedgerRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ assessmentId: 'assess-pf-1' }),
+      );
       expect(mockPerformanceRepo.update).toHaveBeenCalledWith(
         'perf-pf-1',
         expect.objectContaining({ currentHighWaterMark: '5000000', totalFeesCharged: '200000' }),
@@ -225,7 +240,9 @@ describe('WebhookProcessorService — Stripe integration (Sprint 17)', () => {
       mockWebhookEventRepo.save.mockRejectedValue(dupError);
       mockWebhookEventRepo.findOne.mockResolvedValue({ id: 'wh-pf-dup', processed: true });
 
-      const result = await service.processWebhook('stripe', rawBody, { 'stripe-signature': signature });
+      const result = await service.processWebhook('stripe', rawBody, {
+        'stripe-signature': signature,
+      });
 
       expect(result.idempotent).toBe(true);
       expect(mockAssessmentRepo.update).not.toHaveBeenCalled();
@@ -267,7 +284,9 @@ describe('WebhookProcessorService — Stripe integration (Sprint 17)', () => {
       await service.processWebhook('stripe', rawBody, { 'stripe-signature': signature });
 
       expect(mockAssessmentRepo.update).not.toHaveBeenCalled();
-      expect(mockAuditService.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'PAYMENT_FAILED' }));
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'PAYMENT_FAILED' }),
+      );
     });
   });
 
@@ -291,7 +310,9 @@ describe('WebhookProcessorService — Stripe integration (Sprint 17)', () => {
         providerPayloadSummary: { planId: 'plan-1' },
       });
 
-      const result = await service.processWebhook('stripe', rawBody, { 'stripe-signature': signature });
+      const result = await service.processWebhook('stripe', rawBody, {
+        'stripe-signature': signature,
+      });
 
       expect(result.accepted).toBe(true);
       expect(mockSubscriptionsService.activateSubscriptionFromPayment).not.toHaveBeenCalled();
@@ -324,7 +345,9 @@ describe('WebhookProcessorService — Stripe integration (Sprint 17)', () => {
         providerPayloadSummary: {},
       });
 
-      const result = await service.processWebhook('stripe', rawBody, { 'stripe-signature': signature });
+      const result = await service.processWebhook('stripe', rawBody, {
+        'stripe-signature': signature,
+      });
 
       expect(result.accepted).toBe(true);
       expect(mockAssessmentRepo.update).not.toHaveBeenCalled();
@@ -357,7 +380,9 @@ describe('WebhookProcessorService — Stripe integration (Sprint 17)', () => {
         providerPayloadSummary: {},
       });
 
-      const result = await service.processWebhook('stripe', rawBody, { 'stripe-signature': signature });
+      const result = await service.processWebhook('stripe', rawBody, {
+        'stripe-signature': signature,
+      });
 
       expect(result.accepted).toBe(true);
       expect(mockAssessmentRepo.update).not.toHaveBeenCalled();
@@ -372,7 +397,9 @@ describe('WebhookProcessorService — Stripe integration (Sprint 17)', () => {
       mockWebhookEventRepo.save.mockImplementation(async (x: any) => x);
       mockTransactionRepo.findOne.mockResolvedValue(null);
 
-      const result = await service.processWebhook('stripe', rawBody, { 'stripe-signature': signature });
+      const result = await service.processWebhook('stripe', rawBody, {
+        'stripe-signature': signature,
+      });
 
       expect(result.accepted).toBe(true);
       expect(mockAssessmentRepo.update).not.toHaveBeenCalled();
@@ -402,7 +429,9 @@ describe('WebhookProcessorService — Stripe integration (Sprint 17)', () => {
         providerPayloadSummary: {},
       });
 
-      const result = await service.processWebhook('stripe', rawBody, { 'stripe-signature': signature });
+      const result = await service.processWebhook('stripe', rawBody, {
+        'stripe-signature': signature,
+      });
 
       expect(result.accepted).toBe(true);
       expect(mockSubscriptionsService.activateSubscriptionFromPayment).not.toHaveBeenCalled();

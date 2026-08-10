@@ -93,6 +93,9 @@ export function sanitizeDatabaseError(err: unknown): {
  */
 function redactString(str: string): string {
   let result = str;
-  result = result.replace(/(password|secret|token|key|credential)\s*[:=]\s*[^\s,;}]+/gi, '$1=[REDACTED]');
+  result = result.replace(
+    /(password|secret|token|key|credential)\s*[:=]\s*[^\s,;}]+/gi,
+    '$1=[REDACTED]',
+  );
   return result;
 }

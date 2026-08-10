@@ -12,7 +12,13 @@ import { PaymentsModule } from '../payments/payments.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([SubscriptionPlan, PlanPricing, UserSubscription, Invoice, PaymentTransaction]),
+    TypeOrmModule.forFeature([
+      SubscriptionPlan,
+      PlanPricing,
+      UserSubscription,
+      Invoice,
+      PaymentTransaction,
+    ]),
     AuditModule,
     // Bidirectional dependency with PaymentsModule — resolved via forwardRef.
     forwardRef(() => PaymentsModule),

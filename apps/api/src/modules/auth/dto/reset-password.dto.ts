@@ -1,5 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty, IsOptional, IsString, Length, Matches, MaxLength, MinLength } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Length,
+  Matches,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 
 /**
  * ResetPasswordDto — Sprint 28.
@@ -26,20 +34,29 @@ export class ResetPasswordDto {
   @MaxLength(512)
   token?: string;
 
-  @ApiPropertyOptional({ description: 'Phone number or email (phone code flow)', example: '+233241234567' })
+  @ApiPropertyOptional({
+    description: 'Phone number or email (phone code flow)',
+    example: '+233241234567',
+  })
   @IsOptional()
   @IsString()
   @IsNotEmpty()
   @MaxLength(255)
   identifier?: string;
 
-  @ApiPropertyOptional({ description: '6-digit numeric code sent via SMS (phone code flow)', example: '123456' })
+  @ApiPropertyOptional({
+    description: '6-digit numeric code sent via SMS (phone code flow)',
+    example: '123456',
+  })
   @IsOptional()
   @IsString()
   @Length(6, 6)
   code?: string;
 
-  @ApiProperty({ description: 'New password (min 12 chars, must contain letters + numbers)', example: 'NewStrongPassword123!' })
+  @ApiProperty({
+    description: 'New password (min 12 chars, must contain letters + numbers)',
+    example: 'NewStrongPassword123!',
+  })
   @IsString()
   @IsNotEmpty()
   @MinLength(12)

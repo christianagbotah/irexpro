@@ -325,9 +325,7 @@ describe('initiatePerformanceFeeCheckout', () => {
 
   it('rejects an invoice amount that overflows the provider interface number conversion, without calling the provider or marking paid', async () => {
     // Number.MAX_SAFE_INTEGER = 9007199254740991 (minor units) — one above that must be rejected.
-    invoiceRepo.findOne.mockResolvedValueOnce(
-      makeInvoice({ totalAmount: '9007199254740992' }),
-    );
+    invoiceRepo.findOne.mockResolvedValueOnce(makeInvoice({ totalAmount: '9007199254740992' }));
     await expect(service.initiatePerformanceFeeCheckout(base)).rejects.toBeInstanceOf(
       BadRequestException,
     );
@@ -395,7 +393,10 @@ describe('initiatePerformanceFeeCheckout', () => {
     (uniqueViolation as unknown as { code: string }).code = '23505';
     transactionRepo.update.mockImplementation(async (id: any, patch: any) => {
       // First update = the atomic claim (PENDING/FAILED -> PROCESSING): succeeds.
-      if (patch.status === PaymentTransactionStatus.PROCESSING && !patch.providerTransactionReference) {
+      if (
+        patch.status === PaymentTransactionStatus.PROCESSING &&
+        !patch.providerTransactionReference
+      ) {
         return { affected: 1 };
       }
       // Second update = writing the provider reference: throws 23505.
@@ -433,9 +434,10 @@ describe('initiatePerformanceFeeCheckout', () => {
     );
     // The raw QueryFailedError / constraint name is never leaked to the caller.
     const thrown = await service.initiatePerformanceFeeCheckout(base).catch((e: unknown) => e);
-    const thrownStr = thrown instanceof Error
-      ? `${thrown.message} ${JSON.stringify((thrown as { response?: unknown }).response ?? {})}`
-      : String(thrown);
+    const thrownStr =
+      thrown instanceof Error
+        ? `${thrown.message} ${JSON.stringify((thrown as { response?: unknown }).response ?? {})}`
+        : String(thrown);
     expect(thrownStr).not.toMatch(/ux_payment_transactions|QueryFailedError|23505|duplicate key/i);
   });
 });

@@ -39,7 +39,9 @@ function buildRegistry(): PaymentProviderRegistry {
   const registry = new PaymentProviderRegistry();
   registry.register(new ManualPaymentProvider());
   registry.register(buildDisabledStripeProvider());
-  registry.register(new PaystackPaymentProvider(mockDisabledConfigService(), new PaystackHttpClient()));
+  registry.register(
+    new PaystackPaymentProvider(mockDisabledConfigService(), new PaystackHttpClient()),
+  );
   registry.register(new FlutterwavePaymentProvider());
   registry.register(new HubtelPaymentProvider());
   registry.register(new PayPalBraintreePaymentProvider());
@@ -171,7 +173,9 @@ describe('PaymentRoutingService', () => {
 
     it('should throw if preferred provider not enabled for country', async () => {
       mockCountryConfigRepo.findOne.mockResolvedValue(usConfig());
-      await expect(service.routeForCheckout('US', 'USD', 'hubtel')).rejects.toThrow(BadRequestException);
+      await expect(service.routeForCheckout('US', 'USD', 'hubtel')).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('should throw for blocked country', async () => {
@@ -192,7 +196,9 @@ describe('PaymentRoutingService', () => {
     it('should throw if preferred provider does not support currency', async () => {
       mockCountryConfigRepo.findOne.mockResolvedValue(ghConfig());
       // Hubtel supports GHS and USD — not EUR
-      await expect(service.routeForCheckout('GH', 'EUR', 'hubtel')).rejects.toThrow(BadRequestException);
+      await expect(service.routeForCheckout('GH', 'EUR', 'hubtel')).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('should not route to manual provider', async () => {
@@ -465,7 +471,9 @@ describe('PaymentRoutingService', () => {
         isBlocked: false,
         enabledPaymentProviders: ['manual', 'paystack'],
       });
-      await expect(service.routeForCheckout('GH', 'GHS', 'manual')).rejects.toThrow(BadRequestException);
+      await expect(service.routeForCheckout('GH', 'GHS', 'manual')).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 

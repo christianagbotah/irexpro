@@ -35,7 +35,7 @@ const activeSession = (): TradingSession =>
     userId: 'user-1',
     brokerConnectionId: 'conn-1',
     status: TradingSessionStatus.ACTIVE,
-  } as TradingSession);
+  }) as TradingSession;
 
 const approvedRiskDecision = () => ({
   decision: 'APPROVED' as const,
@@ -75,7 +75,9 @@ describe('StrategyOrchestratorService', () => {
 
     executionService = {
       getActiveSession: jest.fn().mockResolvedValue(activeSession()),
-      executeTrade: jest.fn().mockResolvedValue({ id: 'trade-1', status: TradeStatus.OPEN } as Trade),
+      executeTrade: jest
+        .fn()
+        .mockResolvedValue({ id: 'trade-1', status: TradeStatus.OPEN } as Trade),
     };
 
     brokerService = {
@@ -130,9 +132,7 @@ describe('StrategyOrchestratorService', () => {
     });
 
     it('rejects invalid direction', async () => {
-      const result = await service.processSignal(
-        validCandidate({ direction: 'HOLD' as 'BUY' }),
-      );
+      const result = await service.processSignal(validCandidate({ direction: 'HOLD' as 'BUY' }));
       expect(result.outcome).toBe('SIGNAL_INVALID');
     });
   });
@@ -162,9 +162,10 @@ describe('StrategyOrchestratorService', () => {
     });
 
     it('rejects when session ID does not match', async () => {
-      (executionService.getActiveSession as jest.Mock).mockResolvedValue(
-        { ...activeSession(), id: 'different-session' },
-      );
+      (executionService.getActiveSession as jest.Mock).mockResolvedValue({
+        ...activeSession(),
+        id: 'different-session',
+      });
       const result = await service.processSignal(validCandidate());
       expect(result.outcome).toBe('SESSION_INACTIVE');
     });

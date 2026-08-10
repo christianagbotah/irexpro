@@ -40,7 +40,7 @@ const mockSession = (overrides: Partial<TradingSession> = {}): TradingSession =>
     updatedAt: new Date(),
     riskProfileSnapshot: null,
     ...overrides,
-  } as TradingSession);
+  }) as TradingSession;
 
 /** Build a healthy broker connection with fresh health check. */
 function buildHealthyConnection(overrides: Record<string, unknown> = {}) {
@@ -78,7 +78,12 @@ describe('TradingService (Sprint 29 amendment — centralized readiness gate)', 
       hasActiveConnection: jest.fn().mockResolvedValue(true),
       findActiveConnectionForUser: jest.fn().mockResolvedValue(buildHealthyConnection()),
       findConnectionById: jest.fn().mockResolvedValue(buildHealthyConnection()),
-      getBrokerAccountState: jest.fn().mockResolvedValue({ balance: '10000.00', equity: '10000.00', freeMargin: '9000.00', currency: 'USD' }),
+      getBrokerAccountState: jest.fn().mockResolvedValue({
+        balance: '10000.00',
+        equity: '10000.00',
+        freeMargin: '9000.00',
+        currency: 'USD',
+      }),
     };
 
     subscriptionsService = {
@@ -308,7 +313,11 @@ describe('TradingService (Sprint 29 amendment — centralized readiness gate)', 
         riskAcknowledgementAccepted: true,
       } as never);
 
-      const session = await service.startTradingSession('user-1', undefined, AllowedTradingMode.PAPER_ONLY);
+      const session = await service.startTradingSession(
+        'user-1',
+        undefined,
+        AllowedTradingMode.PAPER_ONLY,
+      );
       expect(session.id).toBe('session-1');
     });
 
@@ -334,7 +343,11 @@ describe('TradingService (Sprint 29 amendment — centralized readiness gate)', 
         riskAcknowledgementAccepted: true,
       } as never);
 
-      const session = await service.startTradingSession('user-1', undefined, AllowedTradingMode.SEMI_AUTO);
+      const session = await service.startTradingSession(
+        'user-1',
+        undefined,
+        AllowedTradingMode.SEMI_AUTO,
+      );
       expect(session.id).toBe('session-1');
     });
 
@@ -380,7 +393,11 @@ describe('TradingService (Sprint 29 amendment — centralized readiness gate)', 
         buildHealthyConnection({ liveTradingEnabled: true }),
       );
 
-      const session = await service.startTradingSession('user-1', undefined, AllowedTradingMode.FULL_AUTO);
+      const session = await service.startTradingSession(
+        'user-1',
+        undefined,
+        AllowedTradingMode.FULL_AUTO,
+      );
       expect(session.id).toBe('session-1');
     });
 
@@ -435,16 +452,23 @@ describe('TradingService (Sprint 29 amendment — centralized readiness gate)', 
   describe('stopTradingSession()', () => {
     it('stops the active session', async () => {
       await service.stopTradingSession('user-1', 'session-1');
-      expect(executionService.endSession).toHaveBeenCalledWith('user-1', TradingSessionStatus.ENDED);
+      expect(executionService.endSession).toHaveBeenCalledWith(
+        'user-1',
+        TradingSessionStatus.ENDED,
+      );
     });
 
     it('throws NotFoundException when no active session', async () => {
       executionService.getActiveSession.mockResolvedValue(null);
-      await expect(service.stopTradingSession('user-1', 'session-1')).rejects.toThrow(NotFoundException);
+      await expect(service.stopTradingSession('user-1', 'session-1')).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('throws ForbiddenException when session ID does not match', async () => {
-      await expect(service.stopTradingSession('user-1', 'other-session')).rejects.toThrow(ForbiddenException);
+      await expect(service.stopTradingSession('user-1', 'other-session')).rejects.toThrow(
+        ForbiddenException,
+      );
     });
 
     it('audit-logs the session stop', async () => {

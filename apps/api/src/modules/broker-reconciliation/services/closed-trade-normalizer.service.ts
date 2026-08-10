@@ -125,16 +125,24 @@ export class ClosedTradeNormalizerService {
     currency: string,
     digits: number,
     now: Date,
-  ): ({ kind: 'valid'; trade: NormalizedClosedTrade } | SkippedTrade) {
+  ): { kind: 'valid'; trade: NormalizedClosedTrade } | SkippedTrade {
     // 1. brokerTradeId must be non-empty
     const brokerTradeId = raw.externalOrderId?.trim();
     if (!brokerTradeId) {
-      return { kind: 'skipped', externalOrderId: null, reason: 'missing brokerTradeId (externalOrderId)' };
+      return {
+        kind: 'skipped',
+        externalOrderId: null,
+        reason: 'missing brokerTradeId (externalOrderId)',
+      };
     }
 
     // 2. closedAt must exist and be in the past
     if (!raw.closedAt) {
-      return { kind: 'skipped', externalOrderId: brokerTradeId, reason: 'missing closedAt (open trade)' };
+      return {
+        kind: 'skipped',
+        externalOrderId: brokerTradeId,
+        reason: 'missing closedAt (open trade)',
+      };
     }
     if (raw.closedAt > now) {
       return {
@@ -151,7 +159,11 @@ export class ClosedTradeNormalizerService {
     const swap = majorToMinorUnits(raw.swap ?? '0', digits);
 
     if (grossRealisedPnl === null || !isValidBigIntString(grossRealisedPnl)) {
-      return { kind: 'skipped', externalOrderId: brokerTradeId, reason: 'invalid grossRealisedPnl' };
+      return {
+        kind: 'skipped',
+        externalOrderId: brokerTradeId,
+        reason: 'invalid grossRealisedPnl',
+      };
     }
     if (commission === null || !isValidBigIntString(commission)) {
       return { kind: 'skipped', externalOrderId: brokerTradeId, reason: 'invalid commission' };
@@ -163,12 +175,18 @@ export class ClosedTradeNormalizerService {
     // 4. Compute net realised P&L (no double-subtraction)
     //    netRealisedPnl = grossRealisedPnl + commission + swap
     const netRealisedPnl = (
-      BigInt(grossRealisedPnl) + BigInt(commission) + BigInt(swap)
+      BigInt(grossRealisedPnl) +
+      BigInt(commission) +
+      BigInt(swap)
     ).toString();
 
     // 5. Validate direction
     if (raw.direction !== 'BUY' && raw.direction !== 'SELL') {
-      return { kind: 'skipped', externalOrderId: brokerTradeId, reason: `invalid direction: ${raw.direction}` };
+      return {
+        kind: 'skipped',
+        externalOrderId: brokerTradeId,
+        reason: `invalid direction: ${raw.direction}`,
+      };
     }
 
     // 6. Validate instrument

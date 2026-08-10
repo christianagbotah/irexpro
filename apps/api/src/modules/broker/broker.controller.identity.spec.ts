@@ -166,28 +166,28 @@ describe('BrokerController (Hotfix — UUID identity regression)', () => {
   // ── Ownership protection ─────────────────────────────────────────────────
 
   describe('ownership protection', () => {
-    it('getConnection passes the correct userId (not another user\'s)', async () => {
+    it("getConnection passes the correct userId (not another user's)", async () => {
       await controller.getConnection(CONNECTION_ID, OTHER_USER_ID);
       // The service receives OTHER_USER_ID — the service enforces ownership
       expect(brokerService.findConnectionById).toHaveBeenCalledWith(CONNECTION_ID, OTHER_USER_ID);
     });
 
-    it('connectBroker passes the correct userId (not another user\'s)', async () => {
+    it("connectBroker passes the correct userId (not another user's)", async () => {
       await controller.connectBroker(CONNECTION_ID, OTHER_USER_ID);
       expect(brokerService.connectBroker).toHaveBeenCalledWith(CONNECTION_ID, OTHER_USER_ID);
     });
 
-    it('disconnectBroker passes the correct userId (not another user\'s)', async () => {
+    it("disconnectBroker passes the correct userId (not another user's)", async () => {
       await controller.disconnectBroker(CONNECTION_ID, OTHER_USER_ID);
       expect(brokerService.disconnectBroker).toHaveBeenCalledWith(CONNECTION_ID, OTHER_USER_ID);
     });
 
-    it('deleteConnection passes the correct userId (not another user\'s)', async () => {
+    it("deleteConnection passes the correct userId (not another user's)", async () => {
       await controller.deleteConnection(CONNECTION_ID, OTHER_USER_ID);
       expect(brokerService.deleteConnection).toHaveBeenCalledWith(CONNECTION_ID, OTHER_USER_ID);
     });
 
-    it('enableLiveTrading passes the correct userId (not another user\'s)', async () => {
+    it("enableLiveTrading passes the correct userId (not another user's)", async () => {
       await controller.enableLiveTrading(CONNECTION_ID, OTHER_USER_ID);
       expect(brokerService.enableLiveTrading).toHaveBeenCalledWith(CONNECTION_ID, OTHER_USER_ID);
     });

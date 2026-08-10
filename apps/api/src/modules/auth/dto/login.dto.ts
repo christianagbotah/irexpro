@@ -34,7 +34,10 @@ export class LoginDto {
   @MaxLength(128)
   password: string;
 
-  @ApiPropertyOptional({ example: false, description: 'If true, refresh cookie persists for 7 days. If false, session cookie.' })
+  @ApiPropertyOptional({
+    example: false,
+    description: 'If true, refresh cookie persists for 7 days. If false, session cookie.',
+  })
   @IsOptional()
   @IsBoolean()
   rememberMe?: boolean;

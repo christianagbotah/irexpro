@@ -101,7 +101,9 @@ describe('MarketDataService', () => {
   });
 
   it('maps broker failures to safe ServiceUnavailableException', async () => {
-    (brokerService.getOhlcvForConnection as jest.Mock).mockRejectedValue(new Error('MetaAPI timeout'));
+    (brokerService.getOhlcvForConnection as jest.Mock).mockRejectedValue(
+      new Error('MetaAPI timeout'),
+    );
 
     await expect(service.getInternalOhlcv(query)).rejects.toThrow(ServiceUnavailableException);
     await expect(service.getInternalOhlcv(query)).rejects.toMatchObject({

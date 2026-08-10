@@ -9,7 +9,10 @@ import { PaystackHttpClient } from '../providers/paystack-http.client';
 import { PaymentWebhookEvent } from '../entities/payment-webhook-event.entity';
 import { PaymentTransaction, PaymentPurpose } from '../entities/payment-transaction.entity';
 import { Invoice } from '../entities/invoice.entity';
-import { PerformanceFeeAssessment, AssessmentStatus } from '../../performance-fees/entities/performance-fee-assessment.entity';
+import {
+  PerformanceFeeAssessment,
+  AssessmentStatus,
+} from '../../performance-fees/entities/performance-fee-assessment.entity';
 import { PerformanceFeeLedgerEntry } from '../../performance-fees/entities/performance-fee-ledger-entry.entity';
 import { TradingAccountPerformance } from '../../performance-fees/entities/trading-account-performance.entity';
 import { AuditService } from '../../audit/audit.service';
@@ -72,7 +75,9 @@ describe('WebhookProcessorService — Paystack integration', () => {
     jest.clearAllMocks();
 
     const registry = new PaymentProviderRegistry();
-    registry.register(new PaystackPaymentProvider(paystackConfigService(), new PaystackHttpClient()));
+    registry.register(
+      new PaystackPaymentProvider(paystackConfigService(), new PaystackHttpClient()),
+    );
 
     module = await Test.createTestingModule({
       providers: [
@@ -131,7 +136,9 @@ describe('WebhookProcessorService — Paystack integration', () => {
       const rawBody = chargeSuccessPayload('psk_sub_ref_bad', 1002);
 
       await expect(
-        service.processWebhook('paystack', rawBody, { 'x-paystack-signature': 'not-a-real-signature' }),
+        service.processWebhook('paystack', rawBody, {
+          'x-paystack-signature': 'not-a-real-signature',
+        }),
       ).rejects.toThrow(BadRequestException);
 
       expect(mockSubscriptionsService.activateSubscriptionFromPayment).not.toHaveBeenCalled();
@@ -205,8 +212,12 @@ describe('WebhookProcessorService — Paystack integration', () => {
       });
 
       expect(result.accepted).toBe(true);
-      expect(mockAssessmentRepo.update).toHaveBeenCalledWith('assess-pf-1', { status: AssessmentStatus.PAID });
-      expect(mockLedgerRepo.save).toHaveBeenCalledWith(expect.objectContaining({ assessmentId: 'assess-pf-1' }));
+      expect(mockAssessmentRepo.update).toHaveBeenCalledWith('assess-pf-1', {
+        status: AssessmentStatus.PAID,
+      });
+      expect(mockLedgerRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ assessmentId: 'assess-pf-1' }),
+      );
       expect(mockPerformanceRepo.update).toHaveBeenCalledWith(
         'perf-pf-1',
         expect.objectContaining({ currentHighWaterMark: '5000000', totalFeesCharged: '200000' }),
@@ -267,7 +278,9 @@ describe('WebhookProcessorService — Paystack integration', () => {
       await service.processWebhook('paystack', rawBody, { 'x-paystack-signature': signature });
 
       expect(mockAssessmentRepo.update).not.toHaveBeenCalled();
-      expect(mockAuditService.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'PAYMENT_FAILED' }));
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'PAYMENT_FAILED' }),
+      );
     });
   });
 

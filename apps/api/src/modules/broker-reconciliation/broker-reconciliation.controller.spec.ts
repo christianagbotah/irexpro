@@ -24,16 +24,32 @@ describe('BrokerReconciliationController', () => {
   };
 
   const adminPrincipal: AuthenticatedPrincipal = {
-    userId: 'admin-1', email: null, phone: null, roles: [RoleName.ADMIN], status: UserStatus.ACTIVE,
+    userId: 'admin-1',
+    email: null,
+    phone: null,
+    roles: [RoleName.ADMIN],
+    status: UserStatus.ACTIVE,
   };
   const superAdminPrincipal: AuthenticatedPrincipal = {
-    userId: 'sa-1', email: null, phone: null, roles: [RoleName.SUPER_ADMIN], status: UserStatus.ACTIVE,
+    userId: 'sa-1',
+    email: null,
+    phone: null,
+    roles: [RoleName.SUPER_ADMIN],
+    status: UserStatus.ACTIVE,
   };
   const normalPrincipal: AuthenticatedPrincipal = {
-    userId: 'user-1', email: null, phone: null, roles: [RoleName.USER], status: UserStatus.ACTIVE,
+    userId: 'user-1',
+    email: null,
+    phone: null,
+    roles: [RoleName.USER],
+    status: UserStatus.ACTIVE,
   };
   const rolelessPrincipal: AuthenticatedPrincipal = {
-    userId: 'user-2', email: null, phone: null, roles: [], status: UserStatus.ACTIVE,
+    userId: 'user-2',
+    email: null,
+    phone: null,
+    roles: [],
+    status: UserStatus.ACTIVE,
   };
 
   beforeEach(() => {
@@ -95,9 +111,9 @@ describe('BrokerReconciliationController', () => {
     });
 
     it('normal user querying another user id is forbidden', () => {
-      expect(() =>
-        controller.getReconciledTrades(normalPrincipal, 'someone-else'),
-      ).toThrow(ForbiddenException);
+      expect(() => controller.getReconciledTrades(normalPrincipal, 'someone-else')).toThrow(
+        ForbiddenException,
+      );
       expect(svc.getReconciledTrades).not.toHaveBeenCalled();
     });
 

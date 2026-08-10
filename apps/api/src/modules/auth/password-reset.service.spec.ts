@@ -235,11 +235,9 @@ describe('PasswordResetService', () => {
       const result = await service.resetWithToken(deliveredRawToken, validPassword);
 
       // Password was updated
-      expect(mockQueryRunner.manager.update).toHaveBeenCalledWith(
-        User,
-        'user-1',
-        { passwordHash: expect.any(String) },
-      );
+      expect(mockQueryRunner.manager.update).toHaveBeenCalledWith(User, 'user-1', {
+        passwordHash: expect.any(String),
+      });
       // Token was marked as used (the save call received a token with usedAt set)
       expect(mockQueryRunner.manager.save).toHaveBeenCalledWith(
         expect.objectContaining({ usedAt: expect.any(Date) }),
@@ -276,9 +274,9 @@ describe('PasswordResetService', () => {
     it('should reject an invalid token', async () => {
       mockResetTokenRepo.findOne.mockResolvedValueOnce(null);
 
-      await expect(
-        service.resetWithToken('invalid-token', validPassword),
-      ).rejects.toThrow(UnauthorizedException);
+      await expect(service.resetWithToken('invalid-token', validPassword)).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
 
     it('should reject an expired token', async () => {
@@ -292,9 +290,9 @@ describe('PasswordResetService', () => {
         attemptCount: 0,
       });
 
-      await expect(
-        service.resetWithToken('some-token', validPassword),
-      ).rejects.toThrow(UnauthorizedException);
+      await expect(service.resetWithToken('some-token', validPassword)).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
 
     it('should reject a used token (single-use enforcement)', async () => {
@@ -308,9 +306,9 @@ describe('PasswordResetService', () => {
         attemptCount: 0,
       });
 
-      await expect(
-        service.resetWithToken('some-token', validPassword),
-      ).rejects.toThrow(UnauthorizedException);
+      await expect(service.resetWithToken('some-token', validPassword)).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
   });
 
@@ -321,13 +319,12 @@ describe('PasswordResetService', () => {
 
     it('should reset the password for a valid phone code', async () => {
       // Request a phone reset
-      mockUserRepo.findOne
-        .mockResolvedValueOnce({
-          id: 'phone-user',
-          email: null,
-          phone: '+233241234567',
-          status: UserStatus.ACTIVE,
-        });
+      mockUserRepo.findOne.mockResolvedValueOnce({
+        id: 'phone-user',
+        email: null,
+        phone: '+233241234567',
+        status: UserStatus.ACTIVE,
+      });
       await service.requestReset('+233241234567');
       const deliveredCode = mockDeliveryService.deliver.mock.calls[0][0].rawToken;
       const savedToken = mockResetTokenRepo.create.mock.results[0].value;
@@ -343,11 +340,9 @@ describe('PasswordResetService', () => {
 
       await service.resetWithCode('+233241234567', deliveredCode, validPassword);
 
-      expect(mockQueryRunner.manager.update).toHaveBeenCalledWith(
-        User,
-        'phone-user',
-        { passwordHash: expect.any(String) },
-      );
+      expect(mockQueryRunner.manager.update).toHaveBeenCalledWith(User, 'phone-user', {
+        passwordHash: expect.any(String),
+      });
     });
 
     it('should reject an invalid phone code', async () => {
@@ -358,23 +353,23 @@ describe('PasswordResetService', () => {
       });
       mockResetTokenRepo.findOne.mockResolvedValueOnce(null);
 
-      await expect(
-        service.resetWithCode('+233241234567', '000000', validPassword),
-      ).rejects.toThrow(UnauthorizedException);
+      await expect(service.resetWithCode('+233241234567', '000000', validPassword)).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
 
     it('should reject an empty identifier', async () => {
-      await expect(
-        service.resetWithCode('   ', '123456', validPassword),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.resetWithCode('   ', '123456', validPassword)).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('should not reveal whether the user exists (generic UnauthorizedException)', async () => {
       mockUserRepo.findOne.mockResolvedValueOnce(null); // user not found
 
-      await expect(
-        service.resetWithCode('+233241234567', '123456', validPassword),
-      ).rejects.toThrow(UnauthorizedException);
+      await expect(service.resetWithCode('+233241234567', '123456', validPassword)).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
   });
 

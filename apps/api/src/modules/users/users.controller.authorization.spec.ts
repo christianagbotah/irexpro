@@ -24,7 +24,7 @@ describe('Admin onboarding endpoint authorization (Sprint 29 amendment)', () => 
 
   describe('GET /admin/users/:id/onboarding-status', () => {
     it('should exist in the controller', () => {
-      expect(source).toContain("admin/users/:id/onboarding-status");
+      expect(source).toContain('admin/users/:id/onboarding-status');
       expect(source).toContain('getUserOnboardingStatus');
     });
 

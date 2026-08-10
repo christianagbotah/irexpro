@@ -43,12 +43,21 @@ describe('PerformanceFeesController (Hotfix — UUID identity contract)', () => 
 
   it('calculateAssessment passes admin UUID string', async () => {
     await controller.calculateAssessment(
-      { userId: USER_ID, currency: 'USD', periodStart: '2026-01-01T00:00:00Z', periodEnd: '2026-01-31T00:00:00Z' },
+      {
+        userId: USER_ID,
+        currency: 'USD',
+        periodStart: '2026-01-01T00:00:00Z',
+        periodEnd: '2026-01-31T00:00:00Z',
+      },
       ADMIN_ID,
     );
     expect(svc.calculateAssessment).toHaveBeenCalledWith(
-      USER_ID, null, 'USD',
-      expect.any(Date), expect.any(Date), ADMIN_ID,
+      USER_ID,
+      null,
+      'USD',
+      expect.any(Date),
+      expect.any(Date),
+      ADMIN_ID,
     );
     expect(typeof svc.calculateAssessment.mock.calls[0][5]).toBe('string');
   });
@@ -61,7 +70,13 @@ describe('PerformanceFeesController (Hotfix — UUID identity contract)', () => 
 
   it('createLedgerEntry passes admin UUID string', async () => {
     await controller.createLedgerEntry(
-      { userId: USER_ID, entryType: LedgerEntryType.REALISED_TRADE_PROFIT, currency: 'USD', amount: '100', occurredAt: '2026-01-15T00:00:00Z' },
+      {
+        userId: USER_ID,
+        entryType: LedgerEntryType.REALISED_TRADE_PROFIT,
+        currency: 'USD',
+        amount: '100',
+        occurredAt: '2026-01-15T00:00:00Z',
+      },
       ADMIN_ID,
     );
     expect(svc.recordLedgerEntry).toHaveBeenCalledWith(expect.anything(), ADMIN_ID);

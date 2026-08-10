@@ -221,10 +221,7 @@ describe('NodemailerEmailProvider (Sprint 28 amendment)', () => {
     };
 
     module = await Test.createTestingModule({
-      providers: [
-        NodemailerEmailProvider,
-        { provide: ConfigService, useValue: mockConfigService },
-      ],
+      providers: [NodemailerEmailProvider, { provide: ConfigService, useValue: mockConfigService }],
     }).compile();
 
     provider = module.get<NodemailerEmailProvider>(NodemailerEmailProvider);
@@ -261,8 +258,12 @@ describe('NodemailerEmailProvider (Sprint 28 amendment)', () => {
     expect(mailOptions.to).toBe('user@example.com');
     expect(mailOptions.subject).toContain('Password reset');
     // The reset link must be in the email body
-    expect(mailOptions.text).toContain('https://irexpro.lightworldtech.com/reset-password?token=abc');
-    expect(mailOptions.html).toContain('https://irexpro.lightworldtech.com/reset-password?token=abc');
+    expect(mailOptions.text).toContain(
+      'https://irexpro.lightworldtech.com/reset-password?token=abc',
+    );
+    expect(mailOptions.html).toContain(
+      'https://irexpro.lightworldtech.com/reset-password?token=abc',
+    );
   });
 
   it('should return false when SMTP send fails (no exception thrown)', async () => {
@@ -289,10 +290,7 @@ describe('NodemailerEmailProvider (Sprint 28 amendment)', () => {
 
     // Create a fresh provider with no SMTP config
     const freshModule = await Test.createTestingModule({
-      providers: [
-        NodemailerEmailProvider,
-        { provide: ConfigService, useValue: mockConfigService },
-      ],
+      providers: [NodemailerEmailProvider, { provide: ConfigService, useValue: mockConfigService }],
     }).compile();
     const freshProvider = freshModule.get<NodemailerEmailProvider>(NodemailerEmailProvider);
 

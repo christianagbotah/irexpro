@@ -44,9 +44,7 @@ import { RealtimeService } from './realtime.service';
   },
   transports: ['websocket', 'polling'],
 })
-export class RealtimeGateway
-  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
-{
+export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
@@ -128,14 +126,14 @@ export class RealtimeGateway
       this.logger.warn(
         `User ${userId} tried to join session room owned by ${data.sessionUserId} — REJECTED`,
       );
-      throw new WsException('Forbidden: cannot join another user\'s session room');
+      throw new WsException("Forbidden: cannot join another user's session room");
     }
 
     const roomName = `trading-session:${data.sessionId}`;
     client.join(roomName);
     this.logger.log(`Socket ${client.id} (user=${userId}) joined room: ${roomName}`);
 
-    return { status: 'joined', };
+    return { status: 'joined' };
   }
 
   /**

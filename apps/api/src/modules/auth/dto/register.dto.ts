@@ -28,7 +28,10 @@ export class RegisterDto {
   @MaxLength(255)
   email?: string;
 
-  @ApiPropertyOptional({ example: '+233241234567', description: 'Phone number with country calling code' })
+  @ApiPropertyOptional({
+    example: '+233241234567',
+    description: 'Phone number with country calling code',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(30)
@@ -39,8 +42,7 @@ export class RegisterDto {
   @IsNotEmpty()
   @Length(8, 128)
   @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])/, {
-    message:
-      'Password must contain uppercase, lowercase, number, and special character',
+    message: 'Password must contain uppercase, lowercase, number, and special character',
   })
   password: string;
 
@@ -62,7 +64,10 @@ export class RegisterDto {
   @MaxLength(100)
   lastName?: string;
 
-  @ApiPropertyOptional({ example: false, description: 'If true, refresh cookie persists for 7 days.' })
+  @ApiPropertyOptional({
+    example: false,
+    description: 'If true, refresh cookie persists for 7 days.',
+  })
   @IsOptional()
   @IsBoolean()
   rememberMe?: boolean;

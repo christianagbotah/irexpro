@@ -13,12 +13,7 @@ import {
   UseGuards,
   Headers,
 } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiResponse,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { ThrottlerGuard, Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
@@ -100,8 +95,7 @@ export class AuthController {
   ) {
     // Sprint 25: hybrid refresh — check httpOnly cookie first (web/admin),
     // then fall back to JSON body (mobile).
-    const refreshToken =
-      this.authCookieService.getRefreshTokenFromCookie(req) ?? dto?.refreshToken;
+    const refreshToken = this.authCookieService.getRefreshTokenFromCookie(req) ?? dto?.refreshToken;
 
     if (!refreshToken) {
       throw new UnauthorizedException('No refresh token provided');
@@ -172,7 +166,8 @@ export class AuthController {
       userAgent,
     });
     return {
-      message: 'If an account exists for this identifier, password reset instructions have been sent.',
+      message:
+        'If an account exists for this identifier, password reset instructions have been sent.',
     };
   }
 

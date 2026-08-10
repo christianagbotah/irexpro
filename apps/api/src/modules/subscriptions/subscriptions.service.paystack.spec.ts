@@ -6,7 +6,10 @@ import { SubscriptionPlan } from './entities/subscription-plan.entity';
 import { PlanPricing } from './entities/plan-pricing.entity';
 import { UserSubscription } from './entities/user-subscription.entity';
 import { Invoice } from '../payments/entities/invoice.entity';
-import { PaymentTransaction, PaymentTransactionStatus } from '../payments/entities/payment-transaction.entity';
+import {
+  PaymentTransaction,
+  PaymentTransactionStatus,
+} from '../payments/entities/payment-transaction.entity';
 import { AuditService } from '../audit/audit.service';
 import { PaymentRoutingService } from '../payments/services/payment-routing.service';
 import { PaystackPaymentProvider } from '../payments/providers/paystack.provider';
@@ -34,7 +37,12 @@ const mockInvoiceRepo = {
   update: jest.fn(),
   createQueryBuilder: jest.fn(),
 };
-const mockTransactionRepo = { create: jest.fn(), save: jest.fn(), update: jest.fn(), findOne: jest.fn() };
+const mockTransactionRepo = {
+  create: jest.fn(),
+  save: jest.fn(),
+  update: jest.fn(),
+  findOne: jest.fn(),
+};
 const mockAuditService = { log: jest.fn() };
 const mockRoutingService = { routeForCheckout: jest.fn() };
 
@@ -105,9 +113,15 @@ describe('SubscriptionsService — Paystack checkout integration', () => {
     http.request.mockResolvedValue({
       ok: true,
       status: 200,
-      body: { status: true, data: { authorization_url: 'https://checkout.paystack.com/xyz', reference: 'psk_new_sub' } },
+      body: {
+        status: true,
+        data: { authorization_url: 'https://checkout.paystack.com/xyz', reference: 'psk_new_sub' },
+      },
     });
-    const provider = new PaystackPaymentProvider(enabledPaystackConfigService(), http as unknown as PaystackHttpClient);
+    const provider = new PaystackPaymentProvider(
+      enabledPaystackConfigService(),
+      http as unknown as PaystackHttpClient,
+    );
     mockRoutingService.routeForCheckout.mockResolvedValue({ provider, reason: 'preferred' });
 
     const result = await service.initiateCheckout(request);
@@ -120,7 +134,10 @@ describe('SubscriptionsService — Paystack checkout integration', () => {
   });
 
   it('Paystack provider failure (disabled/unconfigured) does not activate a subscription', async () => {
-    const provider = new PaystackPaymentProvider(disabledPaystackConfigService(), new PaystackHttpClient());
+    const provider = new PaystackPaymentProvider(
+      disabledPaystackConfigService(),
+      new PaystackHttpClient(),
+    );
     mockRoutingService.routeForCheckout.mockResolvedValue({ provider, reason: 'preferred' });
 
     await expect(service.initiateCheckout(request)).rejects.toThrow(BadRequestException);
@@ -135,8 +152,16 @@ describe('SubscriptionsService — Paystack checkout integration', () => {
 
   it('Paystack checkout failure (status=false from Paystack) leaves invoice/transaction unpaid', async () => {
     const http = { request: jest.fn() };
-    http.request.mockResolvedValue({ ok: false, status: 200, body: { status: false }, errorMessage: 'Invalid currency' });
-    const provider = new PaystackPaymentProvider(enabledPaystackConfigService(), http as unknown as PaystackHttpClient);
+    http.request.mockResolvedValue({
+      ok: false,
+      status: 200,
+      body: { status: false },
+      errorMessage: 'Invalid currency',
+    });
+    const provider = new PaystackPaymentProvider(
+      enabledPaystackConfigService(),
+      http as unknown as PaystackHttpClient,
+    );
     mockRoutingService.routeForCheckout.mockResolvedValue({ provider, reason: 'preferred' });
 
     await expect(service.initiateCheckout(request)).rejects.toThrow(BadRequestException);
@@ -151,9 +176,15 @@ describe('SubscriptionsService — Paystack checkout integration', () => {
     http.request.mockResolvedValue({
       ok: true,
       status: 200,
-      body: { status: true, data: { authorization_url: 'https://checkout.paystack.com/safe', reference: 'psk_safe' } },
+      body: {
+        status: true,
+        data: { authorization_url: 'https://checkout.paystack.com/safe', reference: 'psk_safe' },
+      },
     });
-    const provider = new PaystackPaymentProvider(enabledPaystackConfigService(), http as unknown as PaystackHttpClient);
+    const provider = new PaystackPaymentProvider(
+      enabledPaystackConfigService(),
+      http as unknown as PaystackHttpClient,
+    );
     mockRoutingService.routeForCheckout.mockResolvedValue({ provider, reason: 'preferred' });
 
     const result = await service.initiateCheckout(request);
@@ -165,9 +196,15 @@ describe('SubscriptionsService — Paystack checkout integration', () => {
     http.request.mockResolvedValue({
       ok: true,
       status: 200,
-      body: { status: true, data: { authorization_url: 'https://checkout.paystack.com/first', reference: 'psk_first' } },
+      body: {
+        status: true,
+        data: { authorization_url: 'https://checkout.paystack.com/first', reference: 'psk_first' },
+      },
     });
-    const provider = new PaystackPaymentProvider(enabledPaystackConfigService(), http as unknown as PaystackHttpClient);
+    const provider = new PaystackPaymentProvider(
+      enabledPaystackConfigService(),
+      http as unknown as PaystackHttpClient,
+    );
     mockRoutingService.routeForCheckout.mockResolvedValue({ provider, reason: 'preferred' });
 
     const first = await service.initiateCheckout(request);
@@ -179,7 +216,12 @@ describe('SubscriptionsService — Paystack checkout integration', () => {
       status: 'DRAFT',
       currency: 'GHS',
       totalAmount: '5000',
-      metadata: { type: 'SUBSCRIPTION', planId: 'plan-1', countryCode: 'GH', paymentPurpose: 'SUBSCRIPTION_INITIAL' },
+      metadata: {
+        type: 'SUBSCRIPTION',
+        planId: 'plan-1',
+        countryCode: 'GH',
+        paymentPurpose: 'SUBSCRIPTION_INITIAL',
+      },
     });
     mockTransactionRepo.findOne.mockResolvedValueOnce({
       id: 'tx-1',
@@ -187,7 +229,10 @@ describe('SubscriptionsService — Paystack checkout integration', () => {
       status: PaymentTransactionStatus.PROCESSING,
       provider: 'paystack',
       providerTransactionReference: 'psk_first',
-      providerPayloadSummary: { checkoutUrl: 'https://checkout.paystack.com/first', sessionId: 'psk_first' },
+      providerPayloadSummary: {
+        checkoutUrl: 'https://checkout.paystack.com/first',
+        sessionId: 'psk_first',
+      },
     });
 
     const second = await service.initiateCheckout(request);

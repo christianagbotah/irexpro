@@ -1,15 +1,11 @@
-import {
-  Body,
-  Controller,
-  ForbiddenException,
-  Logger,
-  Post,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Logger, Post, UseGuards } from '@nestjs/common';
 import { ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { Public } from '../../common/decorators/public.decorator';
-import { InternalApiKeyGuard, INTERNAL_API_KEY_HEADER } from '../../common/guards/internal-api-key.guard';
+import {
+  InternalApiKeyGuard,
+  INTERNAL_API_KEY_HEADER,
+} from '../../common/guards/internal-api-key.guard';
 import { CurrentUserId } from '../../common/decorators/current-user.decorator';
 import { AiSignalService } from './ai-signal.service';
 import { SimulateSignalDto } from './dto/simulate-signal.dto';
@@ -80,8 +76,8 @@ export class AiController {
 
     this.logger.log(
       `[DEV] Simulated signal from user=${userId} ` +
-      `instrument=${dto.instrument} direction=${dto.direction} ` +
-      `session=${dto.tradingSessionId}`,
+        `instrument=${dto.instrument} direction=${dto.direction} ` +
+        `session=${dto.tradingSessionId}`,
     );
 
     const candidate = this.aiSignalService.buildSimulatedCandidate(userId, {
@@ -133,8 +129,8 @@ export class AiController {
   async receiveInternalSignal(@Body() dto: InternalSignalDto): Promise<StrategyResult> {
     this.logger.log(
       `[INTERNAL] Signal received from AI engine: ` +
-      `instrument=${dto.instrument} direction=${dto.direction} ` +
-      `user=${dto.userId} model=${dto.modelVersion}`,
+        `instrument=${dto.instrument} direction=${dto.direction} ` +
+        `user=${dto.userId} model=${dto.modelVersion}`,
     );
 
     const candidate: AiSignalCandidate = {

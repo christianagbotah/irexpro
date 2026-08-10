@@ -58,9 +58,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       }
     } else if (status >= 400) {
       // 4xx errors — log at warn level (safe context only)
-      this.logger.warn(
-        `${safeLogContext.method} ${safeLogContext.url} → ${status}`,
-      );
+      this.logger.warn(`${safeLogContext.method} ${safeLogContext.url} → ${status}`);
     }
 
     // Build the client-facing response — redact any sensitive fields
@@ -92,7 +90,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       exception instanceof Error &&
       (exception.constructor.name === 'QueryFailedError' ||
         exception.message.includes('invalid input syntax') ||
-        exception.message.includes('relation') && exception.message.includes('does not exist'))
+        (exception.message.includes('relation') && exception.message.includes('does not exist')))
     );
   }
 }

@@ -276,7 +276,7 @@ describe('Runtime bootstrap smoke test (Sprint 20)', () => {
     // CredentialEncryptionService, so this resolution threw:
     //   "Nest can't resolve dependencies of the ExecutionService
     //    (..., CredentialEncryptionService at index [4], ...)"
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+
     const { ExecutionService } = require('./modules/execution/execution.service');
     const executionService = moduleRef.get(ExecutionService);
     expect(executionService).toBeDefined();
@@ -286,25 +286,27 @@ describe('Runtime bootstrap smoke test (Sprint 20)', () => {
   it('CredentialEncryptionService is a single shared instance owned by BrokerModule', () => {
     // Defence-in-depth: confirms the service is NOT duplicated across modules.
     // BrokerService and ExecutionService should receive the same instance.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { CredentialEncryptionService } = require('./modules/broker/services/credential-encryption.service');
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+
+    const {
+      CredentialEncryptionService,
+    } = require('./modules/broker/services/credential-encryption.service');
+
     const { BrokerService } = require('./modules/broker/broker.service');
     const brokerService = moduleRef.get(BrokerService);
-    const encryptionFromBroker = (brokerService as unknown as { encryptionService: unknown }).encryptionService;
+    const encryptionFromBroker = (brokerService as unknown as { encryptionService: unknown })
+      .encryptionService;
     const encryptionFromModule = moduleRef.get(CredentialEncryptionService);
     expect(encryptionFromBroker).toBe(encryptionFromModule);
   });
 
   it('BrokerAdapterRegistry is resolvable and has both adapters registered (onModuleInit ran)', () => {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { BrokerAdapterRegistry } = require('./modules/broker/adapters/broker-adapter.registry');
     const registry = moduleRef.get(BrokerAdapterRegistry);
     expect(registry).toBeDefined();
     // BrokerModule.onModuleInit registers MetaTrader + PaperBroker adapters.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+
     const { MetaTraderAdapter } = require('./modules/broker/adapters/metatrader.adapter');
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+
     const { PaperBrokerAdapter } = require('./modules/broker/adapters/paper-broker.adapter');
     expect(() => registry.getAdapter(new MetaTraderAdapter().brokerId)).not.toThrow();
     expect(() => registry.getAdapter(new PaperBrokerAdapter().brokerId)).not.toThrow();

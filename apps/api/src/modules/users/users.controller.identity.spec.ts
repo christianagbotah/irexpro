@@ -50,7 +50,10 @@ describe('UsersController (Hotfix — UUID identity contract)', () => {
   });
 
   it('updateMe passes UUID string to updateMyProfile', async () => {
-    const dto: UpdateMyProfileDto = { firstName: 'John', tradingExperienceLevel: TradingExperienceLevel.BEGINNER };
+    const dto: UpdateMyProfileDto = {
+      firstName: 'John',
+      tradingExperienceLevel: TradingExperienceLevel.BEGINNER,
+    };
     await controller.updateMe(USER_ID, dto);
     expect(usersService.updateMyProfile).toHaveBeenCalledWith(USER_ID, dto);
     expect(typeof usersService.updateMyProfile.mock.calls[0][0]).toBe('string');

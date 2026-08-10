@@ -21,9 +21,13 @@ describe('StripeHttpClient', () => {
   });
 
   it('returns ok=true with parsed body on a successful 2xx response', async () => {
-    global.fetch = jest
-      .fn()
-      .mockResolvedValue(mockFetchResponse({ ok: true, status: 200, json: { id: 'cs_test_1', url: 'https://checkout.stripe.com/x' } }));
+    global.fetch = jest.fn().mockResolvedValue(
+      mockFetchResponse({
+        ok: true,
+        status: 200,
+        json: { id: 'cs_test_1', url: 'https://checkout.stripe.com/x' },
+      }),
+    );
     const client = new StripeHttpClient();
 
     const result = await client.request('https://api.stripe.com/v1/checkout/sessions', {
@@ -40,7 +44,9 @@ describe('StripeHttpClient', () => {
     let capturedInit: RequestInit | undefined;
     global.fetch = jest.fn().mockImplementation((_url: string, init: RequestInit) => {
       capturedInit = init;
-      return Promise.resolve(mockFetchResponse({ ok: true, status: 200, json: { id: 'cs_test_1' } }));
+      return Promise.resolve(
+        mockFetchResponse({ ok: true, status: 200, json: { id: 'cs_test_1' } }),
+      );
     });
     const client = new StripeHttpClient();
 
@@ -54,7 +60,9 @@ describe('StripeHttpClient', () => {
       },
     });
 
-    expect(capturedInit?.headers).toMatchObject({ 'Content-Type': 'application/x-www-form-urlencoded' });
+    expect(capturedInit?.headers).toMatchObject({
+      'Content-Type': 'application/x-www-form-urlencoded',
+    });
     const body = capturedInit?.body as string;
     expect(typeof body).toBe('string');
     expect(body).toContain('mode=payment');
@@ -65,7 +73,9 @@ describe('StripeHttpClient', () => {
   });
 
   it('never includes the Authorization header value in the returned result', async () => {
-    global.fetch = jest.fn().mockResolvedValue(mockFetchResponse({ ok: true, status: 200, json: {} }));
+    global.fetch = jest
+      .fn()
+      .mockResolvedValue(mockFetchResponse({ ok: true, status: 200, json: {} }));
     const client = new StripeHttpClient();
     const result = await client.request('https://api.stripe.com/v1/checkout/sessions/cs_1', {
       method: 'GET',
@@ -76,7 +86,11 @@ describe('StripeHttpClient', () => {
 
   it('handles non-2xx responses safely, extracting the Stripe error.message shape', async () => {
     global.fetch = jest.fn().mockResolvedValue(
-      mockFetchResponse({ ok: false, status: 402, json: { error: { message: 'Your card was declined.', type: 'card_error' } } }),
+      mockFetchResponse({
+        ok: false,
+        status: 402,
+        json: { error: { message: 'Your card was declined.', type: 'card_error' } },
+      }),
     );
     const client = new StripeHttpClient();
     const result = await client.request('https://api.stripe.com/v1/checkout/sessions', {
@@ -90,7 +104,9 @@ describe('StripeHttpClient', () => {
   });
 
   it('falls back to a generic message when the error body has no message field', async () => {
-    global.fetch = jest.fn().mockResolvedValue(mockFetchResponse({ ok: false, status: 500, json: {} }));
+    global.fetch = jest
+      .fn()
+      .mockResolvedValue(mockFetchResponse({ ok: false, status: 500, json: {} }));
     const client = new StripeHttpClient();
     const result = await client.request('https://api.stripe.com/v1/checkout/sessions', {
       method: 'POST',

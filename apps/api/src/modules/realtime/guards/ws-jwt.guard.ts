@@ -42,7 +42,10 @@ export class WsJwtGuard implements CanActivate {
 
     try {
       const secret = this.configService.get<string>('jwt.secret');
-      const payload = this.jwtService.verify<{ sub: string; email: string; roles: string[] }>(token, { secret });
+      const payload = this.jwtService.verify<{ sub: string; email: string; roles: string[] }>(
+        token,
+        { secret },
+      );
 
       (client as WsAuthenticatedSocket).userId = payload.sub;
       (client as WsAuthenticatedSocket).userEmail = payload.email;

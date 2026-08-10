@@ -23,10 +23,16 @@ export class AuthUserDto {
   @ApiProperty({ example: 'a1b2c3d4-...' })
   id: string;
 
-  @ApiPropertyOptional({ example: 'user@example.com', description: 'Null if registered with phone only' })
+  @ApiPropertyOptional({
+    example: 'user@example.com',
+    description: 'Null if registered with phone only',
+  })
   email: string | null;
 
-  @ApiPropertyOptional({ example: '+233241234567', description: 'Null if registered with email only' })
+  @ApiPropertyOptional({
+    example: '+233241234567',
+    description: 'Null if registered with email only',
+  })
   phone: string | null;
 
   @ApiPropertyOptional({ example: 'John' })
@@ -38,7 +44,10 @@ export class AuthUserDto {
   @ApiPropertyOptional({ example: 'GH' })
   countryCode: string | null;
 
-  @ApiProperty({ example: 'ACTIVE', enum: ['PENDING_VERIFICATION', 'ACTIVE', 'SUSPENDED', 'CLOSED'] })
+  @ApiProperty({
+    example: 'ACTIVE',
+    enum: ['PENDING_VERIFICATION', 'ACTIVE', 'SUSPENDED', 'CLOSED'],
+  })
   status: string;
 
   @ApiProperty({ example: ['USER'], isArray: true, enum: RoleName })

@@ -43,6 +43,6 @@ export const CurrentUser = createParamDecorator(
  * authenticated principal. Throws UnauthorizedException if the principal
  * is missing or malformed (no valid UUID).
  */
-export const CurrentUserId = createParamDecorator(
-  (_data: unknown, ctx: ExecutionContext): string => extractUserId(ctx),
+export const CurrentUserId = createParamDecorator((_data: unknown, ctx: ExecutionContext): string =>
+  extractUserId(ctx),
 );

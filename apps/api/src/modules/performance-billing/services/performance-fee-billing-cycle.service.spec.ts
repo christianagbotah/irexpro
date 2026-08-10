@@ -15,7 +15,9 @@ const FUTURE = new Date('2099-01-01T00:00:00Z');
 const ACTOR = 'admin-1';
 
 // ── Mock factories ─────────────────────────────────────────────────────────────
-function makeCycle(overrides: Partial<PerformanceFeeBillingCycle> = {}): PerformanceFeeBillingCycle {
+function makeCycle(
+  overrides: Partial<PerformanceFeeBillingCycle> = {},
+): PerformanceFeeBillingCycle {
   return {
     id: 'cycle-1',
     userId: 'user-1',
@@ -83,7 +85,13 @@ beforeEach(() => {
   jest.clearAllMocks();
 
   mockCycleRepo = {
-    create: jest.fn((x) => ({ ...x, id: 'cycle-1', createdAt: NOW, updatedAt: NOW, completedAt: null })),
+    create: jest.fn((x) => ({
+      ...x,
+      id: 'cycle-1',
+      createdAt: NOW,
+      updatedAt: NOW,
+      completedAt: null,
+    })),
     save: jest.fn(async (x) => ({ ...x, id: 'cycle-1' })),
     findOne: jest.fn(async () => makeCycle()),
     find: jest.fn(async () => []),
@@ -116,9 +124,7 @@ beforeEach(() => {
 // ═══════════════════════════════════════════════════════════════════════════════
 describe('createBillingCycle', () => {
   it('creates a DRAFT cycle and emits audit event', async () => {
-    const cycle = await service.createBillingCycle(
-      'user-1', 'conn-1', FROM, TO, 'USD', ACTOR,
-    );
+    const cycle = await service.createBillingCycle('user-1', 'conn-1', FROM, TO, 'USD', ACTOR);
     expect(cycle.id).toBe('cycle-1');
     expect(mockCycleRepo.save).toHaveBeenCalledWith(
       expect.objectContaining({ status: BillingCycleStatus.DRAFT, userId: 'user-1' }),
@@ -362,12 +368,10 @@ describe('runBillingCycle — state machine', () => {
 describe('runBillingCycleForUserPeriod', () => {
   it('creates a new cycle and runs it when none exists', async () => {
     mockCycleRepo.findOne
-      .mockResolvedValueOnce(null)       // findExistingCycle → no existing
+      .mockResolvedValueOnce(null) // findExistingCycle → no existing
       .mockResolvedValueOnce(makeCycle()) // createBillingCycle save → findOne after save
       .mockResolvedValue(makeCycle({ status: BillingCycleStatus.DRAFT })); // runBillingCycle calls
-    await service.runBillingCycleForUserPeriod(
-      'user-1', 'conn-1', FROM, TO, 'USD', ACTOR,
-    );
+    await service.runBillingCycleForUserPeriod('user-1', 'conn-1', FROM, TO, 'USD', ACTOR);
     expect(mockCycleRepo.save).toHaveBeenCalledTimes(1);
   });
 
@@ -377,17 +381,13 @@ describe('runBillingCycleForUserPeriod', () => {
       .mockResolvedValueOnce(failedCycle) // findExistingCycle
       .mockResolvedValueOnce(failedCycle) // getBillingCycle inside runBillingCycle
       .mockResolvedValue(makeCycle({ status: BillingCycleStatus.INVOICED })); // final fetch
-    await service.runBillingCycleForUserPeriod(
-      'user-1', 'conn-1', FROM, TO, 'USD', ACTOR,
-    );
+    await service.runBillingCycleForUserPeriod('user-1', 'conn-1', FROM, TO, 'USD', ACTOR);
     expect(mockCycleRepo.save).not.toHaveBeenCalled(); // no new cycle created
     expect(mockReconService.runReconciliation).toHaveBeenCalledTimes(1);
   });
 
   it('throws ConflictException if an INVOICED cycle already exists', async () => {
-    mockCycleRepo.findOne.mockResolvedValueOnce(
-      makeCycle({ status: BillingCycleStatus.INVOICED }),
-    );
+    mockCycleRepo.findOne.mockResolvedValueOnce(makeCycle({ status: BillingCycleStatus.INVOICED }));
     await expect(
       service.runBillingCycleForUserPeriod('user-1', 'conn-1', FROM, TO, 'USD', ACTOR),
     ).rejects.toThrow(ConflictException);
@@ -414,7 +414,7 @@ describe('runBillingCycleForUserPeriod', () => {
 
   it('uses IsNull() in duplicate lookup for account-wide (null broker) cycles', async () => {
     mockCycleRepo.findOne
-      .mockResolvedValueOnce(null)                               // findExistingCycle
+      .mockResolvedValueOnce(null) // findExistingCycle
       .mockResolvedValueOnce(makeCycle({ brokerConnectionId: null })) // after create
       .mockResolvedValue(makeCycle({ status: BillingCycleStatus.DRAFT, brokerConnectionId: null }));
 
@@ -465,16 +465,16 @@ describe('cancelBillingCycle', () => {
 
   it('throws BadRequestException if cycle is INVOICED (final state)', async () => {
     mockCycleRepo.findOne.mockResolvedValue(makeCycle({ status: BillingCycleStatus.INVOICED }));
-    await expect(
-      service.cancelBillingCycle('cycle-1', 'Try', ACTOR),
-    ).rejects.toThrow(BadRequestException);
+    await expect(service.cancelBillingCycle('cycle-1', 'Try', ACTOR)).rejects.toThrow(
+      BadRequestException,
+    );
   });
 
   it('throws BadRequestException if cycle is RECONCILING', async () => {
     mockCycleRepo.findOne.mockResolvedValue(makeCycle({ status: BillingCycleStatus.RECONCILING }));
-    await expect(
-      service.cancelBillingCycle('cycle-1', 'Try', ACTOR),
-    ).rejects.toThrow(BadRequestException);
+    await expect(service.cancelBillingCycle('cycle-1', 'Try', ACTOR)).rejects.toThrow(
+      BadRequestException,
+    );
   });
 });
 

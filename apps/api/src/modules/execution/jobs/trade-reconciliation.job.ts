@@ -47,10 +47,7 @@ export class TradeReconciliationJob extends WorkerHost {
     this.logger.debug(`Running trade reconciliation job ${job.id}`);
 
     const openTrades = await this.tradeRepo.find({
-      where: [
-        { status: TradeStatus.OPEN },
-        { status: TradeStatus.RECONCILIATION_PENDING },
-      ],
+      where: [{ status: TradeStatus.OPEN }, { status: TradeStatus.RECONCILIATION_PENDING }],
     });
 
     if (openTrades.length === 0) {
@@ -88,7 +85,10 @@ export class TradeReconciliationJob extends WorkerHost {
       return false;
     }
 
-    const connection = await this.brokerService.findConnectionById(trade.brokerConnectionId, trade.userId);
+    const connection = await this.brokerService.findConnectionById(
+      trade.brokerConnectionId,
+      trade.userId,
+    );
 
     const credentials = this.encryptionService.decrypt({
       ciphertext: connection.encryptedCredentials!,
@@ -102,9 +102,9 @@ export class TradeReconciliationJob extends WorkerHost {
     await adapter.connect(credentials);
 
     // Zero credentials immediately after use
-    (Object.keys(credentials) as (keyof typeof credentials)[]).forEach(
-      (k) => { (credentials as unknown as Record<string, unknown>)[k] = null; },
-    );
+    (Object.keys(credentials) as (keyof typeof credentials)[]).forEach((k) => {
+      (credentials as unknown as Record<string, unknown>)[k] = null;
+    });
 
     // Check if position still open at broker: null = closed/not found
     const position = await adapter.getPositionById(trade.externalOrderId);
@@ -115,7 +115,10 @@ export class TradeReconciliationJob extends WorkerHost {
       let realisedPnl: string | null = null;
 
       try {
-        const closedTrades = await adapter.getClosedTrades(trade.openedAt ?? new Date(0), new Date());
+        const closedTrades = await adapter.getClosedTrades(
+          trade.openedAt ?? new Date(0),
+          new Date(),
+        );
         const match = closedTrades.find((ct) => ct.externalOrderId === trade.externalOrderId);
         if (match) {
           exitPrice = match.closePrice;

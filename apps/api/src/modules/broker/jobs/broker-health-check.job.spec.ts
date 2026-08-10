@@ -9,8 +9,16 @@
 jest.mock('bullmq', () => ({
   // Provide only what broker-health-check.job.ts uses: Job (type-only import)
   Job: class Job {},
-  Worker: class Worker { close() { return Promise.resolve(); } },
-  Queue: class Queue { close() { return Promise.resolve(); } },
+  Worker: class Worker {
+    close() {
+      return Promise.resolve();
+    }
+  },
+  Queue: class Queue {
+    close() {
+      return Promise.resolve();
+    }
+  },
 }));
 
 jest.mock('@nestjs/bullmq', () => {
@@ -22,7 +30,9 @@ jest.mock('@nestjs/bullmq', () => {
     onApplicationBootstrap() {}
     onModuleDestroy() {}
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    async process(_job: any): Promise<any> { return undefined; }
+    async process(_job: any): Promise<any> {
+      return undefined;
+    }
   }
 
   return {

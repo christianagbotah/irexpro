@@ -116,10 +116,7 @@ export class PerformanceBillingController {
    * - Normal user: only own cycles.
    */
   @Get('cycles/:id')
-  async getCycle(
-    @Param('id') id: string,
-    @CurrentUser() principal: AuthenticatedPrincipal,
-  ) {
+  async getCycle(@Param('id') id: string, @CurrentUser() principal: AuthenticatedPrincipal) {
     const cycle = await this.svc.getBillingCycle(id);
 
     if (!this.isAdmin(principal) && cycle.userId !== principal.userId) {
@@ -142,8 +139,8 @@ export class PerformanceBillingController {
   }
 
   private isAdmin(principal: AuthenticatedPrincipal): boolean {
-    return principal.roles?.some(
-      (r) => r === RoleName.ADMIN || r === RoleName.SUPER_ADMIN,
-    ) ?? false;
+    return (
+      principal.roles?.some((r) => r === RoleName.ADMIN || r === RoleName.SUPER_ADMIN) ?? false
+    );
   }
 }

@@ -62,7 +62,9 @@ async function bootstrap() {
 
   await app.listen(port);
   logger.log(`iRexPro API running on http://localhost:${port}/${apiPrefix}`);
-  logger.log(`Swagger docs: http://localhost:${port}/${configService.get('swagger.path', 'api/docs')}`);
+  logger.log(
+    `Swagger docs: http://localhost:${port}/${configService.get('swagger.path', 'api/docs')}`,
+  );
 }
 
 bootstrap();

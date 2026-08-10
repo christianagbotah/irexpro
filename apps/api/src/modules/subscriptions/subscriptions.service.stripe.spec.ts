@@ -6,7 +6,10 @@ import { SubscriptionPlan } from './entities/subscription-plan.entity';
 import { PlanPricing } from './entities/plan-pricing.entity';
 import { UserSubscription } from './entities/user-subscription.entity';
 import { Invoice } from '../payments/entities/invoice.entity';
-import { PaymentTransaction, PaymentTransactionStatus } from '../payments/entities/payment-transaction.entity';
+import {
+  PaymentTransaction,
+  PaymentTransactionStatus,
+} from '../payments/entities/payment-transaction.entity';
 import { AuditService } from '../audit/audit.service';
 import { PaymentRoutingService } from '../payments/services/payment-routing.service';
 import { StripePaymentProvider } from '../payments/providers/stripe.provider';
@@ -34,7 +37,12 @@ const mockInvoiceRepo = {
   update: jest.fn(),
   createQueryBuilder: jest.fn(),
 };
-const mockTransactionRepo = { create: jest.fn(), save: jest.fn(), update: jest.fn(), findOne: jest.fn() };
+const mockTransactionRepo = {
+  create: jest.fn(),
+  save: jest.fn(),
+  update: jest.fn(),
+  findOne: jest.fn(),
+};
 const mockAuditService = { log: jest.fn() };
 const mockRoutingService = { routeForCheckout: jest.fn() };
 
@@ -109,7 +117,10 @@ describe('SubscriptionsService — Stripe checkout integration (Sprint 17)', () 
       status: 200,
       body: { id: 'cs_new_sub', url: 'https://checkout.stripe.com/xyz' },
     });
-    const provider = new StripePaymentProvider(enabledStripeConfigService(), http as unknown as StripeHttpClient);
+    const provider = new StripePaymentProvider(
+      enabledStripeConfigService(),
+      http as unknown as StripeHttpClient,
+    );
     mockRoutingService.routeForCheckout.mockResolvedValue({ provider, reason: 'preferred' });
 
     const result = await service.initiateCheckout(request);
@@ -122,7 +133,10 @@ describe('SubscriptionsService — Stripe checkout integration (Sprint 17)', () 
   });
 
   it('Stripe provider failure (disabled/unconfigured) does not activate a subscription', async () => {
-    const provider = new StripePaymentProvider(disabledStripeConfigService(), new StripeHttpClient());
+    const provider = new StripePaymentProvider(
+      disabledStripeConfigService(),
+      new StripeHttpClient(),
+    );
     mockRoutingService.routeForCheckout.mockResolvedValue({ provider, reason: 'preferred' });
 
     await expect(service.initiateCheckout(request)).rejects.toThrow(BadRequestException);
@@ -143,7 +157,10 @@ describe('SubscriptionsService — Stripe checkout integration (Sprint 17)', () 
       body: { error: { message: 'Invalid currency' } },
       errorMessage: 'Invalid currency',
     });
-    const provider = new StripePaymentProvider(enabledStripeConfigService(), http as unknown as StripeHttpClient);
+    const provider = new StripePaymentProvider(
+      enabledStripeConfigService(),
+      http as unknown as StripeHttpClient,
+    );
     mockRoutingService.routeForCheckout.mockResolvedValue({ provider, reason: 'preferred' });
 
     await expect(service.initiateCheckout(request)).rejects.toThrow(BadRequestException);
@@ -160,7 +177,10 @@ describe('SubscriptionsService — Stripe checkout integration (Sprint 17)', () 
       status: 200,
       body: { id: 'cs_safe', url: 'https://checkout.stripe.com/safe' },
     });
-    const provider = new StripePaymentProvider(enabledStripeConfigService(), http as unknown as StripeHttpClient);
+    const provider = new StripePaymentProvider(
+      enabledStripeConfigService(),
+      http as unknown as StripeHttpClient,
+    );
     mockRoutingService.routeForCheckout.mockResolvedValue({ provider, reason: 'preferred' });
 
     const result = await service.initiateCheckout(request);
@@ -174,7 +194,10 @@ describe('SubscriptionsService — Stripe checkout integration (Sprint 17)', () 
       status: 200,
       body: { id: 'cs_first', url: 'https://checkout.stripe.com/first' },
     });
-    const provider = new StripePaymentProvider(enabledStripeConfigService(), http as unknown as StripeHttpClient);
+    const provider = new StripePaymentProvider(
+      enabledStripeConfigService(),
+      http as unknown as StripeHttpClient,
+    );
     mockRoutingService.routeForCheckout.mockResolvedValue({ provider, reason: 'preferred' });
 
     const first = await service.initiateCheckout(request);
@@ -186,7 +209,12 @@ describe('SubscriptionsService — Stripe checkout integration (Sprint 17)', () 
       status: 'DRAFT',
       currency: 'USD',
       totalAmount: '2900',
-      metadata: { type: 'SUBSCRIPTION', planId: 'plan-1', countryCode: 'US', paymentPurpose: 'SUBSCRIPTION_INITIAL' },
+      metadata: {
+        type: 'SUBSCRIPTION',
+        planId: 'plan-1',
+        countryCode: 'US',
+        paymentPurpose: 'SUBSCRIPTION_INITIAL',
+      },
     });
     mockTransactionRepo.findOne.mockResolvedValueOnce({
       id: 'tx-1',
@@ -194,7 +222,10 @@ describe('SubscriptionsService — Stripe checkout integration (Sprint 17)', () 
       status: PaymentTransactionStatus.PROCESSING,
       provider: 'stripe',
       providerTransactionReference: 'cs_first',
-      providerPayloadSummary: { checkoutUrl: 'https://checkout.stripe.com/first', sessionId: 'cs_first' },
+      providerPayloadSummary: {
+        checkoutUrl: 'https://checkout.stripe.com/first',
+        sessionId: 'cs_first',
+      },
     });
 
     const second = await service.initiateCheckout(request);
@@ -214,7 +245,10 @@ describe('SubscriptionsService — Stripe checkout integration (Sprint 17)', () 
       status: 200,
       body: { id: 'cs_idem', url: 'https://checkout.stripe.com/idem' },
     });
-    const provider = new StripePaymentProvider(enabledStripeConfigService(), http as unknown as StripeHttpClient);
+    const provider = new StripePaymentProvider(
+      enabledStripeConfigService(),
+      http as unknown as StripeHttpClient,
+    );
     mockRoutingService.routeForCheckout.mockResolvedValue({ provider, reason: 'preferred' });
 
     const requestWithKey = { ...request, idempotencyKey: 'idem-key-stripe-1' };
@@ -238,7 +272,10 @@ describe('SubscriptionsService — Stripe checkout integration (Sprint 17)', () 
       status: PaymentTransactionStatus.PROCESSING,
       provider: 'stripe',
       providerTransactionReference: 'cs_idem',
-      providerPayloadSummary: { checkoutUrl: 'https://checkout.stripe.com/idem', sessionId: 'cs_idem' },
+      providerPayloadSummary: {
+        checkoutUrl: 'https://checkout.stripe.com/idem',
+        sessionId: 'cs_idem',
+      },
     });
 
     const second = await service.initiateCheckout(requestWithKey);
@@ -254,7 +291,10 @@ describe('SubscriptionsService — Stripe checkout integration (Sprint 17)', () 
       status: 200,
       body: { id: 'cs_repriced', url: 'https://checkout.stripe.com/repriced' },
     });
-    const provider = new StripePaymentProvider(enabledStripeConfigService(), http as unknown as StripeHttpClient);
+    const provider = new StripePaymentProvider(
+      enabledStripeConfigService(),
+      http as unknown as StripeHttpClient,
+    );
     mockRoutingService.routeForCheckout.mockResolvedValue({ provider, reason: 'preferred' });
 
     // Pending invoice exists with a STALE amount (price changed since it was created).
@@ -263,7 +303,12 @@ describe('SubscriptionsService — Stripe checkout integration (Sprint 17)', () 
       status: 'DRAFT',
       currency: 'USD',
       totalAmount: '1900', // stale — current price is 2900
-      metadata: { type: 'SUBSCRIPTION', planId: 'plan-1', countryCode: 'US', paymentPurpose: 'SUBSCRIPTION_INITIAL' },
+      metadata: {
+        type: 'SUBSCRIPTION',
+        planId: 'plan-1',
+        countryCode: 'US',
+        paymentPurpose: 'SUBSCRIPTION_INITIAL',
+      },
     });
     mockTransactionRepo.findOne.mockResolvedValueOnce({
       id: 'tx-stale',
@@ -271,7 +316,10 @@ describe('SubscriptionsService — Stripe checkout integration (Sprint 17)', () 
       status: PaymentTransactionStatus.PROCESSING,
       provider: 'stripe',
       providerTransactionReference: 'cs_stale',
-      providerPayloadSummary: { checkoutUrl: 'https://checkout.stripe.com/stale', sessionId: 'cs_stale' },
+      providerPayloadSummary: {
+        checkoutUrl: 'https://checkout.stripe.com/stale',
+        sessionId: 'cs_stale',
+      },
     });
 
     const result = await service.initiateCheckout(request);
