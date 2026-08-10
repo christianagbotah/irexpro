@@ -625,9 +625,10 @@ async function main(): Promise<void> {
     await orphanDs2.destroy();
 
     // Verify orphan row still exists (not silently deleted/modified)
-    const orphanCheck = await orphanSeedClient.query(`SELECT COUNT(*) AS count, user_id::text FROM subscriptions.user_payment_profiles WHERE provider_customer_reference = 'cus_orphan_001'`);
-    assert(parseInt(orphanCheck.rows[0].count, 10) === 1, 'orphan row still exists after failed migration (not silently deleted)');
-    assert(orphanCheck.rows[0].user_id === '00000000-0000-0000-0000-999999999999', 'orphan user_id unchanged (not nulled or modified)');
+    const orphanCount = await orphanSeedClient.query(`SELECT COUNT(*)::int AS count FROM subscriptions.user_payment_profiles WHERE provider_customer_reference = 'cus_orphan_001'`);
+    assert(orphanCount.rows[0].count === 1, 'orphan row still exists after failed migration (not silently deleted)');
+    const orphanRow = await orphanSeedClient.query(`SELECT user_id::text FROM subscriptions.user_payment_profiles WHERE provider_customer_reference = 'cus_orphan_001'`);
+    assert(orphanRow.rows[0].user_id === '00000000-0000-0000-0000-999999999999', 'orphan user_id unchanged (not nulled or modified)');
   } finally {
     await orphanSeedClient.end();
   }
