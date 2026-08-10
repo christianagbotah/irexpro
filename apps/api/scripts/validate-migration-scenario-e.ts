@@ -305,7 +305,7 @@ async function main(): Promise<void> {
     assert(encryptionKeyIdBefore?.character_maximum_length === 100, `encryption_key_id is varchar(100) before upgrade`);
 
     // Capture exact financial values as strings
-    const tradeValuesBefore = await captureClient.query(`
+    tradeValuesBefore = await captureClient.query(`
       SELECT lot_size::text, requested_entry_price::text, fill_price::text,
              stop_loss::text, take_profit::text, realised_pnl::text, exit_price::text,
              encryption_key_id
@@ -315,7 +315,7 @@ async function main(): Promise<void> {
     console.log(`  captured trade values: ${JSON.stringify(tradeValuesBefore.rows[0])}`);
 
     // Capture row counts
-    const rowCountBefore = await captureClient.query(`
+    rowCountBefore = await captureClient.query(`
       SELECT
         (SELECT COUNT(*) FROM identity.users) AS users,
         (SELECT COUNT(*) FROM subscriptions.subscription_plans) AS plans,
