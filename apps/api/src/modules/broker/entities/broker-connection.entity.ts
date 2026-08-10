@@ -45,7 +45,8 @@ export class BrokerConnection {
 
   @Column({
     name: 'account_type',
-    type: 'enum',
+    type: 'varchar',
+    length: 10,
     enum: BrokerMode,
     default: BrokerMode.DEMO,
   })
