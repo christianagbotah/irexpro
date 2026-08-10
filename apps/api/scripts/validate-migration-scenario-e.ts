@@ -210,10 +210,12 @@ async function main(): Promise<void> {
     const userId = userResult.rows[0].id;
     console.log(`  user id: ${userId}`);
 
-    // Subscription plan
+    // Subscription plan — NO 'status' column exists on subscription_plans in the
+    // 16-migration schema. The table has 'is_active' (boolean, default true) and
+    // 'code' (varchar(50) NOT NULL UNIQUE — must be provided).
     const planResult = await seedClient.query(`
-      INSERT INTO subscriptions.subscription_plans (name, billing_interval, status)
-      VALUES ('Pro Trader', 'MONTHLY', 'ACTIVE')
+      INSERT INTO subscriptions.subscription_plans (name, code, billing_interval)
+      VALUES ('Pro Trader', 'PRO-TRADER-E', 'MONTHLY')
       RETURNING id
     `);
     const planId = planResult.rows[0].id;
