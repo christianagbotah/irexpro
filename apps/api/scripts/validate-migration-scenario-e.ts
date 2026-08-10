@@ -598,7 +598,7 @@ async function main(): Promise<void> {
   await adminClient.end();
 
   // Apply original 16 migrations via TypeORM
-  const orphanDs = createDataSource(host, port, 'irexpro_scenario_e_orphan', user, password, sprint29MigrationClasses);
+  const orphanDs = createDataSource(host, port, 'irexpro_scenario_e_orphan', user, password, originalMigrationClasses);
   await orphanDs.initialize();
   await orphanDs.runMigrations();
   await orphanDs.destroy();
