@@ -165,16 +165,24 @@ async function main(): Promise<void> {
   const user = process.env.DB_USER ?? 'postgres';
   const password = process.env.DB_PASSWORD ?? '';
 
-  // Load all migration class constructors
+  // Load migration class constructors
+  // Scenario E is capped at Sprint 29 (timestamp <= 1752400000000).
+  // Migration 19 (1752500000000, Sprint 30) is intentionally excluded —
+  // Scenario E is the historical Sprint-29 regression scenario.
   const allFiles = getMigrationFiles();
-  const allMigrationClasses = allFiles.map(loadMigrationClass);
   const originalFiles = allFiles.filter((f) => parseInt(f.split('-')[0], 10) <= 1752200000000);
   const originalMigrationClasses = originalFiles.map(loadMigrationClass);
-  const newFiles = allFiles.filter((f) => parseInt(f.split('-')[0], 10) > 1752200000000);
+  const sprint29Files = allFiles.filter((f) => {
+    const ts = parseInt(f.split('-')[0], 10);
+    return ts > 1752200000000 && ts <= 1752400000000;
+  });
+  const sprint29MigrationClasses = [...originalMigrationClasses, ...sprint29Files.map(loadMigrationClass)];
+  const newFiles = sprint29Files;
 
-  console.log(`  ${allFiles.length} total migration files (${originalFiles.length} original + ${newFiles.length} new)`);
+  console.log(`  ${allFiles.length} total migration files in repo (Scenario E uses ${sprint29MigrationClasses.length})`);
+  console.log(`  ${originalFiles.length} original + ${newFiles.length} Sprint-29 new = ${sprint29MigrationClasses.length} total for Scenario E`);
   assert(originalFiles.length === 16, `expected 16 original migrations, found ${originalFiles.length}`);
-  assert(newFiles.length === 3, `expected 3 new migrations (Sprint 29 + Sprint 30), found ${newFiles.length}`);
+  assert(newFiles.length === 2, `expected 2 Sprint-29 new migrations, found ${newFiles.length}`);
 
   // ─── Stage 1: Apply original 16 migrations via real TypeORM ────────────
   console.log('\n=== Stage 1: Apply original 16 migrations via TypeORM runMigrations() ===');
@@ -345,7 +353,7 @@ async function main(): Promise<void> {
 
   // Create a NEW DataSource with ALL 18 migration classes.
   // TypeORM should detect the original 16 as already applied and execute only 17/18.
-  const ds2 = createDataSource(host, port, database, user, password, allMigrationClasses);
+  const ds2 = createDataSource(host, port, database, user, password, sprint29MigrationClasses);
   await ds2.initialize();
 
   // showMigrations returns true if there are pending migrations
@@ -360,7 +368,7 @@ async function main(): Promise<void> {
   await verifyClient.connect();
   try {
     const migrationCountAfter = await verifyClient.query(`SELECT COUNT(*) AS count FROM migrations`);
-    assert(parseInt(migrationCountAfter.rows[0].count, 10) === 19, `TypeORM migrations table has 19 entries (got ${migrationCountAfter.rows[0].count})`);
+    assert(parseInt(migrationCountAfter.rows[0].count, 10) === 18, `TypeORM migrations table has 18 entries (got ${migrationCountAfter.rows[0].count})`);
   } finally {
     await verifyClient.end();
   }
@@ -590,7 +598,7 @@ async function main(): Promise<void> {
   await adminClient.end();
 
   // Apply original 16 migrations via TypeORM
-  const orphanDs = createDataSource(host, port, 'irexpro_scenario_e_orphan', user, password, originalMigrationClasses);
+  const orphanDs = createDataSource(host, port, 'irexpro_scenario_e_orphan', user, password, sprint29MigrationClasses);
   await orphanDs.initialize();
   await orphanDs.runMigrations();
   await orphanDs.destroy();
@@ -606,7 +614,7 @@ async function main(): Promise<void> {
     console.log('  inserted orphan payment profile with nonexistent user_id');
 
     // Attempt to run ALL 18 migrations via TypeORM — should fail at migration 18
-    const orphanDs2 = createDataSource(host, port, 'irexpro_scenario_e_orphan', user, password, allMigrationClasses);
+    const orphanDs2 = createDataSource(host, port, 'irexpro_scenario_e_orphan', user, password, sprint29MigrationClasses);
     await orphanDs2.initialize();
 
     try {
