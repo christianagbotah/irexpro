@@ -183,8 +183,19 @@ SQL
 
 ### 2.3 uuid-ossp on PostgreSQL 18 / AlmaLinux (verified staging finding)
 
-The iRexPro migrations call `uuid_generate_v4()` and run
-`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`. On **Webuzo PostgreSQL 18 /
+> **Update (fresh-DB UUID bootstrap hotfix):** the migration chain is now
+> **self-contained** for supported PostgreSQL versions (13+). Migration
+> `1751150000000-EnsureLegacyUuidV4Compatibility` creates a compatibility
+> wrapper (`public.uuid_generate_v4()` → `gen_random_uuid()`) if and only if
+> the function does not already exist, and migration
+> `1752200000000-NormalizeLegacyUuidDefaults` rewrites the three legacy table
+> defaults to `gen_random_uuid()`. As a result, `pnpm migration:run` alone can
+> now provision a completely fresh database **without** manually installing
+> `uuid-ossp`. The guidance below is retained for environments that already
+> have `uuid-ossp` installed (the bridge migration safely no-ops in that case).
+
+Historically, the iRexPro migrations called `uuid_generate_v4()` (from
+`uuid-ossp`) in three table `DEFAULT` clauses. On **Webuzo PostgreSQL 18 /
 AlmaLinux 9.8**, the `uuid-ossp` extension can fail with:
 
 ```
@@ -560,7 +571,7 @@ cd /opt/irexpro/apps/api
 pnpm migration:show -d src/database/data-source.ts
 ```
 
-Expected output: a table listing all 8 migrations with `[x]` (applied). If any
+Expected output: a table listing all 16 migrations with `[x]` (applied). If any
 show `[ ]` (pending), run the next step.
 
 ### 6.2 Run pending migrations
@@ -587,7 +598,7 @@ required — the index creates cleanly.
 ```bash
 cd /opt/irexpro/apps/api
 pnpm migration:show -d src/database/data-source.ts
-# All 8 migrations should show [x] applied. None pending.
+# All 16 migrations should show [x] applied. None pending.
 ```
 
 ### 6.5 Seed (country config)
