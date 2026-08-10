@@ -77,7 +77,7 @@ export class Trade {
   @Index()
   instrument: string;
 
-  @Column({ name: 'direction', type: 'enum', enum: TradeDirection })
+  @Column({ name: 'direction', type: 'varchar', length: 10, enum: TradeDirection })
   direction: TradeDirection;
 
   /** Lot size after Risk Engine position-size capping. Decimal string. */

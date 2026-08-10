@@ -181,7 +181,7 @@ async function main(): Promise<void> {
       .filter((f) => f.endsWith('.ts'))
       .sort();
     console.log(`     ${migrationFiles.length} migration files found`);
-    assert(migrationFiles.length === 18, `expected 18 migrations, found ${migrationFiles.length}`);
+    assert(migrationFiles.length === 19, `expected 19 migrations, found ${migrationFiles.length}`);
 
     // Create a migrations_table for TypeORM-style tracking (the real
     // migration:run command does this automatically, but since we're invoking
@@ -359,6 +359,33 @@ async function main(): Promise<void> {
     } finally {
       await rollbackClient.end();
     }
+
+    // ─── 11. Phase 2A domain CHECK constraints ─────────────────────────────
+    console.log('\n=== 11. Phase 2A domain CHECK constraints ===');
+
+    const chk1 = await client.query(`
+      SELECT pg_get_constraintdef(oid) AS def
+      FROM pg_constraint
+      WHERE conname = 'chk_trades_direction'
+    `);
+    assert(chk1.rows.length === 1, 'chk_trades_direction exists');
+    assert(chk1.rows[0].def.includes("'BUY'") && chk1.rows[0].def.includes("'SELL'"), `chk_trades_direction CHECK expression contains BUY/SELL`);
+
+    const chk2 = await client.query(`
+      SELECT pg_get_constraintdef(oid) AS def
+      FROM pg_constraint
+      WHERE conname = 'chk_broker_reconciled_trades_direction'
+    `);
+    assert(chk2.rows.length === 1, 'chk_broker_reconciled_trades_direction exists');
+    assert(chk2.rows[0].def.includes("'BUY'") && chk2.rows[0].def.includes("'SELL'"), `chk_broker_reconciled_trades_direction CHECK expression contains BUY/SELL`);
+
+    const chk3 = await client.query(`
+      SELECT pg_get_constraintdef(oid) AS def
+      FROM pg_constraint
+      WHERE conname = 'chk_broker_connections_account_type'
+    `);
+    assert(chk3.rows.length === 1, 'chk_broker_connections_account_type exists');
+    assert(chk3.rows[0].def.includes("'DEMO'") && chk3.rows[0].def.includes("'LIVE'"), `chk_broker_connections_account_type CHECK expression contains DEMO/LIVE`);
 
     console.log('\n=== ALL SCENARIO D ASSERTIONS PASSED ===');
   } finally {
