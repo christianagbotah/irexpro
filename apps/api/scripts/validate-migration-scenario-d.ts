@@ -181,7 +181,7 @@ async function main(): Promise<void> {
       .filter((f) => f.endsWith('.ts'))
       .sort();
     console.log(`     ${migrationFiles.length} migration files found`);
-    assert(migrationFiles.length === 16, `expected 16 migrations, found ${migrationFiles.length}`);
+    assert(migrationFiles.length === 18, `expected 18 migrations, found ${migrationFiles.length}`);
 
     // Create a migrations_table for TypeORM-style tracking (the real
     // migration:run command does this automatically, but since we're invoking
