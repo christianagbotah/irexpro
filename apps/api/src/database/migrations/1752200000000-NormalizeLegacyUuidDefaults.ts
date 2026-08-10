@@ -137,7 +137,6 @@ export class NormalizeLegacyUuidDefaults1752200000000 implements MigrationInterf
       // table in a broken state (INSERT without explicit id would fail).
       // Skip the restore rather than creating a broken default. Log via
       // queryRunner for operator visibility.
-      // eslint-disable-next-line no-console
       console.warn(
         'NormalizeLegacyUuidDefaults down(): public.uuid_generate_v4() is not available; ' +
           'skipping default restore to avoid leaving tables in a broken state. ' +
