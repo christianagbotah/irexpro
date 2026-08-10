@@ -9,7 +9,6 @@ import { BrokerAdapterRegistry } from '../../broker/adapters/broker-adapter.regi
 import { CredentialEncryptionService } from '../../broker/services/credential-encryption.service';
 import { AuditService } from '../../audit/audit.service';
 import { AuditAction } from '../../../common/enums/audit-action.enum';
-import { AuditSeverity } from '../../audit/entities/audit-log.entity';
 
 export const TRADE_RECONCILIATION_QUEUE = 'trade-reconciliation';
 export const TRADE_RECONCILIATION_JOB = 'reconcile-open-trades';

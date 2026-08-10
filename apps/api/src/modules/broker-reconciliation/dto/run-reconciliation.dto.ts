@@ -1,4 +1,4 @@
-import { IsDateString, IsNotEmpty, IsUUID, ValidateIf } from 'class-validator';
+import { IsDateString, IsNotEmpty, IsUUID } from 'class-validator';
 
 /**
  * DTO for triggering a broker trade reconciliation run.

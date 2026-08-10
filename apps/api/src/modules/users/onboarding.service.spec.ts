@@ -1,6 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import { OnboardingService } from './onboarding.service';
 import { User, UserStatus } from './entities/user.entity';
 import { UserProfile, TradingExperienceLevel } from './entities/user-profile.entity';

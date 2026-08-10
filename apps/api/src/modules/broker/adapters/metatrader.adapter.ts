@@ -17,11 +17,7 @@ import {
   IBrokerAdapter,
   OHLCV,
 } from '../interfaces/broker-adapter.interface';
-import {
-  BrokerAdapterError,
-  BrokerErrorCode,
-  RETRYABLE_BROKER_ERRORS,
-} from '../interfaces/broker-adapter.errors';
+import { BrokerAdapterError, BrokerErrorCode } from '../interfaces/broker-adapter.errors';
 import { MetaApiClientService } from '../services/metaapi-client.service';
 
 /** MetaAPI stringCode for a successfully executed trade */
@@ -215,7 +211,12 @@ export class MetaTraderAdapter implements IBrokerAdapter {
   }
 
   async getOHLCV(instrument: string, timeframe: string, count: number): Promise<OHLCV[]> {
-    const conn = await this.getActiveConnection();
+    // Precheck: throws BrokerAdapterError(NOT_CONNECTED) if no active connection.
+    // The account-level historical-candles API below does not use the returned
+    // connection handle directly (it reaches into the connection pool instead),
+    // but the precheck preserves the same connectivity gate as every other
+    // method on this adapter.
+    await this.getActiveConnection();
     try {
       // MetaAPI uses account-level historical candles API
       const entry = this.metaApiClient['connectionPool']?.get(this.currentAccountId!);

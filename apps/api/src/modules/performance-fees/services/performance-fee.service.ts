@@ -568,7 +568,7 @@ export class PerformanceFeeService {
   async getCurrentHighWaterMark(
     userId: string,
     brokerConnectionId: string | null,
-    currency: string,
+    _currency: string,
   ): Promise<string> {
     const performance = await this.performanceRepo.findOne({
       where: {

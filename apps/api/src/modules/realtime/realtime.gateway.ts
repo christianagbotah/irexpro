@@ -11,7 +11,7 @@ import {
   WsException,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { WsJwtGuard, WsAuthenticatedSocket } from './guards/ws-jwt.guard';
+import { WsJwtGuard } from './guards/ws-jwt.guard';
 import { RealtimeService } from './realtime.service';
 
 /**

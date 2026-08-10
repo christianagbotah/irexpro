@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ForbiddenException, NotFoundException, HttpException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { TradingService } from './trading.service';
 import { BrokerService } from '../broker/broker.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';

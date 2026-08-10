@@ -2,7 +2,6 @@ import { ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { RolesGuard } from './roles.guard';
 import { RoleName } from '../../modules/users/entities/role.entity';
-import { ROLES_KEY } from '../constants/roles.constants';
 
 /**
  * RolesGuard tests — verifies admin endpoint role enforcement.
@@ -20,7 +19,7 @@ describe('RolesGuard — admin endpoint enforcement', () => {
     guard = new RolesGuard(reflector);
   });
 
-  function mockExecutionContext(user: unknown, roles: RoleName[] | undefined): ExecutionContext {
+  function mockExecutionContext(user: unknown, _roles: RoleName[] | undefined): ExecutionContext {
     const context = {
       getHandler: () => mockHandler,
       getClass: () => mockClass,

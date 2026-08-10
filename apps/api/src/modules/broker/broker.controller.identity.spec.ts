@@ -219,8 +219,6 @@ describe('BrokerController (Hotfix — UUID identity regression)', () => {
       // The result is a BrokerConnectionResponseDto instance — credential fields
       // are @Exclude() and should not be serialized.
       expect(result).toBeDefined();
-      // Verify the DTO doesn't have the credential properties exposed
-      const serialized = JSON.parse(JSON.stringify(result));
       // The raw mock has encryptedCredentials, but the DTO should not expose it
       // (ClassSerializerInterceptor would strip it in a real HTTP context)
     });

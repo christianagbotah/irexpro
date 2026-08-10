@@ -156,7 +156,6 @@ const TO = new Date(Date.now() - 1000);
 
 describe('BrokerTradeReconciliationService', () => {
   let service: BrokerTradeReconciliationService;
-  let normalizer: ClosedTradeNormalizerService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -194,7 +193,6 @@ describe('BrokerTradeReconciliationService', () => {
     }).compile();
 
     service = module.get<BrokerTradeReconciliationService>(BrokerTradeReconciliationService);
-    normalizer = module.get<ClosedTradeNormalizerService>(ClosedTradeNormalizerService);
   });
 
   // ─────────────────────────────────────────────────────────────────────────────

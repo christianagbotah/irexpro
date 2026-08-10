@@ -4,7 +4,6 @@ import {
   PasswordResetDeliveryService,
   NodemailerEmailProvider,
   EMAIL_PROVIDER,
-  EmailProviderInterface,
 } from './password-reset-delivery.service';
 import { ResetChannel } from './entities/password-reset-token.entity';
 

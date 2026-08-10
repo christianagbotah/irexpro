@@ -15,7 +15,7 @@ jest.mock('metaapi.cloud-sdk', () => ({
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
-import { Logger, ServiceUnavailableException } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import { MetaTraderAdapter } from './metatrader.adapter';
 import { MetaApiClientService } from '../services/metaapi-client.service';
 import { BrokerMode } from '../interfaces/broker-adapter.interface';

@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import { BadRequestException } from '@nestjs/common';
 import { SubscriptionsService } from './subscriptions.service';
 import { SubscriptionPlan } from './entities/subscription-plan.entity';
 import { PlanPricing } from './entities/plan-pricing.entity';

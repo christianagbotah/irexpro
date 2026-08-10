@@ -35,7 +35,6 @@ describe('Admin onboarding endpoint authorization (Sprint 29 amendment)', () => 
       // Look backwards from the method for @Roles(ADMIN, SUPER_ADMIN)
       const beforeMethod = source.substring(0, methodIdx);
       const lastRolesIdx = beforeMethod.lastIndexOf('@Roles(');
-      const methodDecIdx = beforeMethod.lastIndexOf('async getUserOnboardingStatus');
       // The @Roles decorator should be between the method and the previous method
       expect(lastRolesIdx).toBeGreaterThan(-1);
       // Verify it includes ADMIN and SUPER_ADMIN

@@ -181,7 +181,7 @@ describe('createBillingCycle', () => {
 describe('runBillingCycle — state machine', () => {
   it('DRAFT → INVOICED happy path with positive fee', async () => {
     mockCycleRepo.findOne.mockResolvedValue(makeCycle({ status: BillingCycleStatus.DRAFT }));
-    const result = await service.runBillingCycle('cycle-1', ACTOR);
+    await service.runBillingCycle('cycle-1', ACTOR);
     expect(mockReconService.runReconciliation).toHaveBeenCalledTimes(1);
     expect(mockPerfFeeService.calculateAssessment).toHaveBeenCalledTimes(1);
     expect(mockPerfFeeService.invoiceAssessment).toHaveBeenCalledTimes(1);

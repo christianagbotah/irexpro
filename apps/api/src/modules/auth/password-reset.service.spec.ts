@@ -2,14 +2,12 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
-import * as argon2 from 'argon2';
 import { PasswordResetService } from './password-reset.service';
 import { PasswordResetToken, ResetChannel } from './entities/password-reset-token.entity';
 import { User, UserStatus } from '../users/entities/user.entity';
 import { AuditService } from '../audit/audit.service';
 import { PasswordResetDeliveryService } from './password-reset-delivery.service';
 import { ConfigService } from '@nestjs/config';
-import { normalizePhone } from './utils/phone.util';
 
 /**
  * PasswordResetService tests — Sprint 28 secure password reset.
@@ -232,7 +230,7 @@ describe('PasswordResetService', () => {
       // Now reset with that token
       const resetTokenCopy = { ...savedToken, usedAt: null };
       mockResetTokenRepo.findOne.mockResolvedValueOnce(resetTokenCopy);
-      const result = await service.resetWithToken(deliveredRawToken, validPassword);
+      await service.resetWithToken(deliveredRawToken, validPassword);
 
       // Password was updated
       expect(mockQueryRunner.manager.update).toHaveBeenCalledWith(User, 'user-1', {

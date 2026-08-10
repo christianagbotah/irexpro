@@ -4,7 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { Trade, TradeCloseReason, TradeDirection, TradeStatus } from './entities/trade.entity';
 import { TradingSession, TradingSessionStatus } from './entities/trading-session.entity';
-import { RiskDecision, ValidatedOrder } from '../risk/interfaces/risk.interface';
+import { RiskDecision } from '../risk/interfaces/risk.interface';
 import { BrokerService } from '../broker/broker.service';
 import { BrokerAdapterRegistry } from '../broker/adapters/broker-adapter.registry';
 import { CredentialEncryptionService } from '../broker/services/credential-encryption.service';
