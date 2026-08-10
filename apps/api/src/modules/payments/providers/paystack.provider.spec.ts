@@ -99,7 +99,9 @@ describe('PaystackPaymentProvider', () => {
         buildConfigService({ enabled: false }),
         buildHttpClientMock(),
       );
-      await expect(provider.getTransactionStatus('ref_1')).rejects.toThrow(ServiceUnavailableException);
+      await expect(provider.getTransactionStatus('ref_1')).rejects.toThrow(
+        ServiceUnavailableException,
+      );
     });
 
     it('verifyWebhookSignature returns false when disabled', () => {
@@ -109,13 +111,16 @@ describe('PaystackPaymentProvider', () => {
       );
       const rawBody = Buffer.from(JSON.stringify({ event: 'charge.success' }));
       const signature = signBody(rawBody, SECRET_KEY);
-      expect(
-        provider.verifyWebhookSignature(rawBody, { 'x-paystack-signature': signature }),
-      ).toBe(false);
+      expect(provider.verifyWebhookSignature(rawBody, { 'x-paystack-signature': signature })).toBe(
+        false,
+      );
     });
 
     it('fail-closed errors never contain the secret key', async () => {
-      const provider = new PaystackPaymentProvider(buildConfigService({ enabled: false }), buildHttpClientMock());
+      const provider = new PaystackPaymentProvider(
+        buildConfigService({ enabled: false }),
+        buildHttpClientMock(),
+      );
       try {
         await provider.createCheckoutSession(CHECKOUT_REQUEST);
         fail('expected to throw');
@@ -130,7 +135,11 @@ describe('PaystackPaymentProvider', () => {
   describe('createCheckoutSession — enabled', () => {
     function buildEnabledProvider(http: PaystackHttpClient & { request: jest.Mock }) {
       return new PaystackPaymentProvider(
-        buildConfigService({ enabled: true, secretKey: SECRET_KEY, callbackUrl: 'https://app.irexpro.com/cb' }),
+        buildConfigService({
+          enabled: true,
+          secretKey: SECRET_KEY,
+          callbackUrl: 'https://app.irexpro.com/cb',
+        }),
         http,
       );
     }
@@ -140,7 +149,10 @@ describe('PaystackPaymentProvider', () => {
       http.request.mockResolvedValue({
         ok: true,
         status: 200,
-        body: { status: true, data: { authorization_url: 'https://checkout.paystack.com/abc', reference: 'psk_abc' } },
+        body: {
+          status: true,
+          data: { authorization_url: 'https://checkout.paystack.com/abc', reference: 'psk_abc' },
+        },
       });
       const provider = buildEnabledProvider(http);
 
@@ -186,7 +198,9 @@ describe('PaystackPaymentProvider', () => {
       });
       const provider = buildEnabledProvider(http);
 
-      await expect(provider.createCheckoutSession(CHECKOUT_REQUEST)).rejects.toThrow('Invalid currency');
+      await expect(provider.createCheckoutSession(CHECKOUT_REQUEST)).rejects.toThrow(
+        'Invalid currency',
+      );
     });
 
     it('handles network failure safely without leaking internals', async () => {
@@ -246,24 +260,30 @@ describe('PaystackPaymentProvider', () => {
 
     it('succeeds with a valid signature', () => {
       const provider = buildProvider();
-      const rawBody = Buffer.from(JSON.stringify({ event: 'charge.success', data: { reference: 'r1' } }));
+      const rawBody = Buffer.from(
+        JSON.stringify({ event: 'charge.success', data: { reference: 'r1' } }),
+      );
       const signature = signBody(rawBody, SECRET_KEY);
-      expect(provider.verifyWebhookSignature(rawBody, { 'x-paystack-signature': signature })).toBe(true);
+      expect(provider.verifyWebhookSignature(rawBody, { 'x-paystack-signature': signature })).toBe(
+        true,
+      );
     });
 
     it('succeeds with a valid signature using a dedicated webhook secret', () => {
       const provider = buildProvider(SECRET_KEY, WEBHOOK_SECRET);
       const rawBody = Buffer.from(JSON.stringify({ event: 'charge.success' }));
       const signature = signBody(rawBody, WEBHOOK_SECRET);
-      expect(provider.verifyWebhookSignature(rawBody, { 'x-paystack-signature': signature })).toBe(true);
+      expect(provider.verifyWebhookSignature(rawBody, { 'x-paystack-signature': signature })).toBe(
+        true,
+      );
     });
 
     it('fails with an invalid signature', () => {
       const provider = buildProvider();
       const rawBody = Buffer.from(JSON.stringify({ event: 'charge.success' }));
-      expect(
-        provider.verifyWebhookSignature(rawBody, { 'x-paystack-signature': 'deadbeef' }),
-      ).toBe(false);
+      expect(provider.verifyWebhookSignature(rawBody, { 'x-paystack-signature': 'deadbeef' })).toBe(
+        false,
+      );
     });
 
     it('fails with a well-formed but wrong signature', () => {
@@ -295,7 +315,9 @@ describe('PaystackPaymentProvider', () => {
       );
       const rawBody = Buffer.from(JSON.stringify({ event: 'charge.success' }));
       const signature = signBody(rawBody, SECRET_KEY);
-      expect(provider.verifyWebhookSignature(rawBody, { 'x-paystack-signature': signature })).toBe(false);
+      expect(provider.verifyWebhookSignature(rawBody, { 'x-paystack-signature': signature })).toBe(
+        false,
+      );
     });
 
     it('never throws on malformed header arrays', () => {
@@ -356,7 +378,10 @@ describe('PaystackPaymentProvider', () => {
     it('maps invoice.payment_failed to PAYMENT_FAILED', () => {
       const provider = buildProvider();
       const rawBody = Buffer.from(
-        JSON.stringify({ event: 'invoice.payment_failed', data: { id: 2, reference: 'psk_inv_fail' } }),
+        JSON.stringify({
+          event: 'invoice.payment_failed',
+          data: { id: 2, reference: 'psk_inv_fail' },
+        }),
       );
       const event = provider.parseWebhookEvent(rawBody, {});
       expect(event.eventType).toBe(PaymentEventType.PAYMENT_FAILED);
@@ -365,7 +390,10 @@ describe('PaystackPaymentProvider', () => {
     it('maps subscription.disable to SUBSCRIPTION_CANCELLED', () => {
       const provider = buildProvider();
       const rawBody = Buffer.from(
-        JSON.stringify({ event: 'subscription.disable', data: { id: 3, subscription_code: 'SUB_1' } }),
+        JSON.stringify({
+          event: 'subscription.disable',
+          data: { id: 3, subscription_code: 'SUB_1' },
+        }),
       );
       const event = provider.parseWebhookEvent(rawBody, {});
       expect(event.eventType).toBe(PaymentEventType.SUBSCRIPTION_CANCELLED);
@@ -397,7 +425,10 @@ describe('PaystackPaymentProvider', () => {
 
   describe('getTransactionStatus', () => {
     function buildProvider(http: PaystackHttpClient & { request: jest.Mock }) {
-      return new PaystackPaymentProvider(buildConfigService({ enabled: true, secretKey: SECRET_KEY }), http);
+      return new PaystackPaymentProvider(
+        buildConfigService({ enabled: true, secretKey: SECRET_KEY }),
+        http,
+      );
     }
 
     it('maps a successful transaction', async () => {
@@ -407,7 +438,12 @@ describe('PaystackPaymentProvider', () => {
         status: 200,
         body: {
           status: true,
-          data: { status: 'success', amount: 50000, currency: 'GHS', paid_at: '2026-01-01T00:00:00.000Z' },
+          data: {
+            status: 'success',
+            amount: 50000,
+            currency: 'GHS',
+            paid_at: '2026-01-01T00:00:00.000Z',
+          },
         },
       });
       const provider = buildProvider(http);
@@ -419,7 +455,11 @@ describe('PaystackPaymentProvider', () => {
 
     it('maps a pending transaction', async () => {
       const http = buildHttpClientMock();
-      http.request.mockResolvedValue({ ok: true, status: 200, body: { status: true, data: { status: 'pending' } } });
+      http.request.mockResolvedValue({
+        ok: true,
+        status: 200,
+        body: { status: true, data: { status: 'pending' } },
+      });
       const provider = buildProvider(http);
       const status = await provider.getTransactionStatus('psk_pending');
       expect(status.status).toBe('PROCESSING');
@@ -441,7 +481,12 @@ describe('PaystackPaymentProvider', () => {
 
     it('returns FAILED (never throws) when the verify call itself fails', async () => {
       const http = buildHttpClientMock();
-      http.request.mockResolvedValue({ ok: false, status: 404, body: null, errorMessage: 'Transaction not found' });
+      http.request.mockResolvedValue({
+        ok: false,
+        status: 404,
+        body: null,
+        errorMessage: 'Transaction not found',
+      });
       const provider = buildProvider(http);
       const status = await provider.getTransactionStatus('unknown_ref');
       expect(status.status).toBe('FAILED');
@@ -457,7 +502,9 @@ describe('PaystackPaymentProvider', () => {
       );
       await expect(provider.refundPayment('ref')).rejects.toThrow();
       await expect(provider.cancelSubscription('sub')).rejects.toThrow();
-      await expect(provider.createCustomer({ userId: 'u1', email: 'u@test.com' })).rejects.toThrow();
+      await expect(
+        provider.createCustomer({ userId: 'u1', email: 'u@test.com' }),
+      ).rejects.toThrow();
     });
   });
 });

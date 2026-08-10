@@ -16,7 +16,9 @@ export class PaymentProviderRegistry {
 
   register(provider: IPaymentProvider): void {
     this.providers.set(provider.providerId, provider);
-    this.logger.log(`Registered payment provider: ${provider.providerId} (live=${provider.isLive})`);
+    this.logger.log(
+      `Registered payment provider: ${provider.providerId} (live=${provider.isLive})`,
+    );
   }
 
   getProvider(providerId: string): IPaymentProvider {
@@ -31,7 +33,11 @@ export class PaymentProviderRegistry {
     return Array.from(this.providers.values());
   }
 
-  selectProvider(countryCode: string, currency: string, preferredProviderId?: string): IPaymentProvider {
+  selectProvider(
+    countryCode: string,
+    currency: string,
+    preferredProviderId?: string,
+  ): IPaymentProvider {
     if (preferredProviderId) {
       const preferred = this.providers.get(preferredProviderId);
       if (preferred && preferred.supportedCountries.includes(countryCode)) {
@@ -49,10 +55,14 @@ export class PaymentProviderRegistry {
     if (candidates.length === 0) {
       const fallback = this.providers.get('stripe');
       if (fallback) {
-        this.logger.warn(`No provider found for ${countryCode}/${currency}, falling back to Stripe`);
+        this.logger.warn(
+          `No provider found for ${countryCode}/${currency}, falling back to Stripe`,
+        );
         return fallback;
       }
-      throw new NotFoundException(`No payment provider available for country=${countryCode} currency=${currency}`);
+      throw new NotFoundException(
+        `No payment provider available for country=${countryCode} currency=${currency}`,
+      );
     }
 
     return candidates[0];

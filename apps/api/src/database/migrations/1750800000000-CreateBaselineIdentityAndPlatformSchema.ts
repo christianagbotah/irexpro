@@ -104,7 +104,9 @@ export class CreateBaselineIdentityAndPlatformSchema1750800000000 implements Mig
         updated_at                    timestamptz NOT NULL DEFAULT NOW()
       )
     `);
-    await queryRunner.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_user_profiles_user_id ON identity.user_profiles (user_id)`);
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_user_profiles_user_id ON identity.user_profiles (user_id)`,
+    );
 
     // ── identity.roles ──────────────────────────────────────────────────────
     await queryRunner.query(`
@@ -126,8 +128,12 @@ export class CreateBaselineIdentityAndPlatformSchema1750800000000 implements Mig
         assigned_by uuid
       )
     `);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_user_roles_user_id ON identity.user_roles (user_id)`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_user_roles_role_id ON identity.user_roles (role_id)`);
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_user_roles_user_id ON identity.user_roles (user_id)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_user_roles_role_id ON identity.user_roles (role_id)`,
+    );
 
     // ── audit.audit_logs ────────────────────────────────────────────────────
     await queryRunner.query(`
@@ -145,9 +151,15 @@ export class CreateBaselineIdentityAndPlatformSchema1750800000000 implements Mig
         created_at     timestamptz NOT NULL DEFAULT NOW()
       )
     `);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_audit_logs_actor_user_id ON audit.audit_logs (actor_user_id)`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit.audit_logs (action)`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit.audit_logs (created_at)`);
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_audit_logs_actor_user_id ON audit.audit_logs (actor_user_id)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit.audit_logs (action)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit.audit_logs (created_at)`,
+    );
 
     // ── trading.risk_profiles ───────────────────────────────────────────────
     await queryRunner.query(`
@@ -169,7 +181,9 @@ export class CreateBaselineIdentityAndPlatformSchema1750800000000 implements Mig
         updated_at              timestamptz NOT NULL DEFAULT NOW()
       )
     `);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_risk_profiles_user_id ON trading.risk_profiles (user_id)`);
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_risk_profiles_user_id ON trading.risk_profiles (user_id)`,
+    );
 
     // ── trading.risk_violations ─────────────────────────────────────────────
     await queryRunner.query(`
@@ -183,8 +197,12 @@ export class CreateBaselineIdentityAndPlatformSchema1750800000000 implements Mig
         evaluated_at    timestamptz NOT NULL DEFAULT NOW()
       )
     `);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_risk_violations_user_id ON trading.risk_violations (user_id)`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_risk_violations_evaluated_at ON trading.risk_violations (evaluated_at)`);
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_risk_violations_user_id ON trading.risk_violations (user_id)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_risk_violations_evaluated_at ON trading.risk_violations (evaluated_at)`,
+    );
 
     // ── trading.trades ──────────────────────────────────────────────────────
     await queryRunner.query(`
@@ -214,9 +232,15 @@ export class CreateBaselineIdentityAndPlatformSchema1750800000000 implements Mig
         updated_at                timestamptz NOT NULL DEFAULT NOW()
       )
     `);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_trades_user_id ON trading.trades (user_id)`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_trades_status ON trading.trades (status)`);
-    await queryRunner.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_trades_idempotency_key ON trading.trades (idempotency_key)`);
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_trades_user_id ON trading.trades (user_id)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_trades_status ON trading.trades (status)`,
+    );
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_trades_idempotency_key ON trading.trades (idempotency_key)`,
+    );
 
     // ── trading.trading_sessions ────────────────────────────────────────────
     await queryRunner.query(`
@@ -234,8 +258,12 @@ export class CreateBaselineIdentityAndPlatformSchema1750800000000 implements Mig
         updated_at              timestamptz NOT NULL DEFAULT NOW()
       )
     `);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_trading_sessions_user_id ON trading.trading_sessions (user_id)`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_trading_sessions_status ON trading.trading_sessions (status)`);
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_trading_sessions_user_id ON trading.trading_sessions (user_id)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_trading_sessions_status ON trading.trading_sessions (status)`,
+    );
 
     // ── broker.broker_connections ───────────────────────────────────────────
     await queryRunner.query(`
@@ -263,8 +291,12 @@ export class CreateBaselineIdentityAndPlatformSchema1750800000000 implements Mig
         deleted_at            timestamptz
       )
     `);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_broker_connections_user_id ON broker.broker_connections (user_id)`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_broker_connections_status ON broker.broker_connections (status)`);
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_broker_connections_user_id ON broker.broker_connections (user_id)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_broker_connections_status ON broker.broker_connections (status)`,
+    );
 
     // ── broker.broker_accounts ──────────────────────────────────────────────
     await queryRunner.query(`
@@ -284,7 +316,9 @@ export class CreateBaselineIdentityAndPlatformSchema1750800000000 implements Mig
         updated_at              timestamptz NOT NULL DEFAULT NOW()
       )
     `);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_broker_accounts_connection_id ON broker.broker_accounts (broker_connection_id)`);
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_broker_accounts_connection_id ON broker.broker_accounts (broker_connection_id)`,
+    );
 
     // ── subscriptions.subscription_plans ────────────────────────────────────
     await queryRunner.query(`
@@ -319,7 +353,9 @@ export class CreateBaselineIdentityAndPlatformSchema1750800000000 implements Mig
         updated_at              timestamptz NOT NULL DEFAULT NOW()
       )
     `);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_plan_pricing_plan_id ON subscriptions.plan_pricing (subscription_plan_id)`);
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_plan_pricing_plan_id ON subscriptions.plan_pricing (subscription_plan_id)`,
+    );
 
     // ── subscriptions.user_subscriptions ────────────────────────────────────
     await queryRunner.query(`
@@ -339,9 +375,15 @@ export class CreateBaselineIdentityAndPlatformSchema1750800000000 implements Mig
         updated_at                      timestamptz NOT NULL DEFAULT NOW()
       )
     `);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_user_subscriptions_user_id ON subscriptions.user_subscriptions (user_id)`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_user_subscriptions_plan_id ON subscriptions.user_subscriptions (subscription_plan_id)`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_user_subscriptions_status ON subscriptions.user_subscriptions (status)`);
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_user_subscriptions_user_id ON subscriptions.user_subscriptions (user_id)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_user_subscriptions_plan_id ON subscriptions.user_subscriptions (subscription_plan_id)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_user_subscriptions_status ON subscriptions.user_subscriptions (status)`,
+    );
 
     // ── subscriptions.user_payment_profiles ────────────────────────────────
     await queryRunner.query(`
@@ -359,7 +401,9 @@ export class CreateBaselineIdentityAndPlatformSchema1750800000000 implements Mig
         updated_at                  timestamptz NOT NULL DEFAULT NOW()
       )
     `);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_user_payment_profiles_user_id ON subscriptions.user_payment_profiles (user_id)`);
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_user_payment_profiles_user_id ON subscriptions.user_payment_profiles (user_id)`,
+    );
 
     // ── platform.country_configs ────────────────────────────────────────────
     await queryRunner.query(`

@@ -75,7 +75,12 @@ describe('BrokerConnection schema reconciliation (hotfix)', () => {
       // Each line is like "  column_name  type ..."
       for (const line of tableBody.split('\n')) {
         const trimmed = line.trim().replace(/,$/, '').trim();
-        if (!trimmed || trimmed.startsWith('--') || trimmed.startsWith('PRIMARY') || trimmed.startsWith('CONSTRAINT')) {
+        if (
+          !trimmed ||
+          trimmed.startsWith('--') ||
+          trimmed.startsWith('PRIMARY') ||
+          trimmed.startsWith('CONSTRAINT')
+        ) {
           continue;
         }
         const colName = trimmed.split(/\s+/)[0];
@@ -102,9 +107,8 @@ describe('BrokerConnection schema reconciliation (hotfix)', () => {
     // Extract only the up() method body by splitting on 'public async down'
     const upStart = reconcileSource.indexOf('public async up');
     const downStart = reconcileSource.indexOf('public async down');
-    const upBody = upStart >= 0 && downStart >= 0
-      ? reconcileSource.substring(upStart, downStart)
-      : '';
+    const upBody =
+      upStart >= 0 && downStart >= 0 ? reconcileSource.substring(upStart, downStart) : '';
     expect(upBody).not.toMatch(/DROP COLUMN.*failure_count/i);
     expect(upBody).not.toMatch(/DROP COLUMN.*currency/i);
   });

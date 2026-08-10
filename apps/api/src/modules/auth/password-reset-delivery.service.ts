@@ -11,11 +11,7 @@ import { ResetChannel } from './entities/password-reset-token.entity';
  * The default implementation uses nodemailer with EMAIL_SMTP_URL.
  */
 export interface EmailProviderInterface {
-  sendResetEmail(params: {
-    to: string;
-    resetLink: string;
-    fromAddress: string;
-  }): Promise<boolean>;
+  sendResetEmail(params: { to: string; resetLink: string; fromAddress: string }): Promise<boolean>;
 }
 
 /**
@@ -62,7 +58,7 @@ export class NodemailerEmailProvider implements EmailProviderInterface {
     } catch (err) {
       this.logger.error(
         `Failed to initialize SMTP transport: ${(err as Error).message}. ` +
-        'Email delivery will be unavailable until EMAIL_SMTP_URL is corrected.',
+          'Email delivery will be unavailable until EMAIL_SMTP_URL is corrected.',
       );
       this.transporter = null;
     }
@@ -94,7 +90,7 @@ export class NodemailerEmailProvider implements EmailProviderInterface {
       // Log the SMTP error but NOT the email body or reset link.
       this.logger.warn(
         `SMTP send failed: ${(err as Error).message}. ` +
-        'The reset token hash remains stored — the user can request a new reset.',
+          'The reset token hash remains stored — the user can request a new reset.',
       );
       return false;
     }
@@ -135,7 +131,8 @@ export class NodemailerEmailProvider implements EmailProviderInterface {
   private maskEmail(email: string): string {
     const [local, domain] = email.split('@');
     if (!local || !domain) return '(invalid)';
-    const masked = local.length <= 2 ? local[0] + '***' : local[0] + '***' + local[local.length - 1];
+    const masked =
+      local.length <= 2 ? local[0] + '***' : local[0] + '***' + local[local.length - 1];
     return `${masked}@${domain}`;
   }
 }
@@ -192,17 +189,13 @@ export class PasswordResetDeliveryService {
    * NodemailerEmailProvider). The raw token is embedded in the reset link
    * inside the email body — it is NEVER logged.
    */
-  private async deliverEmail(
-    email: string,
-    rawToken: string,
-    userId: string,
-  ): Promise<boolean> {
+  private async deliverEmail(email: string, rawToken: string, userId: string): Promise<boolean> {
     const webBaseUrl = this.configService.get<string>('app.webBaseUrl');
     if (!webBaseUrl) {
       this.logger.warn(
         'Password reset email NOT sent: WEB_BASE_URL is not configured. ' +
-        'Set WEB_BASE_URL in .env so reset links point to the correct web app. ' +
-        'The reset token hash is stored — the user can request a new reset once configured.',
+          'Set WEB_BASE_URL in .env so reset links point to the correct web app. ' +
+          'The reset token hash is stored — the user can request a new reset once configured.',
       );
       return false;
     }
@@ -211,9 +204,9 @@ export class PasswordResetDeliveryService {
     if (!smtpUrl) {
       this.logger.warn(
         `Password reset email NOT sent: EMAIL_SMTP_URL is not configured. ` +
-        `Reset link was generated for user ${userId} but NOT delivered. ` +
-        `Set EMAIL_SMTP_URL in .env to enable email reset delivery. ` +
-        `The reset token hash is stored — the user can request a new reset once configured.`,
+          `Reset link was generated for user ${userId} but NOT delivered. ` +
+          `Set EMAIL_SMTP_URL in .env to enable email reset delivery. ` +
+          `The reset token hash is stored — the user can request a new reset once configured.`,
       );
       // Do NOT log the reset link (it contains the raw token).
       return false;
@@ -245,18 +238,14 @@ export class PasswordResetDeliveryService {
    *   const provider = this.smsRegistry.selectProvider(countryCode);
    *   await provider.sendSms({ to: phone, messageType: SmsMessageType.PASSWORD_RESET, templateData: { code: rawCode } });
    */
-  private async deliverPhone(
-    phone: string,
-    rawCode: string,
-    userId: string,
-  ): Promise<boolean> {
+  private async deliverPhone(phone: string, rawCode: string, userId: string): Promise<boolean> {
     // Do NOT log the raw code.
     this.logger.warn(
       `Password reset SMS NOT sent: SMS providers are currently placeholders ` +
-      `(Twilio/Hubtel/Arkesel throw NotImplementedException). ` +
-      `User ${userId} requested phone reset but SMS delivery is not available. ` +
-      `Phone-only users cannot recover via SMS until a live SMS provider is configured. ` +
-      `The reset code hash is stored — the user can request a new reset once SMS is configured.`,
+        `(Twilio/Hubtel/Arkesel throw NotImplementedException). ` +
+        `User ${userId} requested phone reset but SMS delivery is not available. ` +
+        `Phone-only users cannot recover via SMS until a live SMS provider is configured. ` +
+        `The reset code hash is stored — the user can request a new reset once SMS is configured.`,
     );
     return false;
   }

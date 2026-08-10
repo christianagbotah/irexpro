@@ -17,7 +17,15 @@ import { AuditModule } from '../audit/audit.module';
   // Sprint 29: OnboardingService needs RiskProfile + BrokerConnection repos.
   // AuditModule is imported for audit logging in the onboarding status check.
   imports: [
-    TypeOrmModule.forFeature([User, UserProfile, UserRole, Role, UserPaymentProfile, RiskProfile, BrokerConnection]),
+    TypeOrmModule.forFeature([
+      User,
+      UserProfile,
+      UserRole,
+      Role,
+      UserPaymentProfile,
+      RiskProfile,
+      BrokerConnection,
+    ]),
     AuditModule,
   ],
   controllers: [UsersController],

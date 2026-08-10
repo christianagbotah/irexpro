@@ -22,7 +22,11 @@ describe('PaystackHttpClient', () => {
 
   it('returns ok=true with parsed body on a successful 2xx response', async () => {
     global.fetch = jest.fn().mockResolvedValue(
-      mockFetchResponse({ ok: true, status: 200, json: { status: true, data: { reference: 'r1' } } }),
+      mockFetchResponse({
+        ok: true,
+        status: 200,
+        json: { status: true, data: { reference: 'r1' } },
+      }),
     );
     const client = new PaystackHttpClient();
 
@@ -37,9 +41,11 @@ describe('PaystackHttpClient', () => {
   });
 
   it('never includes the Authorization header value in the returned result', async () => {
-    global.fetch = jest.fn().mockResolvedValue(
-      mockFetchResponse({ ok: true, status: 200, json: { status: true, data: {} } }),
-    );
+    global.fetch = jest
+      .fn()
+      .mockResolvedValue(
+        mockFetchResponse({ ok: true, status: 200, json: { status: true, data: {} } }),
+      );
     const client = new PaystackHttpClient();
     const result = await client.request('https://api.paystack.co/x', {
       method: 'GET',
@@ -49,11 +55,16 @@ describe('PaystackHttpClient', () => {
   });
 
   it('handles non-2xx responses safely with a sanitised error message', async () => {
-    global.fetch = jest.fn().mockResolvedValue(
-      mockFetchResponse({ ok: false, status: 401, json: { message: 'Invalid key' } }),
-    );
+    global.fetch = jest
+      .fn()
+      .mockResolvedValue(
+        mockFetchResponse({ ok: false, status: 401, json: { message: 'Invalid key' } }),
+      );
     const client = new PaystackHttpClient();
-    const result = await client.request('https://api.paystack.co/x', { method: 'GET', secretKey: 'sk_bad' });
+    const result = await client.request('https://api.paystack.co/x', {
+      method: 'GET',
+      secretKey: 'sk_bad',
+    });
     expect(result.ok).toBe(false);
     expect(result.status).toBe(401);
     expect(result.errorMessage).toBe('Invalid key');
@@ -61,10 +72,17 @@ describe('PaystackHttpClient', () => {
 
   it('treats Paystack status=false as a failure even on HTTP 200', async () => {
     global.fetch = jest.fn().mockResolvedValue(
-      mockFetchResponse({ ok: true, status: 200, json: { status: false, message: 'Duplicate reference' } }),
+      mockFetchResponse({
+        ok: true,
+        status: 200,
+        json: { status: false, message: 'Duplicate reference' },
+      }),
     );
     const client = new PaystackHttpClient();
-    const result = await client.request('https://api.paystack.co/x', { method: 'POST', secretKey: 'sk_x' });
+    const result = await client.request('https://api.paystack.co/x', {
+      method: 'POST',
+      secretKey: 'sk_x',
+    });
     expect(result.ok).toBe(false);
     expect(result.errorMessage).toBe('Duplicate reference');
   });
@@ -72,7 +90,10 @@ describe('PaystackHttpClient', () => {
   it('handles network failure safely', async () => {
     global.fetch = jest.fn().mockRejectedValue(new Error('getaddrinfo ENOTFOUND api.paystack.co'));
     const client = new PaystackHttpClient();
-    const result = await client.request('https://api.paystack.co/x', { method: 'GET', secretKey: 'sk_x' });
+    const result = await client.request('https://api.paystack.co/x', {
+      method: 'GET',
+      secretKey: 'sk_x',
+    });
     expect(result.ok).toBe(false);
     expect(result.status).toBe(0);
     expect(result.errorMessage).toBe('Paystack request failed: network error');
@@ -105,7 +126,10 @@ describe('PaystackHttpClient', () => {
       json: jest.fn().mockRejectedValue(new Error('Unexpected token')),
     } as unknown as Response);
     const client = new PaystackHttpClient();
-    const result = await client.request('https://api.paystack.co/x', { method: 'GET', secretKey: 'sk_x' });
+    const result = await client.request('https://api.paystack.co/x', {
+      method: 'GET',
+      secretKey: 'sk_x',
+    });
     expect(result.ok).toBe(true);
     expect(result.body).toBeNull();
   });

@@ -76,14 +76,18 @@ export class PaystackHttpClient {
           ok: false,
           status: response.status,
           body: parsed as T | null,
-          errorMessage: this.sanitize(parsed['message'] as string | undefined) ?? 'Paystack reported a failed request',
+          errorMessage:
+            this.sanitize(parsed['message'] as string | undefined) ??
+            'Paystack reported a failed request',
         };
       }
 
       return { ok: true, status: response.status, body: parsed as T | null };
     } catch (err) {
       const isAbort = err instanceof Error && err.name === 'AbortError';
-      const message = isAbort ? 'Paystack request timed out' : 'Paystack request failed: network error';
+      const message = isAbort
+        ? 'Paystack request timed out'
+        : 'Paystack request failed: network error';
       this.logger.warn(`[Paystack] HTTP ${options.method} request error: ${message}`);
       return { ok: false, status: 0, body: null, errorMessage: message };
     } finally {

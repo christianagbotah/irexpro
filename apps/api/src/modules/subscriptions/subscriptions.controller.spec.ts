@@ -52,7 +52,12 @@ describe('SubscriptionsController#checkout — Idempotency-Key header/body prece
   });
 
   it('falls back to the body idempotencyKey field when no header is present', async () => {
-    await controller.checkout({ ...baseDto, idempotencyKey: 'body-key' }, principal(), reqWithIp(), undefined);
+    await controller.checkout(
+      { ...baseDto, idempotencyKey: 'body-key' },
+      principal(),
+      reqWithIp(),
+      undefined,
+    );
 
     expect(svc.initiateCheckout).toHaveBeenCalledWith(
       expect.objectContaining({ idempotencyKey: 'body-key' }),
@@ -62,7 +67,12 @@ describe('SubscriptionsController#checkout — Idempotency-Key header/body prece
   it('falls back to the body field when the header is an empty/whitespace-only string', async () => {
     // Audit fix: a proxy/client sending an empty header must not silently shadow a
     // valid body-supplied idempotency key.
-    await controller.checkout({ ...baseDto, idempotencyKey: 'body-key' }, principal(), reqWithIp(), '   ');
+    await controller.checkout(
+      { ...baseDto, idempotencyKey: 'body-key' },
+      principal(),
+      reqWithIp(),
+      '   ',
+    );
 
     expect(svc.initiateCheckout).toHaveBeenCalledWith(
       expect.objectContaining({ idempotencyKey: 'body-key' }),
@@ -78,7 +88,12 @@ describe('SubscriptionsController#checkout — Idempotency-Key header/body prece
   });
 
   it('defaults countryCode to US when omitted, and forwards userId/email/ip/provider correctly', async () => {
-    await controller.checkout({ planId: 'plan-2', currency: 'GHS' }, principal(), reqWithIp('9.9.9.9'), undefined);
+    await controller.checkout(
+      { planId: 'plan-2', currency: 'GHS' },
+      principal(),
+      reqWithIp('9.9.9.9'),
+      undefined,
+    );
 
     expect(svc.initiateCheckout).toHaveBeenCalledWith({
       userId: 'user-1',

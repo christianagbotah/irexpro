@@ -9,12 +9,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiResponse,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
 import { SubscriptionsService } from './subscriptions.service';
 import { ManualActivateDto } from './dto/manual-activate.dto';
@@ -68,7 +63,10 @@ export class SubscriptionsController {
   @ApiResponse({ status: 201, description: 'Checkout session created or safely reused' })
   @ApiResponse({ status: 400, description: 'Invalid plan, pricing, or provider' })
   @ApiResponse({ status: 404, description: 'Plan not found' })
-  @ApiResponse({ status: 409, description: 'Active subscription/paid invoice/idempotency conflict' })
+  @ApiResponse({
+    status: 409,
+    description: 'Active subscription/paid invoice/idempotency conflict',
+  })
   async checkout(
     @Body() dto: CheckoutDto,
     @CurrentUser() principal: AuthenticatedPrincipal,
@@ -127,11 +125,6 @@ export class SubscriptionsController {
     @CurrentUserId() adminId: string,
     @Req() req: Request,
   ) {
-    return this.subscriptionsService.manualActivate(
-      dto.userId,
-      dto.planId,
-      adminId,
-      req.ip,
-    );
+    return this.subscriptionsService.manualActivate(dto.userId, dto.planId, adminId, req.ip);
   }
 }

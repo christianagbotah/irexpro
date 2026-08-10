@@ -4,17 +4,37 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { PerformanceFeeService } from './performance-fee.service';
 import { PerformanceFeePolicy, BillingFrequency } from '../entities/performance-fee-policy.entity';
 import { TradingAccountPerformance } from '../entities/trading-account-performance.entity';
-import { PerformanceFeeAssessment, AssessmentStatus } from '../entities/performance-fee-assessment.entity';
-import { PerformanceFeeLedgerEntry, LedgerEntryType } from '../entities/performance-fee-ledger-entry.entity';
+import {
+  PerformanceFeeAssessment,
+  AssessmentStatus,
+} from '../entities/performance-fee-assessment.entity';
+import {
+  PerformanceFeeLedgerEntry,
+  LedgerEntryType,
+} from '../entities/performance-fee-ledger-entry.entity';
 import { Invoice } from '../../payments/entities/invoice.entity';
 import { PaymentTransaction } from '../../payments/entities/payment-transaction.entity';
-import { UserSubscription, SubscriptionStatus } from '../../subscriptions/entities/user-subscription.entity';
+import {
+  UserSubscription,
+  SubscriptionStatus,
+} from '../../subscriptions/entities/user-subscription.entity';
 import { AuditService } from '../../audit/audit.service';
 
 // ── Mock repositories ─────────────────────────────────────────────────────────
 const mockPolicyRepo = { find: jest.fn(), findOne: jest.fn(), create: jest.fn(), save: jest.fn() };
-const mockPerformanceRepo = { findOne: jest.fn(), create: jest.fn(), save: jest.fn(), update: jest.fn() };
-const mockAssessmentRepo = { find: jest.fn(), findOne: jest.fn(), create: jest.fn(), save: jest.fn(), update: jest.fn() };
+const mockPerformanceRepo = {
+  findOne: jest.fn(),
+  create: jest.fn(),
+  save: jest.fn(),
+  update: jest.fn(),
+};
+const mockAssessmentRepo = {
+  find: jest.fn(),
+  findOne: jest.fn(),
+  create: jest.fn(),
+  save: jest.fn(),
+  update: jest.fn(),
+};
 const mockLedgerRepo = { find: jest.fn(), save: jest.fn() };
 const mockInvoiceRepo = { create: jest.fn(), save: jest.fn() };
 const mockTransactionRepo = { create: jest.fn(), save: jest.fn() };
@@ -40,7 +60,12 @@ function makePolicy(overrides: Partial<PerformanceFeePolicy> = {}): PerformanceF
 }
 
 function makeActiveSubscription(planId = 'plan-1'): Partial<UserSubscription> {
-  return { id: 'sub-1', userId: 'user-1', subscriptionPlanId: planId, status: SubscriptionStatus.ACTIVE };
+  return {
+    id: 'sub-1',
+    userId: 'user-1',
+    subscriptionPlanId: planId,
+    status: SubscriptionStatus.ACTIVE,
+  };
 }
 
 function makePeriod() {
@@ -82,7 +107,11 @@ describe('PerformanceFeeService', () => {
       mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
       mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
       mockAssessmentRepo.findOne.mockResolvedValue(null); // no duplicate
-      mockPerformanceRepo.findOne.mockResolvedValue({ id: 'perf-1', currentHighWaterMark: hwm, totalRealisedProfit: '0' });
+      mockPerformanceRepo.findOne.mockResolvedValue({
+        id: 'perf-1',
+        currentHighWaterMark: hwm,
+        totalRealisedProfit: '0',
+      });
       mockLedgerRepo.find.mockResolvedValue([
         { entryType: LedgerEntryType.REALISED_TRADE_PROFIT, amount: realisedPnL },
       ]);
@@ -96,7 +125,14 @@ describe('PerformanceFeeService', () => {
       setupBaseline('300000', '500000'); // profit $3k, HWM $5k
       const { start, end } = makePeriod();
 
-      const result = await service.calculateAssessment('user-1', null, 'USD', start, end, 'admin-1');
+      const result = await service.calculateAssessment(
+        'user-1',
+        null,
+        'USD',
+        start,
+        end,
+        'admin-1',
+      );
       expect(result.feeAmount).toBe('0');
       expect(result.status).toBe(AssessmentStatus.DRAFT);
     });
@@ -105,7 +141,14 @@ describe('PerformanceFeeService', () => {
       setupBaseline('500000', '500000'); // profit $5k = HWM $5k
       const { start, end } = makePeriod();
 
-      const result = await service.calculateAssessment('user-1', null, 'USD', start, end, 'admin-1');
+      const result = await service.calculateAssessment(
+        'user-1',
+        null,
+        'USD',
+        start,
+        end,
+        'admin-1',
+      );
       expect(result.feeAmount).toBe('0');
     });
 
@@ -114,14 +157,16 @@ describe('PerformanceFeeService', () => {
       mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
       mockPolicyRepo.findOne.mockResolvedValue(makePolicy({ feePercent: '20.0000' }));
       mockAssessmentRepo.findOne.mockResolvedValue(null);
-      mockPerformanceRepo.findOne.mockResolvedValue({ id: 'perf-1', currentHighWaterMark: '500000', totalRealisedProfit: '0' });
+      mockPerformanceRepo.findOne.mockResolvedValue({
+        id: 'perf-1',
+        currentHighWaterMark: '500000',
+        totalRealisedProfit: '0',
+      });
       mockLedgerRepo.find.mockResolvedValue([
         { entryType: LedgerEntryType.REALISED_TRADE_PROFIT, amount: '700000' },
       ]);
-      const expectedFee = String((700000n * 2000n) / 1_000_000n); // = '1400' wait let me recalc
       // profit above HWM = 700000 - 500000 = 200000
-      // fee = 200000 * 20 / 100 = 40000
-      const expectedFeeCalc = String((200000n * 200000n) / 1_000_000n); // 200000 * 20 / 100
+      // fee = 200000 * 20 / 100 = 40000 (verified by the mocked assessment below)
 
       const assessment = { id: 'assess-2', feeAmount: '40000', status: AssessmentStatus.ASSESSED };
       mockAssessmentRepo.create.mockReturnValue(assessment);
@@ -129,7 +174,14 @@ describe('PerformanceFeeService', () => {
       mockPerformanceRepo.update.mockResolvedValue(undefined);
 
       const { start, end } = makePeriod();
-      const result = await service.calculateAssessment('user-1', null, 'USD', start, end, 'admin-1');
+      const result = await service.calculateAssessment(
+        'user-1',
+        null,
+        'USD',
+        start,
+        end,
+        'admin-1',
+      );
       expect(result.status).toBe(AssessmentStatus.ASSESSED);
       expect(BigInt(result.feeAmount)).toBeGreaterThan(0n);
     });
@@ -166,9 +218,11 @@ describe('PerformanceFeeService', () => {
     it('PerformanceFeeService does NOT expose markAssessmentPaid, the previously orphaned direct HWM-update method', () => {
       // No public method on this service writes currentHighWaterMark — that
       // write lives solely in WebhookProcessorService.handlePerformanceFeePaymentSucceeded.
-      const ownMethods = Object.getOwnPropertyNames(
-        Object.getPrototypeOf(service),
-      ).filter((name) => name !== 'constructor' && typeof (service as unknown as Record<string, unknown>)[name] === 'function');
+      const ownMethods = Object.getOwnPropertyNames(Object.getPrototypeOf(service)).filter(
+        (name) =>
+          name !== 'constructor' &&
+          typeof (service as unknown as Record<string, unknown>)[name] === 'function',
+      );
       // Sanity: the service still has its expected public surface.
       expect(ownMethods).toContain('calculateAssessment');
       expect(ownMethods).toContain('invoiceAssessment');
@@ -186,9 +240,19 @@ describe('PerformanceFeeService', () => {
       mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
       mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
       mockAssessmentRepo.findOne.mockResolvedValue(null);
-      mockPerformanceRepo.findOne.mockResolvedValue({ id: 'perf-1', currentHighWaterMark: '0', totalRealisedProfit: '0' });
+      mockPerformanceRepo.findOne.mockResolvedValue({
+        id: 'perf-1',
+        currentHighWaterMark: '0',
+        totalRealisedProfit: '0',
+      });
       mockLedgerRepo.find.mockResolvedValue(entries);
-      const assessment = { id: 'assess-dep', feeAmount: '0', realisedProfitForFee: '0', depositsExcluded: '0', status: AssessmentStatus.DRAFT };
+      const assessment = {
+        id: 'assess-dep',
+        feeAmount: '0',
+        realisedProfitForFee: '0',
+        depositsExcluded: '0',
+        status: AssessmentStatus.DRAFT,
+      };
       mockAssessmentRepo.create.mockReturnValue(assessment);
       mockAssessmentRepo.save.mockResolvedValue(assessment);
       mockPerformanceRepo.update.mockResolvedValue(undefined);
@@ -198,7 +262,14 @@ describe('PerformanceFeeService', () => {
       setupWithEntries([{ entryType: LedgerEntryType.DEPOSIT, amount: '1000000' }]);
       const { start, end } = makePeriod();
 
-      const result = await service.calculateAssessment('user-1', null, 'USD', start, end, 'admin-1');
+      const result = await service.calculateAssessment(
+        'user-1',
+        null,
+        'USD',
+        start,
+        end,
+        'admin-1',
+      );
       expect(result.feeAmount).toBe('0');
       expect(result.realisedProfitForFee).toBe('0');
     });
@@ -208,18 +279,35 @@ describe('PerformanceFeeService', () => {
       mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
       mockPolicyRepo.findOne.mockResolvedValue(makePolicy({ feePercent: '20.0000' }));
       mockAssessmentRepo.findOne.mockResolvedValue(null);
-      mockPerformanceRepo.findOne.mockResolvedValue({ id: 'perf-1', currentHighWaterMark: '0', totalRealisedProfit: '0' });
+      mockPerformanceRepo.findOne.mockResolvedValue({
+        id: 'perf-1',
+        currentHighWaterMark: '0',
+        totalRealisedProfit: '0',
+      });
       mockLedgerRepo.find.mockResolvedValue([
         { entryType: LedgerEntryType.DEPOSIT, amount: '500000' },
         { entryType: LedgerEntryType.REALISED_TRADE_PROFIT, amount: '100000' },
       ]);
-      const assessment = { id: 'assess-mix', feeAmount: '20000', realisedProfitForFee: '100000', depositsExcluded: '500000', status: AssessmentStatus.ASSESSED };
+      const assessment = {
+        id: 'assess-mix',
+        feeAmount: '20000',
+        realisedProfitForFee: '100000',
+        depositsExcluded: '500000',
+        status: AssessmentStatus.ASSESSED,
+      };
       mockAssessmentRepo.create.mockReturnValue(assessment);
       mockAssessmentRepo.save.mockResolvedValue(assessment);
       mockPerformanceRepo.update.mockResolvedValue(undefined);
 
       const { start, end } = makePeriod();
-      const result = await service.calculateAssessment('user-1', null, 'USD', start, end, 'admin-1');
+      const result = await service.calculateAssessment(
+        'user-1',
+        null,
+        'USD',
+        start,
+        end,
+        'admin-1',
+      );
       expect(result.depositsExcluded).toBe('500000');
       expect(result.realisedProfitForFee).toBe('100000');
     });
@@ -228,7 +316,14 @@ describe('PerformanceFeeService', () => {
       setupWithEntries([{ entryType: LedgerEntryType.WITHDRAWAL, amount: '-200000' }]);
       const { start, end } = makePeriod();
 
-      const result = await service.calculateAssessment('user-1', null, 'USD', start, end, 'admin-1');
+      const result = await service.calculateAssessment(
+        'user-1',
+        null,
+        'USD',
+        start,
+        end,
+        'admin-1',
+      );
       expect(result.feeAmount).toBe('0');
     });
   });
@@ -238,14 +333,24 @@ describe('PerformanceFeeService', () => {
   // ─────────────────────────────────────────────────────────────────────────
 
   describe('calculateAssessment — realised profit only', () => {
-    function setupProfitEntries(entries: Array<{ entryType: LedgerEntryType; amount: string }>, hwm = '0') {
+    function setupProfitEntries(
+      entries: Array<{ entryType: LedgerEntryType; amount: string }>,
+      hwm = '0',
+    ) {
       mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
       mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
       mockAssessmentRepo.findOne.mockResolvedValue(null);
-      mockPerformanceRepo.findOne.mockResolvedValue({ id: 'perf-1', currentHighWaterMark: hwm, totalRealisedProfit: '0' });
+      mockPerformanceRepo.findOne.mockResolvedValue({
+        id: 'perf-1',
+        currentHighWaterMark: hwm,
+        totalRealisedProfit: '0',
+      });
       mockLedgerRepo.find.mockResolvedValue(entries);
       const netPnL = entries.reduce((sum, e) => {
-        if (e.entryType === LedgerEntryType.REALISED_TRADE_PROFIT || e.entryType === LedgerEntryType.REALISED_TRADE_LOSS) {
+        if (
+          e.entryType === LedgerEntryType.REALISED_TRADE_PROFIT ||
+          e.entryType === LedgerEntryType.REALISED_TRADE_LOSS
+        ) {
           return sum + BigInt(e.amount);
         }
         return sum;
@@ -253,7 +358,12 @@ describe('PerformanceFeeService', () => {
       const profitAboveHWM = netPnL - BigInt(hwm) > 0n ? netPnL - BigInt(hwm) : 0n;
       const feeAmount = profitAboveHWM > 0n ? String((profitAboveHWM * 2000n) / 1_000_000n) : '0';
       const status = BigInt(feeAmount) > 0n ? AssessmentStatus.ASSESSED : AssessmentStatus.DRAFT;
-      const assessment = { id: 'assess-r', feeAmount, realisedProfitForFee: profitAboveHWM.toString(), status };
+      const assessment = {
+        id: 'assess-r',
+        feeAmount,
+        realisedProfitForFee: profitAboveHWM.toString(),
+        status,
+      };
       mockAssessmentRepo.create.mockReturnValue(assessment);
       mockAssessmentRepo.save.mockResolvedValue(assessment);
       mockPerformanceRepo.update.mockResolvedValue(undefined);
@@ -262,7 +372,14 @@ describe('PerformanceFeeService', () => {
     it('closed winning trades count toward realised profit', async () => {
       setupProfitEntries([{ entryType: LedgerEntryType.REALISED_TRADE_PROFIT, amount: '500000' }]);
       const { start, end } = makePeriod();
-      const result = await service.calculateAssessment('user-1', null, 'USD', start, end, 'admin-1');
+      const result = await service.calculateAssessment(
+        'user-1',
+        null,
+        'USD',
+        start,
+        end,
+        'admin-1',
+      );
       expect(result.status).toBe(AssessmentStatus.ASSESSED);
       expect(BigInt(result.feeAmount)).toBeGreaterThan(0n);
     });
@@ -273,7 +390,14 @@ describe('PerformanceFeeService', () => {
         { entryType: LedgerEntryType.REALISED_TRADE_LOSS, amount: '-300000' },
       ]);
       const { start, end } = makePeriod();
-      const result = await service.calculateAssessment('user-1', null, 'USD', start, end, 'admin-1');
+      const result = await service.calculateAssessment(
+        'user-1',
+        null,
+        'USD',
+        start,
+        end,
+        'admin-1',
+      );
       expect(result.feeAmount).toBe('0');
     });
 
@@ -283,7 +407,14 @@ describe('PerformanceFeeService', () => {
         { entryType: LedgerEntryType.FEE_PAID, amount: '-50000' },
       ]);
       const { start, end } = makePeriod();
-      const result = await service.calculateAssessment('user-1', null, 'USD', start, end, 'admin-1');
+      const result = await service.calculateAssessment(
+        'user-1',
+        null,
+        'USD',
+        start,
+        end,
+        'admin-1',
+      );
       // Fee entries don't count as profit or loss — no fee basis
       expect(result.feeAmount).toBe('0');
     });
@@ -297,11 +428,22 @@ describe('PerformanceFeeService', () => {
     it('returns existing DRAFT assessment without recalculating', async () => {
       mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
       mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
-      const existingDraft = { id: 'draft-existing', status: AssessmentStatus.DRAFT, feeAmount: '0' };
+      const existingDraft = {
+        id: 'draft-existing',
+        status: AssessmentStatus.DRAFT,
+        feeAmount: '0',
+      };
       mockAssessmentRepo.findOne.mockResolvedValue(existingDraft);
 
       const { start, end } = makePeriod();
-      const result = await service.calculateAssessment('user-1', null, 'USD', start, end, 'admin-1');
+      const result = await service.calculateAssessment(
+        'user-1',
+        null,
+        'USD',
+        start,
+        end,
+        'admin-1',
+      );
       expect(result.id).toBe('draft-existing');
       // Ledger was NOT queried since DRAFT already exists
       expect(mockLedgerRepo.find).not.toHaveBeenCalled();
@@ -310,19 +452,29 @@ describe('PerformanceFeeService', () => {
     it('rejects duplicate assessment that is already ASSESSED', async () => {
       mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
       mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
-      mockAssessmentRepo.findOne.mockResolvedValue({ id: 'existing', status: AssessmentStatus.ASSESSED });
+      mockAssessmentRepo.findOne.mockResolvedValue({
+        id: 'existing',
+        status: AssessmentStatus.ASSESSED,
+      });
 
       const { start, end } = makePeriod();
-      await expect(service.calculateAssessment('user-1', null, 'USD', start, end, 'admin-1')).rejects.toThrow(ConflictException);
+      await expect(
+        service.calculateAssessment('user-1', null, 'USD', start, end, 'admin-1'),
+      ).rejects.toThrow(ConflictException);
     });
 
     it('rejects duplicate assessment that is already INVOICED', async () => {
       mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
       mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
-      mockAssessmentRepo.findOne.mockResolvedValue({ id: 'existing', status: AssessmentStatus.INVOICED });
+      mockAssessmentRepo.findOne.mockResolvedValue({
+        id: 'existing',
+        status: AssessmentStatus.INVOICED,
+      });
 
       const { start, end } = makePeriod();
-      await expect(service.calculateAssessment('user-1', null, 'USD', start, end, 'admin-1')).rejects.toThrow(ConflictException);
+      await expect(
+        service.calculateAssessment('user-1', null, 'USD', start, end, 'admin-1'),
+      ).rejects.toThrow(ConflictException);
     });
   });
 
@@ -365,15 +517,32 @@ describe('PerformanceFeeService', () => {
       mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
       // both duplicate and outstanding checks return null
       mockAssessmentRepo.findOne.mockResolvedValue(null);
-      mockPerformanceRepo.findOne.mockResolvedValue({ id: 'perf-1', currentHighWaterMark: '700000', totalRealisedProfit: '700000' });
-      mockLedgerRepo.find.mockResolvedValue([{ entryType: LedgerEntryType.REALISED_TRADE_PROFIT, amount: '300000' }]);
-      const assessment = { id: 'next-period', feeAmount: '60000', status: AssessmentStatus.ASSESSED };
+      mockPerformanceRepo.findOne.mockResolvedValue({
+        id: 'perf-1',
+        currentHighWaterMark: '700000',
+        totalRealisedProfit: '700000',
+      });
+      mockLedgerRepo.find.mockResolvedValue([
+        { entryType: LedgerEntryType.REALISED_TRADE_PROFIT, amount: '300000' },
+      ]);
+      const assessment = {
+        id: 'next-period',
+        feeAmount: '60000',
+        status: AssessmentStatus.ASSESSED,
+      };
       mockAssessmentRepo.create.mockReturnValue(assessment);
       mockAssessmentRepo.save.mockResolvedValue(assessment);
       mockPerformanceRepo.update.mockResolvedValue(undefined);
 
       const { start, end } = makePeriod();
-      const result = await service.calculateAssessment('user-1', null, 'USD', start, end, 'admin-1');
+      const result = await service.calculateAssessment(
+        'user-1',
+        null,
+        'USD',
+        start,
+        end,
+        'admin-1',
+      );
       expect(result.id).toBe('next-period');
       expect(mockLedgerRepo.find).toHaveBeenCalled();
     });
@@ -390,7 +559,11 @@ describe('PerformanceFeeService', () => {
       // First lookup (plan-specific) returns the plan policy → global lookup never runs
       mockPolicyRepo.findOne.mockResolvedValueOnce(planPolicy);
       mockAssessmentRepo.findOne.mockResolvedValue(null);
-      mockPerformanceRepo.findOne.mockResolvedValue({ id: 'perf-1', currentHighWaterMark: '0', totalRealisedProfit: '0' });
+      mockPerformanceRepo.findOne.mockResolvedValue({
+        id: 'perf-1',
+        currentHighWaterMark: '0',
+        totalRealisedProfit: '0',
+      });
       mockLedgerRepo.find.mockResolvedValue([]);
       const assessment = { id: 'a', feeAmount: '0', status: AssessmentStatus.DRAFT };
       mockAssessmentRepo.create.mockReturnValue(assessment);
@@ -402,7 +575,9 @@ describe('PerformanceFeeService', () => {
 
       // The plan-specific query must have used the concrete planId
       expect(mockPolicyRepo.findOne).toHaveBeenCalledWith(
-        expect.objectContaining({ where: expect.objectContaining({ planId: 'plan-XYZ', isActive: true }) }),
+        expect.objectContaining({
+          where: expect.objectContaining({ planId: 'plan-XYZ', isActive: true }),
+        }),
       );
     });
 
@@ -412,7 +587,11 @@ describe('PerformanceFeeService', () => {
       // First lookup (plan-specific) returns null → second lookup (global IS NULL) returns global
       mockPolicyRepo.findOne.mockResolvedValueOnce(null).mockResolvedValueOnce(globalPolicy);
       mockAssessmentRepo.findOne.mockResolvedValue(null);
-      mockPerformanceRepo.findOne.mockResolvedValue({ id: 'perf-1', currentHighWaterMark: '0', totalRealisedProfit: '0' });
+      mockPerformanceRepo.findOne.mockResolvedValue({
+        id: 'perf-1',
+        currentHighWaterMark: '0',
+        totalRealisedProfit: '0',
+      });
       mockLedgerRepo.find.mockResolvedValue([]);
       const assessment = { id: 'a', feeAmount: '0', status: AssessmentStatus.DRAFT };
       mockAssessmentRepo.create.mockReturnValue(assessment);
@@ -437,11 +616,18 @@ describe('PerformanceFeeService', () => {
   describe('invoiceAssessment', () => {
     function setupAssessedAssessment() {
       const assessment = {
-        id: 'assess-inv', status: AssessmentStatus.ASSESSED, userId: 'user-1',
-        subscriptionId: 'sub-1', brokerConnectionId: null, currency: 'USD',
-        feeAmount: '50000', feePercent: '20.0000',
-        periodStart: new Date('2026-01-01'), periodEnd: new Date('2026-01-31'),
-        realisedProfitForFee: '250000', invoiceId: null,
+        id: 'assess-inv',
+        status: AssessmentStatus.ASSESSED,
+        userId: 'user-1',
+        subscriptionId: 'sub-1',
+        brokerConnectionId: null,
+        currency: 'USD',
+        feeAmount: '50000',
+        feePercent: '20.0000',
+        periodStart: new Date('2026-01-01'),
+        periodEnd: new Date('2026-01-31'),
+        realisedProfitForFee: '250000',
+        invoiceId: null,
       };
       mockAssessmentRepo.findOne.mockResolvedValue(assessment);
       const savedInvoice = { id: 'inv-new', invoiceNumber: 'PF-12345-ABCDE' };
@@ -450,7 +636,9 @@ describe('PerformanceFeeService', () => {
       const savedTx = { id: 'tx-new' };
       mockTransactionRepo.create.mockReturnValue(savedTx);
       mockTransactionRepo.save.mockResolvedValue(savedTx);
-      mockAssessmentRepo.save.mockImplementation((a: any) => Promise.resolve({ ...a, status: AssessmentStatus.INVOICED }));
+      mockAssessmentRepo.save.mockImplementation((a: any) =>
+        Promise.resolve({ ...a, status: AssessmentStatus.INVOICED }),
+      );
       mockLedgerRepo.save.mockResolvedValue({});
       return assessment;
     }
@@ -475,29 +663,54 @@ describe('PerformanceFeeService', () => {
     });
 
     it('rejects invoicing a DRAFT assessment', async () => {
-      mockAssessmentRepo.findOne.mockResolvedValue({ id: 'draft-a', status: AssessmentStatus.DRAFT, feeAmount: '50000' });
-      await expect(service.invoiceAssessment('draft-a', 'admin-1')).rejects.toThrow(BadRequestException);
+      mockAssessmentRepo.findOne.mockResolvedValue({
+        id: 'draft-a',
+        status: AssessmentStatus.DRAFT,
+        feeAmount: '50000',
+      });
+      await expect(service.invoiceAssessment('draft-a', 'admin-1')).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('rejects invoicing a zero-fee assessment', async () => {
-      mockAssessmentRepo.findOne.mockResolvedValue({ id: 'zero-a', status: AssessmentStatus.ASSESSED, feeAmount: '0' });
-      await expect(service.invoiceAssessment('zero-a', 'admin-1')).rejects.toThrow(BadRequestException);
+      mockAssessmentRepo.findOne.mockResolvedValue({
+        id: 'zero-a',
+        status: AssessmentStatus.ASSESSED,
+        feeAmount: '0',
+      });
+      await expect(service.invoiceAssessment('zero-a', 'admin-1')).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('zero fee assessment remains DRAFT — no invoice created', async () => {
       mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
       mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
       mockAssessmentRepo.findOne.mockResolvedValue(null);
-      mockPerformanceRepo.findOne.mockResolvedValue({ id: 'perf-1', currentHighWaterMark: '1000000', totalRealisedProfit: '0' });
+      mockPerformanceRepo.findOne.mockResolvedValue({
+        id: 'perf-1',
+        currentHighWaterMark: '1000000',
+        totalRealisedProfit: '0',
+      });
       // Only $5k profit, HWM is $10k → no taxable amount
-      mockLedgerRepo.find.mockResolvedValue([{ entryType: LedgerEntryType.REALISED_TRADE_PROFIT, amount: '500000' }]);
+      mockLedgerRepo.find.mockResolvedValue([
+        { entryType: LedgerEntryType.REALISED_TRADE_PROFIT, amount: '500000' },
+      ]);
       const assessment = { id: 'zero-assess', feeAmount: '0', status: AssessmentStatus.DRAFT };
       mockAssessmentRepo.create.mockReturnValue(assessment);
       mockAssessmentRepo.save.mockResolvedValue(assessment);
       mockPerformanceRepo.update.mockResolvedValue(undefined);
 
       const { start, end } = makePeriod();
-      const result = await service.calculateAssessment('user-1', null, 'USD', start, end, 'admin-1');
+      const result = await service.calculateAssessment(
+        'user-1',
+        null,
+        'USD',
+        start,
+        end,
+        'admin-1',
+      );
       expect(result.feeAmount).toBe('0');
       expect(result.status).toBe(AssessmentStatus.DRAFT);
       expect(mockInvoiceRepo.save).not.toHaveBeenCalled();
@@ -512,21 +725,29 @@ describe('PerformanceFeeService', () => {
     it('rejects when user has no active subscription', async () => {
       mockSubscriptionRepo.findOne.mockResolvedValue(null);
       const { start, end } = makePeriod();
-      await expect(service.calculateAssessment('user-1', null, 'USD', start, end, 'admin-1')).rejects.toThrow(BadRequestException);
+      await expect(
+        service.calculateAssessment('user-1', null, 'USD', start, end, 'admin-1'),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it('rejects when no active performance fee policy exists for plan', async () => {
       mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
       mockPolicyRepo.findOne.mockResolvedValue(null); // no policy
       const { start, end } = makePeriod();
-      await expect(service.calculateAssessment('user-1', null, 'USD', start, end, 'admin-1')).rejects.toThrow(BadRequestException);
+      await expect(
+        service.calculateAssessment('user-1', null, 'USD', start, end, 'admin-1'),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it('allows assessment when active plan has matching policy', async () => {
       mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
       mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
       mockAssessmentRepo.findOne.mockResolvedValue(null);
-      mockPerformanceRepo.findOne.mockResolvedValue({ id: 'perf-1', currentHighWaterMark: '0', totalRealisedProfit: '0' });
+      mockPerformanceRepo.findOne.mockResolvedValue({
+        id: 'perf-1',
+        currentHighWaterMark: '0',
+        totalRealisedProfit: '0',
+      });
       mockLedgerRepo.find.mockResolvedValue([]);
       const assessment = { id: 'ok-assess', feeAmount: '0', status: AssessmentStatus.DRAFT };
       mockAssessmentRepo.create.mockReturnValue(assessment);
@@ -534,7 +755,14 @@ describe('PerformanceFeeService', () => {
       mockPerformanceRepo.update.mockResolvedValue(undefined);
 
       const { start, end } = makePeriod();
-      const result = await service.calculateAssessment('user-1', null, 'USD', start, end, 'admin-1');
+      const result = await service.calculateAssessment(
+        'user-1',
+        null,
+        'USD',
+        start,
+        end,
+        'admin-1',
+      );
       expect(result).toBeDefined();
     });
   });
@@ -549,7 +777,10 @@ describe('PerformanceFeeService', () => {
       mockPolicyRepo.create.mockReturnValue(policy);
       mockPolicyRepo.save.mockResolvedValue(policy);
 
-      await service.createPolicy({ name: 'Test', feePercent: 20, billingFrequency: BillingFrequency.MONTHLY }, 'admin-1');
+      await service.createPolicy(
+        { name: 'Test', feePercent: 20, billingFrequency: BillingFrequency.MONTHLY },
+        'admin-1',
+      );
 
       const auditCalls = mockAuditService.log.mock.calls;
       for (const [call] of auditCalls) {
@@ -565,7 +796,11 @@ describe('PerformanceFeeService', () => {
       mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
       mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
       mockAssessmentRepo.findOne.mockResolvedValue(null);
-      mockPerformanceRepo.findOne.mockResolvedValue({ id: 'perf-sec', currentHighWaterMark: '0', totalRealisedProfit: '0' });
+      mockPerformanceRepo.findOne.mockResolvedValue({
+        id: 'perf-sec',
+        currentHighWaterMark: '0',
+        totalRealisedProfit: '0',
+      });
       mockLedgerRepo.find.mockResolvedValue([]);
       const assessment = { id: 'sec-assess', feeAmount: '0', status: AssessmentStatus.DRAFT };
       mockAssessmentRepo.create.mockReturnValue(assessment);

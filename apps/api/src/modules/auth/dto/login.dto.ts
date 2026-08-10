@@ -1,15 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  IsBoolean,
-  IsEmail,
-  IsNotEmpty,
-  IsOptional,
-  IsString,
-  Length,
-  Matches,
-  MaxLength,
-  ValidateIf,
-} from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 
 /**
  * LoginDto — Sprint 27: supports email OR phone as identifier + rememberMe.
@@ -34,7 +24,10 @@ export class LoginDto {
   @MaxLength(128)
   password: string;
 
-  @ApiPropertyOptional({ example: false, description: 'If true, refresh cookie persists for 7 days. If false, session cookie.' })
+  @ApiPropertyOptional({
+    example: false,
+    description: 'If true, refresh cookie persists for 7 days. If false, session cookie.',
+  })
   @IsOptional()
   @IsBoolean()
   rememberMe?: boolean;

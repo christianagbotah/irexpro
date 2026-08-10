@@ -1,4 +1,12 @@
-import { IsDateString, IsEnum, IsISO8601, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
+import {
+  IsDateString,
+  IsEnum,
+  IsISO8601,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+} from 'class-validator';
 import { LedgerEntryType } from '../entities/performance-fee-ledger-entry.entity';
 
 export class CreateLedgerEntryDto {

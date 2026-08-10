@@ -17,7 +17,7 @@ import {
   IBrokerAdapter,
   OHLCV,
 } from '../interfaces/broker-adapter.interface';
-import { BrokerAdapterError, BrokerErrorCode, RETRYABLE_BROKER_ERRORS } from '../interfaces/broker-adapter.errors';
+import { BrokerAdapterError, BrokerErrorCode } from '../interfaces/broker-adapter.errors';
 import { MetaApiClientService } from '../services/metaapi-client.service';
 
 /** MetaAPI stringCode for a successfully executed trade */
@@ -91,7 +91,9 @@ export class MetaTraderAdapter implements IBrokerAdapter {
     }
   }
 
-  async testConnection(credentials: DecryptedBrokerCredentials): Promise<BrokerConnectionTestResult> {
+  async testConnection(
+    credentials: DecryptedBrokerCredentials,
+  ): Promise<BrokerConnectionTestResult> {
     try {
       const result = await this.metaApiClient.testAccountAccess(credentials.accountId);
       return {
@@ -200,7 +202,7 @@ export class MetaTraderAdapter implements IBrokerAdapter {
         instrument,
         bid: this.toDecimalString(price.bid),
         ask: this.toDecimalString(price.ask),
-        spread: this.toDecimalString((price.ask - price.bid)),
+        spread: this.toDecimalString(price.ask - price.bid),
         timestamp: price.time ?? new Date(),
       };
     } catch (err) {
@@ -209,11 +211,17 @@ export class MetaTraderAdapter implements IBrokerAdapter {
   }
 
   async getOHLCV(instrument: string, timeframe: string, count: number): Promise<OHLCV[]> {
-    const conn = await this.getActiveConnection();
+    // Precheck: throws BrokerAdapterError(NOT_CONNECTED) if no active connection.
+    // The account-level historical-candles API below does not use the returned
+    // connection handle directly (it reaches into the connection pool instead),
+    // but the precheck preserves the same connectivity gate as every other
+    // method on this adapter.
+    await this.getActiveConnection();
     try {
       // MetaAPI uses account-level historical candles API
       const entry = this.metaApiClient['connectionPool']?.get(this.currentAccountId!);
-      if (!entry) throw new BrokerAdapterError(BrokerErrorCode.NOT_CONNECTED, 'No active connection');
+      if (!entry)
+        throw new BrokerAdapterError(BrokerErrorCode.NOT_CONNECTED, 'No active connection');
 
       const candles = await entry.account.getHistoricalCandles(
         instrument,
@@ -392,10 +400,21 @@ export class MetaTraderAdapter implements IBrokerAdapter {
    */
   private mapTimeframe(tf: string): string {
     const map: Record<string, string> = {
-      M1: '1m', M5: '5m', M15: '15m', M30: '30m',
-      H1: '1h', H4: '4h', D1: '1d', W1: '1w', MN1: '1mn',
-      '1m': '1m', '5m': '5m', '15m': '15m', '1h': '1h',
-      '4h': '4h', '1d': '1d',
+      M1: '1m',
+      M5: '5m',
+      M15: '15m',
+      M30: '30m',
+      H1: '1h',
+      H4: '4h',
+      D1: '1d',
+      W1: '1w',
+      MN1: '1mn',
+      '1m': '1m',
+      '5m': '5m',
+      '15m': '15m',
+      '1h': '1h',
+      '4h': '4h',
+      '1d': '1d',
     };
     return map[tf] ?? tf;
   }

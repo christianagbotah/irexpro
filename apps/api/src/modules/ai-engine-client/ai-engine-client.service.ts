@@ -27,10 +27,7 @@ export class AiEngineClient {
   }
 
   private getBaseUrl(): string {
-    return this.configService.get<string>(
-      'aiEngine.baseUrl',
-      'http://localhost:8001/api/v1',
-    );
+    return this.configService.get<string>('aiEngine.baseUrl', 'http://localhost:8001/api/v1');
   }
 
   private getInternalApiKey(): string | undefined {
@@ -51,11 +48,7 @@ export class AiEngineClient {
     await this.post(url, { ...payload }, payload.tradingSessionId);
   }
 
-  private async post(
-    url: string,
-    body: Record<string, unknown>,
-    sessionId: string,
-  ): Promise<void> {
+  private async post(url: string, body: Record<string, unknown>, sessionId: string): Promise<void> {
     const apiKey = this.getInternalApiKey();
     if (!apiKey) {
       this.logger.warn(

@@ -57,7 +57,7 @@ export class PerformanceFeePaymentController {
     if (!admin && queryUserId && queryUserId !== principal.userId) {
       throw new ForbiddenException('You can only view your own performance-fee invoices');
     }
-    const effectiveUserId = admin ? queryUserId ?? principal.userId : principal.userId;
+    const effectiveUserId = admin ? (queryUserId ?? principal.userId) : principal.userId;
     return this.svc.listUserPerformanceFeeInvoices(effectiveUserId, {
       status,
       limit: limit ? Number(limit) : undefined,

@@ -19,6 +19,8 @@ export class AiService {
   private readonly logger = new Logger(AiService.name);
 
   getLatestSignal(_instrument: string): Promise<never> {
-    throw new NotImplementedException('AiService: AI signal service integration not yet implemented');
+    throw new NotImplementedException(
+      'AiService: AI signal service integration not yet implemented',
+    );
   }
 }

@@ -106,9 +106,7 @@ export class BootstrapAdminService {
       const normalizedPhone = input.phone ? normalizePhone(input.phone) : null;
 
       let user = await queryRunner.manager.findOne(User, {
-        where: normalizedEmail
-          ? { email: normalizedEmail }
-          : { phone: normalizedPhone ?? '' },
+        where: normalizedEmail ? { email: normalizedEmail } : { phone: normalizedPhone ?? '' },
       });
 
       let created = false;
@@ -122,7 +120,13 @@ export class BootstrapAdminService {
         // forgot-password flow or a separate admin password-reset command.
       } else {
         // No existing user — create a new SUPER_ADMIN
-        user = await this.createNewAdmin(queryRunner.manager, input, normalizedEmail, normalizedPhone, superAdminRole);
+        user = await this.createNewAdmin(
+          queryRunner.manager,
+          input,
+          normalizedEmail,
+          normalizedPhone,
+          superAdminRole,
+        );
         created = true;
       }
 
@@ -130,7 +134,7 @@ export class BootstrapAdminService {
 
       this.logger.log(
         `Bootstrap complete: ${created ? 'created' : promoted ? 'promoted' : 'already configured'} ` +
-        `SUPER_ADMIN user ${this.safeIdentifier(user)}`,
+          `SUPER_ADMIN user ${this.safeIdentifier(user)}`,
       );
 
       return {

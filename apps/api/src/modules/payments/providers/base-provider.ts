@@ -38,7 +38,9 @@ export abstract class BasePaymentProvider implements IPaymentProvider {
   async createCheckoutSession(
     _request: CreateCheckoutSessionRequest,
   ): Promise<CreateCheckoutSessionResult> {
-    throw new NotImplementedException(`${this.displayName}: createCheckoutSession is not yet implemented`);
+    throw new NotImplementedException(
+      `${this.displayName}: createCheckoutSession is not yet implemented`,
+    );
   }
 
   verifyWebhookSignature(
@@ -56,12 +58,18 @@ export abstract class BasePaymentProvider implements IPaymentProvider {
     return { eventType: PaymentEventType.UNKNOWN, providerEventId: 'placeholder' };
   }
 
-  async getTransactionStatus(_providerReference: string): Promise<PaymentProviderTransactionStatus> {
-    throw new NotImplementedException(`${this.displayName}: getTransactionStatus is not yet implemented`);
+  async getTransactionStatus(
+    _providerReference: string,
+  ): Promise<PaymentProviderTransactionStatus> {
+    throw new NotImplementedException(
+      `${this.displayName}: getTransactionStatus is not yet implemented`,
+    );
   }
 
   async cancelSubscription(_providerSubscriptionReference: string): Promise<void> {
-    throw new NotImplementedException(`${this.displayName}: cancelSubscription is not yet implemented`);
+    throw new NotImplementedException(
+      `${this.displayName}: cancelSubscription is not yet implemented`,
+    );
   }
 
   async refundPayment(_providerReference: string, _amountMinor?: number): Promise<void> {
@@ -71,11 +79,17 @@ export abstract class BasePaymentProvider implements IPaymentProvider {
   // ─── Deprecated compat methods ────────────────────────────────────────────
 
   async createSubscription(_params: CreateSubscriptionParams): Promise<ProviderSubscriptionResult> {
-    throw new NotImplementedException(`${this.displayName}: createSubscription is not yet implemented`);
+    throw new NotImplementedException(
+      `${this.displayName}: createSubscription is not yet implemented`,
+    );
   }
 
-  async createPaymentIntent(_params: CreatePaymentIntentParams): Promise<ProviderPaymentIntentResult> {
-    throw new NotImplementedException(`${this.displayName}: createPaymentIntent is not yet implemented`);
+  async createPaymentIntent(
+    _params: CreatePaymentIntentParams,
+  ): Promise<ProviderPaymentIntentResult> {
+    throw new NotImplementedException(
+      `${this.displayName}: createPaymentIntent is not yet implemented`,
+    );
   }
 
   validateWebhookSignature(_rawBody: Buffer, _signature: string): boolean {

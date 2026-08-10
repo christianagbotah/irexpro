@@ -1,14 +1,10 @@
 import * as crypto from 'crypto';
-import {
-  ForbiddenException,
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { Trade, TradeCloseReason, TradeDirection, TradeStatus } from './entities/trade.entity';
 import { TradingSession, TradingSessionStatus } from './entities/trading-session.entity';
-import { RiskDecision, ValidatedOrder } from '../risk/interfaces/risk.interface';
+import { RiskDecision } from '../risk/interfaces/risk.interface';
 import { BrokerService } from '../broker/broker.service';
 import { BrokerAdapterRegistry } from '../broker/adapters/broker-adapter.registry';
 import { CredentialEncryptionService } from '../broker/services/credential-encryption.service';
@@ -158,31 +154,31 @@ export class ExecutionService {
 
     // ── Step 5: Prepare and submit order to broker ─────────────────────────
     try {
-    const credentials = this.encryptionService.decrypt({
-      ciphertext: connection.encryptedCredentials!,
-      iv: connection.credentialIv!,
-      tag: connection.credentialTag!,
-      keyId: connection.encryptionKeyId!,
-    });
+      const credentials = this.encryptionService.decrypt({
+        ciphertext: connection.encryptedCredentials!,
+        iv: connection.credentialIv!,
+        tag: connection.credentialTag!,
+        keyId: connection.encryptionKeyId!,
+      });
 
-    const adapter = this.adapterRegistry.getAdapter(connection.brokerId);
-    adapter.setMode(connection.accountType);
-    await adapter.connect(credentials);
+      const adapter = this.adapterRegistry.getAdapter(connection.brokerId);
+      adapter.setMode(connection.accountType);
+      await adapter.connect(credentials);
 
-    // Zero credentials from memory immediately after connection
-    (Object.keys(credentials) as (keyof typeof credentials)[]).forEach(
-      (k) => { (credentials as unknown as Record<string, unknown>)[k] = null; },
-    );
+      // Zero credentials from memory immediately after connection
+      (Object.keys(credentials) as (keyof typeof credentials)[]).forEach((k) => {
+        (credentials as unknown as Record<string, unknown>)[k] = null;
+      });
 
-    const brokerRequest: BrokerOrderRequest = {
-      instrument: order.instrument,
-      direction: order.direction,
-      lotSize: order.lotSize,
-      stopLoss: order.stopLoss,
-      takeProfit: order.takeProfit,
-      idempotencyKey,
-      comment: order.idempotencyKey,
-    };
+      const brokerRequest: BrokerOrderRequest = {
+        instrument: order.instrument,
+        direction: order.direction,
+        lotSize: order.lotSize,
+        stopLoss: order.stopLoss,
+        takeProfit: order.takeProfit,
+        idempotencyKey,
+        comment: order.idempotencyKey,
+      };
 
       const result = await this.submitWithRetry(adapter, brokerRequest);
 
@@ -269,24 +265,24 @@ export class ExecutionService {
 
       trade.status = TradeStatus.RECONCILIATION_PENDING;
 
-        await this.auditService.log({
-          actorUserId: userId,
-          action: AuditAction.TRADE_SUBMITTED,
-          resourceType: 'Trade',
-          resourceId: trade.id,
-          metadata: { error: (err as Error).message, status: 'RECONCILIATION_PENDING' },
-          severity: AuditSeverity.CRITICAL,
-        });
+      await this.auditService.log({
+        actorUserId: userId,
+        action: AuditAction.TRADE_SUBMITTED,
+        resourceType: 'Trade',
+        resourceId: trade.id,
+        metadata: { error: (err as Error).message, status: 'RECONCILIATION_PENDING' },
+        severity: AuditSeverity.CRITICAL,
+      });
 
-        this.eventBus.publish(DomainEventType.TRADE_RECONCILIATION_PENDING, userId, {
-          tradeId: trade.id,
-          userId,
-          instrument: order.instrument,
-          direction: order.direction,
-          volume: order.lotSize,
-          status: 'RECONCILIATION_PENDING',
-          reason: (err as Error).message,
-        });
+      this.eventBus.publish(DomainEventType.TRADE_RECONCILIATION_PENDING, userId, {
+        tradeId: trade.id,
+        userId,
+        instrument: order.instrument,
+        direction: order.direction,
+        volume: order.lotSize,
+        status: 'RECONCILIATION_PENDING',
+        reason: (err as Error).message,
+      });
     }
 
     return trade;
@@ -298,11 +294,7 @@ export class ExecutionService {
    * Close an open trade. Called by AI signal, kill switch, or user action.
    * The Risk Engine must validate the CLOSE action before calling this.
    */
-  async closeTrade(
-    tradeId: string,
-    userId: string,
-    reason: TradeCloseReason,
-  ): Promise<Trade> {
+  async closeTrade(tradeId: string, userId: string, reason: TradeCloseReason): Promise<Trade> {
     const trade = await this.tradeRepo.findOne({ where: { id: tradeId, userId } });
     if (!trade) {
       throw new ForbiddenException(`Trade ${tradeId} not found or does not belong to user`);
@@ -315,7 +307,10 @@ export class ExecutionService {
     }
 
     // findConnectionById requires userId for ownership check
-    const connection = await this.brokerService.findConnectionById(trade.brokerConnectionId, userId);
+    const connection = await this.brokerService.findConnectionById(
+      trade.brokerConnectionId,
+      userId,
+    );
 
     const credentials = this.encryptionService.decrypt({
       ciphertext: connection.encryptedCredentials!,
@@ -328,9 +323,9 @@ export class ExecutionService {
     adapter.setMode(connection.accountType);
     await adapter.connect(credentials);
 
-    (Object.keys(credentials) as (keyof typeof credentials)[]).forEach(
-      (k) => { (credentials as unknown as Record<string, unknown>)[k] = null; },
-    );
+    (Object.keys(credentials) as (keyof typeof credentials)[]).forEach((k) => {
+      (credentials as unknown as Record<string, unknown>)[k] = null;
+    });
 
     const result = await adapter.closeOrder(trade.externalOrderId);
     // filledPrice = exit price for close order; P&L populated by reconciliation job
@@ -404,7 +399,11 @@ export class ExecutionService {
 
   // ─── Session management ───────────────────────────────────────────────────
 
-  async startSession(userId: string, brokerConnectionId: string, openingBalance: string): Promise<TradingSession> {
+  async startSession(
+    userId: string,
+    brokerConnectionId: string,
+    openingBalance: string,
+  ): Promise<TradingSession> {
     const existing = await this.sessionRepo.findOne({
       where: { userId, status: TradingSessionStatus.ACTIVE },
     });

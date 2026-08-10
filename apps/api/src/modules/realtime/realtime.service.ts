@@ -62,7 +62,11 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
     this.logger.debug(`Emitted ${event} to user:${userId}`);
   }
 
-  emitToTradingSession(sessionId: string, event: RealtimeEvent, payload: Record<string, unknown>): void {
+  emitToTradingSession(
+    sessionId: string,
+    event: RealtimeEvent,
+    payload: Record<string, unknown>,
+  ): void {
     if (!this.server) return;
     this.server.to(`trading-session:${sessionId}`).emit(event, payload);
     this.logger.debug(`Emitted ${event} to trading-session:${sessionId}`);

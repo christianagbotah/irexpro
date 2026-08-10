@@ -39,12 +39,20 @@ describe('PerformanceBillingController (Hotfix — UUID identity contract)', () 
       listBillingCycles: jest.fn().mockResolvedValue({ cycles: [], total: 0 }),
       getBillingCycle: jest.fn().mockResolvedValue({ id: 'cycle-1', userId: USER_ID }),
     };
-    controller = new PerformanceBillingController(svc as unknown as PerformanceFeeBillingCycleService);
+    controller = new PerformanceBillingController(
+      svc as unknown as PerformanceFeeBillingCycleService,
+    );
   });
 
   it('createCycle passes admin UUID string', async () => {
     await controller.createCycle(
-      { userId: USER_ID, brokerConnectionId: 'conn-1', currency: 'USD', periodStart: '2026-01-01T00:00:00Z', periodEnd: '2026-01-31T00:00:00Z' } as never,
+      {
+        userId: USER_ID,
+        brokerConnectionId: 'conn-1',
+        currency: 'USD',
+        periodStart: '2026-01-01T00:00:00Z',
+        periodEnd: '2026-01-31T00:00:00Z',
+      } as never,
       ADMIN_ID,
       { ip: '1.2.3.4' } as never,
     );
@@ -68,7 +76,9 @@ describe('PerformanceBillingController (Hotfix — UUID identity contract)', () 
   });
 
   it('cancelCycle passes admin UUID string', async () => {
-    await controller.cancelCycle('cycle-1', { reason: 'test' } as never, ADMIN_ID, { ip: '1.2.3.4' } as never);
+    await controller.cancelCycle('cycle-1', { reason: 'test' } as never, ADMIN_ID, {
+      ip: '1.2.3.4',
+    } as never);
     expect(svc.cancelBillingCycle).toHaveBeenCalledWith('cycle-1', 'test', ADMIN_ID, '1.2.3.4');
     expect(typeof svc.cancelBillingCycle.mock.calls[0][2]).toBe('string');
   });

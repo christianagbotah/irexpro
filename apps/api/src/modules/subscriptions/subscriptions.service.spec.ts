@@ -8,7 +8,11 @@ import { SubscriptionPlan } from './entities/subscription-plan.entity';
 import { PlanPricing } from './entities/plan-pricing.entity';
 import { UserSubscription, SubscriptionStatus } from './entities/user-subscription.entity';
 import { Invoice, InvoiceStatus } from '../payments/entities/invoice.entity';
-import { PaymentTransaction, PaymentPurpose, PaymentTransactionStatus } from '../payments/entities/payment-transaction.entity';
+import {
+  PaymentTransaction,
+  PaymentPurpose,
+  PaymentTransactionStatus,
+} from '../payments/entities/payment-transaction.entity';
 import { AuditService } from '../audit/audit.service';
 import { PaymentRoutingService } from '../payments/services/payment-routing.service';
 
@@ -201,7 +205,10 @@ describe('SubscriptionsService', () => {
 
     function mockFreshCheckoutHappyPath() {
       mockPlanRepo.findOne.mockResolvedValueOnce({ id: 'plan-id', name: 'Pro', isActive: true });
-      mockPricingRepo.getOne.mockResolvedValueOnce({ amountCents: '2900', subscriptionPlanId: 'plan-id' });
+      mockPricingRepo.getOne.mockResolvedValueOnce({
+        amountCents: '2900',
+        subscriptionPlanId: 'plan-id',
+      });
       mockRoutingService.routeForCheckout.mockResolvedValueOnce({
         provider: mockProvider,
         reason: 'preferred',
@@ -315,9 +322,7 @@ describe('SubscriptionsService', () => {
         .mockResolvedValueOnce({ affected: 1 }) // 1st: atomic claim succeeds
         .mockRejectedValueOnce(uniqueViolation); // 2nd: provider-ref write rejected by DB guard
 
-      await expect(service.initiateCheckout(baseRequest)).rejects.toBeInstanceOf(
-        ConflictException,
-      );
+      await expect(service.initiateCheckout(baseRequest)).rejects.toBeInstanceOf(ConflictException);
 
       // Never marked paid: invoice never updated to PAID.
       expect(mockInvoiceRepo.update).not.toHaveBeenCalled();
@@ -345,10 +350,13 @@ describe('SubscriptionsService', () => {
       // The raw QueryFailedError / constraint name / 23505 code is never leaked
       // to the caller — mirrors the performance-fee checkout 23505 leak check.
       const thrown = await service.initiateCheckout(baseRequest).catch((e: unknown) => e);
-      const thrownStr = thrown instanceof Error
-        ? `${thrown.message} ${JSON.stringify((thrown as { response?: unknown }).response ?? {})}`
-        : String(thrown);
-      expect(thrownStr).not.toMatch(/ux_payment_transactions|QueryFailedError|23505|duplicate key/i);
+      const thrownStr =
+        thrown instanceof Error
+          ? `${thrown.message} ${JSON.stringify((thrown as { response?: unknown }).response ?? {})}`
+          : String(thrown);
+      expect(thrownStr).not.toMatch(
+        /ux_payment_transactions|QueryFailedError|23505|duplicate key/i,
+      );
     });
 
     // ─── Active subscription blocks duplicate checkout ──────────────────────
@@ -374,7 +382,10 @@ describe('SubscriptionsService', () => {
         currentPeriodEnd: new Date(Date.now() - 86400000),
       });
       mockFreshCheckoutHappyPath();
-      mockProvider.createCheckoutSession.mockResolvedValue({ sessionId: 'sess_1', provider: 'stripe' });
+      mockProvider.createCheckoutSession.mockResolvedValue({
+        sessionId: 'sess_1',
+        provider: 'stripe',
+      });
 
       const result = await service.initiateCheckout(baseRequest);
       expect(result.reused).toBe(false);
@@ -387,7 +398,10 @@ describe('SubscriptionsService', () => {
         currentPeriodEnd: new Date(Date.now() + 86400000),
       });
       mockFreshCheckoutHappyPath();
-      mockProvider.createCheckoutSession.mockResolvedValue({ sessionId: 'sess_1', provider: 'stripe' });
+      mockProvider.createCheckoutSession.mockResolvedValue({
+        sessionId: 'sess_1',
+        provider: 'stripe',
+      });
 
       const result = await service.initiateCheckout(baseRequest);
       expect(result.reused).toBe(false);
@@ -402,7 +416,12 @@ describe('SubscriptionsService', () => {
           status: InvoiceStatus.DRAFT,
           currency: 'USD',
           totalAmount: '2900',
-          metadata: { type: 'SUBSCRIPTION', planId: 'plan-id', countryCode: 'US', paymentPurpose: PaymentPurpose.SUBSCRIPTION_INITIAL },
+          metadata: {
+            type: 'SUBSCRIPTION',
+            planId: 'plan-id',
+            countryCode: 'US',
+            paymentPurpose: PaymentPurpose.SUBSCRIPTION_INITIAL,
+          },
         } as unknown as Invoice;
         const transaction = {
           id: 'tx-existing',
@@ -421,7 +440,10 @@ describe('SubscriptionsService', () => {
       it('second identical checkout reuses the existing invoice and transaction (no new rows)', async () => {
         mockPlanRepo.findOne.mockResolvedValueOnce({ id: 'plan-id', name: 'Pro', isActive: true });
         mockPricingRepo.getOne.mockResolvedValueOnce({ amountCents: '2900' });
-        mockRoutingService.routeForCheckout.mockResolvedValueOnce({ provider: mockProvider, reason: 'preferred' });
+        mockRoutingService.routeForCheckout.mockResolvedValueOnce({
+          provider: mockProvider,
+          reason: 'preferred',
+        });
         existingPendingInvoiceAndTx();
         mockProvider.createCheckoutSession.mockResolvedValue({
           sessionId: 'sess_new',
@@ -448,7 +470,10 @@ describe('SubscriptionsService', () => {
         existingPendingInvoiceAndTx({
           status: PaymentTransactionStatus.PROCESSING,
           providerTransactionReference: 'psk_ref_123',
-          providerPayloadSummary: { checkoutUrl: 'https://checkout.example/psk_ref_123', sessionId: 'sess_active' },
+          providerPayloadSummary: {
+            checkoutUrl: 'https://checkout.example/psk_ref_123',
+            sessionId: 'sess_active',
+          },
         });
 
         const result = await service.initiateCheckout(baseRequest);
@@ -467,9 +492,15 @@ describe('SubscriptionsService', () => {
       it('manual/no-session pending transaction can be assigned to a routed provider', async () => {
         mockPlanRepo.findOne.mockResolvedValueOnce({ id: 'plan-id', name: 'Pro', isActive: true });
         mockPricingRepo.getOne.mockResolvedValueOnce({ amountCents: '2900' });
-        mockRoutingService.routeForCheckout.mockResolvedValueOnce({ provider: mockProvider, reason: 'preferred' });
+        mockRoutingService.routeForCheckout.mockResolvedValueOnce({
+          provider: mockProvider,
+          reason: 'preferred',
+        });
         existingPendingInvoiceAndTx({ provider: 'manual', providerTransactionReference: null });
-        mockProvider.createCheckoutSession.mockResolvedValue({ sessionId: 'sess_x', provider: 'stripe' });
+        mockProvider.createCheckoutSession.mockResolvedValue({
+          sessionId: 'sess_x',
+          provider: 'stripe',
+        });
 
         const result = await service.initiateCheckout(baseRequest);
 
@@ -503,15 +534,27 @@ describe('SubscriptionsService', () => {
       it('FAILED transaction supersedes the old invoice and starts a fresh checkout', async () => {
         mockPlanRepo.findOne.mockResolvedValueOnce({ id: 'plan-id', name: 'Pro', isActive: true });
         mockPricingRepo.getOne.mockResolvedValueOnce({ amountCents: '2900' });
-        mockRoutingService.routeForCheckout.mockResolvedValueOnce({ provider: mockProvider, reason: 'preferred' });
-        const { invoice } = existingPendingInvoiceAndTx({ status: PaymentTransactionStatus.FAILED });
+        mockRoutingService.routeForCheckout.mockResolvedValueOnce({
+          provider: mockProvider,
+          reason: 'preferred',
+        });
+        const { invoice } = existingPendingInvoiceAndTx({
+          status: PaymentTransactionStatus.FAILED,
+        });
         const savedInvoice = { id: 'inv-new', metadata: {} };
-        const savedTx = { id: 'tx-new', status: PaymentTransactionStatus.PENDING, provider: 'stripe' };
+        const savedTx = {
+          id: 'tx-new',
+          status: PaymentTransactionStatus.PENDING,
+          provider: 'stripe',
+        };
         mockInvoiceRepo.create.mockReturnValue(savedInvoice);
         mockInvoiceRepo.save.mockResolvedValue(savedInvoice);
         mockTransactionRepo.create.mockReturnValue(savedTx);
         mockTransactionRepo.save.mockResolvedValue(savedTx);
-        mockProvider.createCheckoutSession.mockResolvedValue({ sessionId: 'sess_retry', provider: 'stripe' });
+        mockProvider.createCheckoutSession.mockResolvedValue({
+          sessionId: 'sess_retry',
+          provider: 'stripe',
+        });
 
         const result = await service.initiateCheckout(baseRequest);
 
@@ -527,13 +570,27 @@ describe('SubscriptionsService', () => {
       it('CANCELLED transaction supersedes the old invoice and starts a fresh checkout', async () => {
         mockPlanRepo.findOne.mockResolvedValueOnce({ id: 'plan-id', name: 'Pro', isActive: true });
         mockPricingRepo.getOne.mockResolvedValueOnce({ amountCents: '2900' });
-        mockRoutingService.routeForCheckout.mockResolvedValueOnce({ provider: mockProvider, reason: 'preferred' });
+        mockRoutingService.routeForCheckout.mockResolvedValueOnce({
+          provider: mockProvider,
+          reason: 'preferred',
+        });
         existingPendingInvoiceAndTx({ status: PaymentTransactionStatus.CANCELLED });
         mockInvoiceRepo.create.mockReturnValue({ id: 'inv-new2', metadata: {} });
         mockInvoiceRepo.save.mockResolvedValue({ id: 'inv-new2', metadata: {} });
-        mockTransactionRepo.create.mockReturnValue({ id: 'tx-new2', status: PaymentTransactionStatus.PENDING, provider: 'stripe' });
-        mockTransactionRepo.save.mockResolvedValue({ id: 'tx-new2', status: PaymentTransactionStatus.PENDING, provider: 'stripe' });
-        mockProvider.createCheckoutSession.mockResolvedValue({ sessionId: 'sess_retry2', provider: 'stripe' });
+        mockTransactionRepo.create.mockReturnValue({
+          id: 'tx-new2',
+          status: PaymentTransactionStatus.PENDING,
+          provider: 'stripe',
+        });
+        mockTransactionRepo.save.mockResolvedValue({
+          id: 'tx-new2',
+          status: PaymentTransactionStatus.PENDING,
+          provider: 'stripe',
+        });
+        mockProvider.createCheckoutSession.mockResolvedValue({
+          sessionId: 'sess_retry2',
+          provider: 'stripe',
+        });
 
         const result = await service.initiateCheckout(baseRequest);
         expect(result.invoiceId).toBe('inv-new2');
@@ -542,16 +599,25 @@ describe('SubscriptionsService', () => {
       it('plan mismatch does not reuse an unrelated pending invoice', async () => {
         // The query filters by planId in SQL — simulate "no match" by returning null.
         mockFreshCheckoutHappyPath();
-        mockProvider.createCheckoutSession.mockResolvedValue({ sessionId: 'sess_2', provider: 'stripe' });
+        mockProvider.createCheckoutSession.mockResolvedValue({
+          sessionId: 'sess_2',
+          provider: 'stripe',
+        });
 
-        const result = await service.initiateCheckout({ ...baseRequest, planId: 'different-plan-id' });
+        const result = await service.initiateCheckout({
+          ...baseRequest,
+          planId: 'different-plan-id',
+        });
         expect(result.reused).toBe(false);
         expect(mockInvoiceRepo.save).toHaveBeenCalled();
       });
 
       it('currency mismatch does not reuse a pending invoice for a different currency', async () => {
         mockFreshCheckoutHappyPath();
-        mockProvider.createCheckoutSession.mockResolvedValue({ sessionId: 'sess_3', provider: 'stripe' });
+        mockProvider.createCheckoutSession.mockResolvedValue({
+          sessionId: 'sess_3',
+          provider: 'stripe',
+        });
 
         const result = await service.initiateCheckout({ ...baseRequest, currency: 'GHS' });
         expect(result.reused).toBe(false);
@@ -559,7 +625,10 @@ describe('SubscriptionsService', () => {
 
       it('country mismatch does not reuse a pending invoice for a different country', async () => {
         mockFreshCheckoutHappyPath();
-        mockProvider.createCheckoutSession.mockResolvedValue({ sessionId: 'sess_4', provider: 'stripe' });
+        mockProvider.createCheckoutSession.mockResolvedValue({
+          sessionId: 'sess_4',
+          provider: 'stripe',
+        });
 
         const result = await service.initiateCheckout({ ...baseRequest, countryCode: 'GH' });
         expect(result.reused).toBe(false);
@@ -568,13 +637,27 @@ describe('SubscriptionsService', () => {
       it('stale amount (price changed since pending invoice was created) does not reuse', async () => {
         mockPlanRepo.findOne.mockResolvedValueOnce({ id: 'plan-id', name: 'Pro', isActive: true });
         mockPricingRepo.getOne.mockResolvedValueOnce({ amountCents: '3500' }); // price increased
-        mockRoutingService.routeForCheckout.mockResolvedValueOnce({ provider: mockProvider, reason: 'preferred' });
+        mockRoutingService.routeForCheckout.mockResolvedValueOnce({
+          provider: mockProvider,
+          reason: 'preferred',
+        });
         existingPendingInvoiceAndTx(); // stale invoice still has totalAmount '2900'
         mockInvoiceRepo.create.mockReturnValue({ id: 'inv-fresh', metadata: {} });
         mockInvoiceRepo.save.mockResolvedValue({ id: 'inv-fresh', metadata: {} });
-        mockTransactionRepo.create.mockReturnValue({ id: 'tx-fresh', status: PaymentTransactionStatus.PENDING, provider: 'stripe' });
-        mockTransactionRepo.save.mockResolvedValue({ id: 'tx-fresh', status: PaymentTransactionStatus.PENDING, provider: 'stripe' });
-        mockProvider.createCheckoutSession.mockResolvedValue({ sessionId: 'sess_fresh', provider: 'stripe' });
+        mockTransactionRepo.create.mockReturnValue({
+          id: 'tx-fresh',
+          status: PaymentTransactionStatus.PENDING,
+          provider: 'stripe',
+        });
+        mockTransactionRepo.save.mockResolvedValue({
+          id: 'tx-fresh',
+          status: PaymentTransactionStatus.PENDING,
+          provider: 'stripe',
+        });
+        mockProvider.createCheckoutSession.mockResolvedValue({
+          sessionId: 'sess_fresh',
+          provider: 'stripe',
+        });
 
         const result = await service.initiateCheckout(baseRequest);
         expect(result.invoiceId).toBe('inv-fresh');
@@ -604,12 +687,19 @@ describe('SubscriptionsService', () => {
       it('two concurrent requests racing to create the invoice: the loser reuses the winner (23505)', async () => {
         mockPlanRepo.findOne.mockResolvedValue({ id: 'plan-id', name: 'Pro', isActive: true });
         mockPricingRepo.getOne.mockResolvedValue({ amountCents: '2900' });
-        mockRoutingService.routeForCheckout.mockResolvedValue({ provider: mockProvider, reason: 'preferred' });
+        mockRoutingService.routeForCheckout.mockResolvedValue({
+          provider: mockProvider,
+          reason: 'preferred',
+        });
 
         // First lookup (before insert attempt): nothing reusable yet for either caller.
         mockInvoiceQueryBuilder.getOne.mockResolvedValueOnce(null);
 
-        const uniqueViolation = new QueryFailedError('INSERT', [], new Error('duplicate key value') as never);
+        const uniqueViolation = new QueryFailedError(
+          'INSERT',
+          [],
+          new Error('duplicate key value') as never,
+        );
         (uniqueViolation as unknown as { code: string }).code = '23505';
         mockInvoiceRepo.create.mockReturnValue({ id: 'inv-attempt', metadata: {} });
         mockInvoiceRepo.save.mockRejectedValueOnce(uniqueViolation);
@@ -631,7 +721,10 @@ describe('SubscriptionsService', () => {
         };
         mockInvoiceQueryBuilder.getOne.mockResolvedValueOnce(winningInvoice);
         mockTransactionRepo.findOne.mockResolvedValueOnce(winningTx);
-        mockProvider.createCheckoutSession.mockResolvedValue({ sessionId: 'sess_winner', provider: 'stripe' });
+        mockProvider.createCheckoutSession.mockResolvedValue({
+          sessionId: 'sess_winner',
+          provider: 'stripe',
+        });
 
         const result = await service.initiateCheckout(baseRequest);
 
@@ -644,7 +737,10 @@ describe('SubscriptionsService', () => {
       it('two concurrent requests finding the same PENDING transaction: the loser gets a safe reused response', async () => {
         mockPlanRepo.findOne.mockResolvedValueOnce({ id: 'plan-id', name: 'Pro', isActive: true });
         mockPricingRepo.getOne.mockResolvedValueOnce({ amountCents: '2900' });
-        mockRoutingService.routeForCheckout.mockResolvedValueOnce({ provider: mockProvider, reason: 'preferred' });
+        mockRoutingService.routeForCheckout.mockResolvedValueOnce({
+          provider: mockProvider,
+          reason: 'preferred',
+        });
 
         const invoice = {
           id: 'inv-shared',
@@ -669,7 +765,10 @@ describe('SubscriptionsService', () => {
           ...transaction,
           status: PaymentTransactionStatus.PROCESSING,
           providerTransactionReference: 'psk_won_race',
-          providerPayloadSummary: { checkoutUrl: 'https://checkout.example/won', sessionId: 'sess_won' },
+          providerPayloadSummary: {
+            checkoutUrl: 'https://checkout.example/won',
+            sessionId: 'sess_won',
+          },
         });
 
         const result = await service.initiateCheckout(baseRequest);
@@ -687,11 +786,18 @@ describe('SubscriptionsService', () => {
         // the code fell through to `throw err`, re-throwing the raw QueryFailedError.
         mockPlanRepo.findOne.mockResolvedValue({ id: 'plan-id', name: 'Pro', isActive: true });
         mockPricingRepo.getOne.mockResolvedValue({ amountCents: '2900' });
-        mockRoutingService.routeForCheckout.mockResolvedValue({ provider: mockProvider, reason: 'preferred' });
+        mockRoutingService.routeForCheckout.mockResolvedValue({
+          provider: mockProvider,
+          reason: 'preferred',
+        });
 
         mockInvoiceQueryBuilder.getOne.mockResolvedValueOnce(null);
 
-        const uniqueViolation = new QueryFailedError('INSERT', [], new Error('duplicate key value') as never);
+        const uniqueViolation = new QueryFailedError(
+          'INSERT',
+          [],
+          new Error('duplicate key value') as never,
+        );
         (uniqueViolation as unknown as { code: string }).code = '23505';
         mockInvoiceRepo.create.mockReturnValue({ id: 'inv-attempt', metadata: {} });
         mockInvoiceRepo.save.mockRejectedValueOnce(uniqueViolation);
@@ -746,7 +852,10 @@ describe('SubscriptionsService', () => {
       // Retry: the now-PENDING transaction from the failed attempt is reused.
       mockPlanRepo.findOne.mockResolvedValueOnce({ id: 'plan-id', name: 'Pro', isActive: true });
       mockPricingRepo.getOne.mockResolvedValueOnce({ amountCents: '2900' });
-      mockRoutingService.routeForCheckout.mockResolvedValueOnce({ provider: mockProvider, reason: 'preferred' });
+      mockRoutingService.routeForCheckout.mockResolvedValueOnce({
+        provider: mockProvider,
+        reason: 'preferred',
+      });
       mockInvoiceQueryBuilder.getOne.mockResolvedValueOnce({
         id: 'inv-id',
         status: InvoiceStatus.DRAFT,
@@ -761,7 +870,10 @@ describe('SubscriptionsService', () => {
         provider: 'stripe',
         providerTransactionReference: null,
       });
-      mockProvider.createCheckoutSession.mockResolvedValueOnce({ sessionId: 'sess_retry', provider: 'stripe' });
+      mockProvider.createCheckoutSession.mockResolvedValueOnce({
+        sessionId: 'sess_retry',
+        provider: 'stripe',
+      });
 
       const retryResult = await service.initiateCheckout(baseRequest);
       expect(retryResult.invoiceId).toBe('inv-id');
@@ -802,7 +914,10 @@ describe('SubscriptionsService', () => {
           providerPayloadSummary: { checkoutUrl: 'https://checkout.example/idem' },
         });
 
-        const result = await service.initiateCheckout({ ...baseRequest, idempotencyKey: 'idem-key-1' });
+        const result = await service.initiateCheckout({
+          ...baseRequest,
+          idempotencyKey: 'idem-key-1',
+        });
 
         expect(result.invoiceId).toBe('inv-idem');
         expect(result.transactionId).toBe('tx-idem');
@@ -819,7 +934,10 @@ describe('SubscriptionsService', () => {
 
         mockInvoiceQueryBuilder.getOne.mockResolvedValueOnce({
           id: 'inv-idem-2',
-          metadata: { idempotencyKeyHash: 'somehash', idempotencyFingerprint: 'a-different-fingerprint' },
+          metadata: {
+            idempotencyKeyHash: 'somehash',
+            idempotencyFingerprint: 'a-different-fingerprint',
+          },
         });
 
         await expect(
@@ -830,7 +948,10 @@ describe('SubscriptionsService', () => {
 
       it('new idempotency key stores only a hash, never the raw key, on the invoice metadata', async () => {
         mockFreshCheckoutHappyPath();
-        mockProvider.createCheckoutSession.mockResolvedValue({ sessionId: 'sess_idem_new', provider: 'stripe' });
+        mockProvider.createCheckoutSession.mockResolvedValue({
+          sessionId: 'sess_idem_new',
+          provider: 'stripe',
+        });
 
         await service.initiateCheckout({ ...baseRequest, idempotencyKey: 'raw-secret-key-value' });
 
@@ -872,9 +993,12 @@ describe('SubscriptionsService', () => {
         expect(mockProvider.createCheckoutSession).not.toHaveBeenCalled();
       });
 
-      it('the same idempotency key value used by a different user never matches this user\'s invoice (scoped by userId)', async () => {
+      it("the same idempotency key value used by a different user never matches this user's invoice (scoped by userId)", async () => {
         mockFreshCheckoutHappyPath();
-        mockProvider.createCheckoutSession.mockResolvedValue({ sessionId: 'sess_cross_user', provider: 'stripe' });
+        mockProvider.createCheckoutSession.mockResolvedValue({
+          sessionId: 'sess_cross_user',
+          provider: 'stripe',
+        });
 
         // The repo mock is scoped per-call via the query builder chain; since the real
         // query filters `i.user_id = :userId`, a lookup for THIS user must return null
@@ -888,7 +1012,9 @@ describe('SubscriptionsService', () => {
           idempotencyKey: 'shared-key-used-by-another-user',
         });
 
-        expect(mockInvoiceQueryBuilder.where).toHaveBeenCalledWith('i.user_id = :userId', { userId: 'user-id' });
+        expect(mockInvoiceQueryBuilder.where).toHaveBeenCalledWith('i.user_id = :userId', {
+          userId: 'user-id',
+        });
         expect(result.reused).toBe(false);
         expect(result.invoiceId).toBe('inv-id');
       });
@@ -912,7 +1038,10 @@ describe('SubscriptionsService', () => {
 
     it('never includes secrets in audit metadata', async () => {
       mockFreshCheckoutHappyPath();
-      mockProvider.createCheckoutSession.mockResolvedValue({ sessionId: 'sess_audit', provider: 'stripe' });
+      mockProvider.createCheckoutSession.mockResolvedValue({
+        sessionId: 'sess_audit',
+        provider: 'stripe',
+      });
 
       await service.initiateCheckout(baseRequest);
 
@@ -946,7 +1075,10 @@ describe('SubscriptionsService', () => {
         paymentProvider: 'stripe',
       };
       mockSubscriptionRepo.findOne.mockResolvedValueOnce(sub);
-      mockSubscriptionRepo.save.mockResolvedValueOnce({ ...sub, status: SubscriptionStatus.CANCELLED });
+      mockSubscriptionRepo.save.mockResolvedValueOnce({
+        ...sub,
+        status: SubscriptionStatus.CANCELLED,
+      });
 
       const result = await service.cancelSubscription('user-id', 'No longer needed');
       expect(result.status).toBe(SubscriptionStatus.CANCELLED);

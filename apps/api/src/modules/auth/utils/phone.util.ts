@@ -37,7 +37,10 @@ export class PhoneValidationError extends Error {
  * @returns normalized phone like "+233243618186", or null if empty
  * @throws PhoneValidationError if the input has malformed duplicate prefixes
  */
-export function normalizePhone(rawPhone: string | undefined | null, callingCode?: string): string | null {
+export function normalizePhone(
+  rawPhone: string | undefined | null,
+  callingCode?: string,
+): string | null {
   if (!rawPhone) return null;
 
   // Remove all spaces, dashes, parentheses

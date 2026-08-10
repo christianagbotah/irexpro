@@ -111,9 +111,7 @@ export class CreatePerformanceBillingSchema1751300000000 implements MigrationInt
     await queryRunner.query(
       `DROP TABLE IF EXISTS performance_billing.performance_fee_billing_cycles CASCADE`,
     );
-    await queryRunner.query(
-      `DROP TYPE IF EXISTS performance_billing.billing_cycle_status_enum`,
-    );
+    await queryRunner.query(`DROP TYPE IF EXISTS performance_billing.billing_cycle_status_enum`);
     await queryRunner.query(`DROP SCHEMA IF EXISTS performance_billing CASCADE`);
   }
 }

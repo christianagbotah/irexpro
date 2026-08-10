@@ -53,9 +53,7 @@ export class PaperBrokerAdapter implements IBrokerAdapter {
 
   setMode(mode: BrokerMode): void {
     if (mode === BrokerMode.LIVE) {
-      this.logger.warn(
-        'PaperBrokerAdapter cannot be set to LIVE mode. Ignoring setMode(LIVE).',
-      );
+      this.logger.warn('PaperBrokerAdapter cannot be set to LIVE mode. Ignoring setMode(LIVE).');
       return;
     }
     this._mode = mode;
@@ -176,7 +174,9 @@ export class PaperBrokerAdapter implements IBrokerAdapter {
       });
     }
 
-    this.logger.debug(`PaperBrokerAdapter: returning ${count} mock candles for ${instrument} ${timeframe}`);
+    this.logger.debug(
+      `PaperBrokerAdapter: returning ${count} mock candles for ${instrument} ${timeframe}`,
+    );
     return candles;
   }
 

@@ -18,7 +18,10 @@ export class CheckoutDto {
   @IsString()
   provider?: string;
 
-  @ApiPropertyOptional({ description: 'Country code (ISO 3166-1 alpha-2, optional — derived from user profile if omitted)' })
+  @ApiPropertyOptional({
+    description:
+      'Country code (ISO 3166-1 alpha-2, optional — derived from user profile if omitted)',
+  })
   @IsOptional()
   @IsString()
   @Length(2, 2)

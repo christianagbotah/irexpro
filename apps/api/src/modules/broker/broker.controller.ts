@@ -12,13 +12,7 @@ import {
   SerializeOptions,
   UseGuards,
 } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiParam,
-  ApiResponse,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { BrokerService } from './broker.service';
 import { ConnectBrokerDto } from './dto/connect-broker.dto';
 import { BrokerConnectionResponseDto } from './dto/broker-connection-response.dto';
@@ -60,9 +54,7 @@ export class BrokerController {
   @SerializeOptions({ strategy: 'excludeAll' })
   @ApiOperation({ summary: 'List current user broker connections' })
   @ApiResponse({ status: 200, type: [BrokerConnectionResponseDto] })
-  async listConnections(
-    @CurrentUserId() userId: string,
-  ): Promise<BrokerConnectionResponseDto[]> {
+  async listConnections(@CurrentUserId() userId: string): Promise<BrokerConnectionResponseDto[]> {
     const connections = await this.brokerService.findConnectionsByUser(userId);
     return connections.map((c) => Object.assign(new BrokerConnectionResponseDto(), c));
   }
@@ -91,10 +83,7 @@ export class BrokerController {
       'Credentials are NOT persisted. Required before creating a connection.',
   })
   @ApiResponse({ status: 200, description: 'Test result' })
-  async testCredentials(
-    @Body() dto: ConnectBrokerDto,
-    @CurrentUserId() userId: string,
-  ) {
+  async testCredentials(@Body() dto: ConnectBrokerDto, @CurrentUserId() userId: string) {
     return this.brokerService.testCredentials(dto, userId);
   }
 

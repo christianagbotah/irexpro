@@ -36,54 +36,74 @@ const providerCases: [string, IPaymentProvider][] = [
 ];
 
 describe('Payment Provider Placeholders — fail closed', () => {
-  it.each(providerCases)('%s.createCheckoutSession should throw NotImplementedException', async (_name, provider) => {
-    await expect(
-      provider.createCheckoutSession({
-        userId: 'u1',
-        email: 'u@test.com',
-        planId: 'p1',
-        currency: 'USD',
-        amountMinor: 2900,
-        countryCode: 'US',
-      }),
-    ).rejects.toThrow(NotImplementedException);
-  });
+  it.each(providerCases)(
+    '%s.createCheckoutSession should throw NotImplementedException',
+    async (_name, provider) => {
+      await expect(
+        provider.createCheckoutSession({
+          userId: 'u1',
+          email: 'u@test.com',
+          planId: 'p1',
+          currency: 'USD',
+          amountMinor: 2900,
+          countryCode: 'US',
+        }),
+      ).rejects.toThrow(NotImplementedException);
+    },
+  );
 
-  it.each(providerCases)('%s.createSubscription should throw NotImplementedException', async (_name, provider) => {
-    await expect(
-      provider.createSubscription({
-        providerCustomerId: 'cust_123',
-        providerPlanId: 'plan_123',
-        currency: 'USD',
-      }),
-    ).rejects.toThrow(NotImplementedException);
-  });
+  it.each(providerCases)(
+    '%s.createSubscription should throw NotImplementedException',
+    async (_name, provider) => {
+      await expect(
+        provider.createSubscription({
+          providerCustomerId: 'cust_123',
+          providerPlanId: 'plan_123',
+          currency: 'USD',
+        }),
+      ).rejects.toThrow(NotImplementedException);
+    },
+  );
 
-  it.each(providerCases)('%s.createCustomer should throw NotImplementedException', async (_name, provider) => {
-    await expect(
-      provider.createCustomer({ userId: 'user-id', email: 'test@example.com' }),
-    ).rejects.toThrow(NotImplementedException);
-  });
+  it.each(providerCases)(
+    '%s.createCustomer should throw NotImplementedException',
+    async (_name, provider) => {
+      await expect(
+        provider.createCustomer({ userId: 'user-id', email: 'test@example.com' }),
+      ).rejects.toThrow(NotImplementedException);
+    },
+  );
 
-  it.each(providerCases)('%s.createPaymentIntent should throw NotImplementedException', async (_name, provider) => {
-    await expect(
-      provider.createPaymentIntent({
-        providerCustomerId: 'cust_123',
-        amountCents: 2900,
-        currency: 'USD',
-      }),
-    ).rejects.toThrow(NotImplementedException);
-  });
+  it.each(providerCases)(
+    '%s.createPaymentIntent should throw NotImplementedException',
+    async (_name, provider) => {
+      await expect(
+        provider.createPaymentIntent({
+          providerCustomerId: 'cust_123',
+          amountCents: 2900,
+          currency: 'USD',
+        }),
+      ).rejects.toThrow(NotImplementedException);
+    },
+  );
 
-  it.each(providerCases)('%s.verifyWebhookSignature should fail closed (return false)', (_name, provider) => {
-    // Placeholder providers must fail closed — never accept a signature
-    const result = provider.verifyWebhookSignature(Buffer.from('{}'), {});
-    expect(result).toBe(false);
-  });
+  it.each(providerCases)(
+    '%s.verifyWebhookSignature should fail closed (return false)',
+    (_name, provider) => {
+      // Placeholder providers must fail closed — never accept a signature
+      const result = provider.verifyWebhookSignature(Buffer.from('{}'), {});
+      expect(result).toBe(false);
+    },
+  );
 
-  it.each(providerCases)('%s.getTransactionStatus should throw NotImplementedException', async (_name, provider) => {
-    await expect(provider.getTransactionStatus('ref_123')).rejects.toThrow(NotImplementedException);
-  });
+  it.each(providerCases)(
+    '%s.getTransactionStatus should throw NotImplementedException',
+    async (_name, provider) => {
+      await expect(provider.getTransactionStatus('ref_123')).rejects.toThrow(
+        NotImplementedException,
+      );
+    },
+  );
 
   it.each(providerCases)('%s should have supportedPaymentMethods defined', (_name, provider) => {
     expect(Array.isArray(provider.supportedPaymentMethods)).toBe(true);
@@ -183,7 +203,9 @@ describe('PaymentProviderRegistry', () => {
     expect(manual.providerId).toBe('manual');
     // In production routing, PaymentRoutingService excludes 'manual' by name
     // This test documents the invariant
-    const publicProviders = registry.getAvailableProviders().filter((p) => p.providerId !== 'manual');
+    const publicProviders = registry
+      .getAvailableProviders()
+      .filter((p) => p.providerId !== 'manual');
     expect(publicProviders.map((p) => p.providerId)).not.toContain('manual');
   });
 });

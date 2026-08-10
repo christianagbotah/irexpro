@@ -76,8 +76,12 @@ describe('CredentialEncryptionService', () => {
   });
 
   describe('decrypt() error handling', () => {
-    beforeEach(() => { jest.spyOn(Logger.prototype, 'error').mockImplementation(() => {}); });
-    afterEach(() => { jest.restoreAllMocks(); });
+    beforeEach(() => {
+      jest.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
+    });
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
 
     it('throws BrokerAdapterError with DECRYPTION_FAILED on tampered data', () => {
       const credentials: DecryptedBrokerCredentials = { accountId: '123' };
