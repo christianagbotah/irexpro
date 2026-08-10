@@ -102,19 +102,21 @@ export class OnboardingService {
       !killSwitchActive;
 
     // Determine next step (first incomplete step)
-    const nextStep: OnboardingNextStep = canStartTrading
-      ? 'READY'
-      : (missingSteps[0] ?? 'READY');
+    const nextStep: OnboardingNextStep = canStartTrading ? 'READY' : (missingSteps[0] ?? 'READY');
 
     // Audit only when the user is fully ready (avoids spam on every dashboard poll)
     if (canStartTrading) {
-      await this.auditService.log({
-        actorUserId: userId,
-        action: AuditAction.TRADING_READINESS_CHECKED,
-        resourceType: 'User',
-        resourceId: userId,
-        metadata: { canStartTrading: true, brokerConnectionId: activeConnection?.id },
-      }).catch(() => { /* audit never throws */ });
+      await this.auditService
+        .log({
+          actorUserId: userId,
+          action: AuditAction.TRADING_READINESS_CHECKED,
+          resourceType: 'User',
+          resourceId: userId,
+          metadata: { canStartTrading: true, brokerConnectionId: activeConnection?.id },
+        })
+        .catch(() => {
+          /* audit never throws */
+        });
     }
 
     return {
@@ -133,7 +135,9 @@ export class OnboardingService {
    * Returns { allowed, missingSteps } — the caller throws ForbiddenException
    * if not allowed, with the missing steps in the message.
    */
-  async canStartTrading(userId: string): Promise<{ allowed: boolean; missingSteps: OnboardingStep[] }> {
+  async canStartTrading(
+    userId: string,
+  ): Promise<{ allowed: boolean; missingSteps: OnboardingStep[] }> {
     const status = await this.getOnboardingStatus(userId);
     return {
       allowed: status.canStartTrading,
@@ -192,7 +196,10 @@ export class OnboardingService {
    */
   private async findActiveBrokerConnection(
     userId: string,
-  ): Promise<Pick<BrokerConnection, 'id' | 'status' | 'lastHealthCheckAt' | 'consecutiveFailureCount' | 'liveTradingEnabled'> | null> {
+  ): Promise<Pick<
+    BrokerConnection,
+    'id' | 'status' | 'lastHealthCheckAt' | 'consecutiveFailureCount' | 'liveTradingEnabled'
+  > | null> {
     try {
       const connection = await this.brokerConnectionRepo
         .createQueryBuilder('conn')
@@ -207,7 +214,10 @@ export class OnboardingService {
         .andWhere('conn.status = :status', { status: BrokerConnectionStatus.CONNECTED })
         .getOne();
 
-      return connection as Pick<BrokerConnection, 'id' | 'status' | 'lastHealthCheckAt' | 'consecutiveFailureCount' | 'liveTradingEnabled'> | null;
+      return connection as Pick<
+        BrokerConnection,
+        'id' | 'status' | 'lastHealthCheckAt' | 'consecutiveFailureCount' | 'liveTradingEnabled'
+      > | null;
     } catch (err) {
       // Log the DB error (without credentials — none are in this query) and
       // return null. The user is treated as not having a broker connection.

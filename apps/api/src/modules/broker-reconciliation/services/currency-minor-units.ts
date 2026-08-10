@@ -16,26 +16,65 @@ import { Injectable } from '@nestjs/common';
  */
 export const CURRENCY_MINOR_UNIT_DIGITS: Readonly<Record<string, number>> = Object.freeze({
   // ── 2-decimal currencies (the vast majority) ──────────────────────────────
-  USD: 2, EUR: 2, GBP: 2, CHF: 2, CAD: 2, AUD: 2, NZD: 2,
-  CNY: 2, HKD: 2, SGD: 2, INR: 2, BRL: 2, MXN: 2, PLN: 2,
-  SEK: 2, NOK: 2, DKK: 2, CZK: 2, HUF: 2, TRY: 2, RUB: 2,
-  ZAR: 2, NGN: 2, GHS: 2, KES: 2, EGP: 2, MAD: 2, AED: 2,
-  SAR: 2, QAR: 2, THB: 2, MYR: 2, PHP: 2, IDR: 2, ILS: 2,
+  USD: 2,
+  EUR: 2,
+  GBP: 2,
+  CHF: 2,
+  CAD: 2,
+  AUD: 2,
+  NZD: 2,
+  CNY: 2,
+  HKD: 2,
+  SGD: 2,
+  INR: 2,
+  BRL: 2,
+  MXN: 2,
+  PLN: 2,
+  SEK: 2,
+  NOK: 2,
+  DKK: 2,
+  CZK: 2,
+  HUF: 2,
+  TRY: 2,
+  RUB: 2,
+  ZAR: 2,
+  NGN: 2,
+  GHS: 2,
+  KES: 2,
+  EGP: 2,
+  MAD: 2,
+  AED: 2,
+  SAR: 2,
+  QAR: 2,
+  THB: 2,
+  MYR: 2,
+  PHP: 2,
+  IDR: 2,
+  ILS: 2,
 
   // ── 0-decimal currencies (no minor subunit) ──────────────────────────────
-  JPY: 0, KRW: 0, VND: 0, CLP: 0, ISK: 0, XOF: 0, XAF: 0, UGX: 0, RWF: 0,
+  JPY: 0,
+  KRW: 0,
+  VND: 0,
+  CLP: 0,
+  ISK: 0,
+  XOF: 0,
+  XAF: 0,
+  UGX: 0,
+  RWF: 0,
 
   // ── 3-decimal currencies ─────────────────────────────────────────────────
-  KWD: 3, BHD: 3, OMR: 3, JOD: 3, TND: 3,
+  KWD: 3,
+  BHD: 3,
+  OMR: 3,
+  JOD: 3,
+  TND: 3,
 });
 
 /** Returns true if the currency has a known minor-unit exponent. */
 export function isSupportedCurrency(currency: string): boolean {
   if (!currency) return false;
-  return Object.prototype.hasOwnProperty.call(
-    CURRENCY_MINOR_UNIT_DIGITS,
-    currency.toUpperCase(),
-  );
+  return Object.prototype.hasOwnProperty.call(CURRENCY_MINOR_UNIT_DIGITS, currency.toUpperCase());
 }
 
 /**

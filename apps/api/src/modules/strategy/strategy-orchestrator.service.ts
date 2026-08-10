@@ -142,7 +142,8 @@ export class StrategyOrchestratorService {
       instrument: candidate.instrument,
       direction: candidate.direction,
       requestedLotSize: String(candidate.suggestedVolume),
-      entryPrice: candidate.suggestedEntryPrice != null ? String(candidate.suggestedEntryPrice) : '0',
+      entryPrice:
+        candidate.suggestedEntryPrice != null ? String(candidate.suggestedEntryPrice) : '0',
       stopLoss: String(candidate.suggestedStopLoss),
       takeProfit: String(candidate.suggestedTakeProfit),
       idempotencyKey: `${candidate.userId}:${candidate.signalId}`,
@@ -196,9 +197,7 @@ export class StrategyOrchestratorService {
     // ── Gate 7: Execution ──────────────────────────────────────────────────────
     try {
       const trade = await this.executionService.executeTrade(userId, riskDecision);
-      this.logger.log(
-        `Signal ${signalId} executed: tradeId=${trade.id} status=${trade.status}`,
-      );
+      this.logger.log(`Signal ${signalId} executed: tradeId=${trade.id} status=${trade.status}`);
       await this.auditService.log({
         actorUserId: userId,
         action: AuditAction.AI_SIGNAL_EXECUTED,
@@ -244,7 +243,8 @@ export class StrategyOrchestratorService {
     if (typeof candidate.confidenceScore !== 'number') return 'Invalid confidenceScore';
     if (!candidate.suggestedStopLoss) return 'Missing suggestedStopLoss';
     if (!candidate.suggestedTakeProfit) return 'Missing suggestedTakeProfit';
-    if (!candidate.suggestedVolume || candidate.suggestedVolume <= 0) return 'Invalid suggestedVolume';
+    if (!candidate.suggestedVolume || candidate.suggestedVolume <= 0)
+      return 'Invalid suggestedVolume';
     return null;
   }
 

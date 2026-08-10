@@ -72,12 +72,22 @@ export class CreatePaymentsSchema1750900000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX idx_pt_user_id ON payments.payment_transactions (user_id)`);
-    await queryRunner.query(`CREATE INDEX idx_pt_provider ON payments.payment_transactions (provider)`);
+    await queryRunner.query(
+      `CREATE INDEX idx_pt_user_id ON payments.payment_transactions (user_id)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX idx_pt_provider ON payments.payment_transactions (provider)`,
+    );
     await queryRunner.query(`CREATE INDEX idx_pt_status ON payments.payment_transactions (status)`);
-    await queryRunner.query(`CREATE INDEX idx_pt_created_at ON payments.payment_transactions (created_at)`);
-    await queryRunner.query(`CREATE INDEX idx_pt_user_created ON payments.payment_transactions (user_id, created_at)`);
-    await queryRunner.query(`CREATE INDEX idx_pt_provider_ref ON payments.payment_transactions (provider, provider_transaction_reference)`);
+    await queryRunner.query(
+      `CREATE INDEX idx_pt_created_at ON payments.payment_transactions (created_at)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX idx_pt_user_created ON payments.payment_transactions (user_id, created_at)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX idx_pt_provider_ref ON payments.payment_transactions (provider, provider_transaction_reference)`,
+    );
 
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS payments.invoices (
@@ -101,8 +111,12 @@ export class CreatePaymentsSchema1750900000000 implements MigrationInterface {
     await queryRunner.query(`CREATE INDEX idx_inv_user_id ON payments.invoices (user_id)`);
     await queryRunner.query(`CREATE INDEX idx_inv_status ON payments.invoices (status)`);
     await queryRunner.query(`CREATE INDEX idx_inv_created_at ON payments.invoices (created_at)`);
-    await queryRunner.query(`CREATE INDEX idx_inv_user_created ON payments.invoices (user_id, created_at)`);
-    await queryRunner.query(`CREATE UNIQUE INDEX idx_inv_invoice_number ON payments.invoices (invoice_number)`);
+    await queryRunner.query(
+      `CREATE INDEX idx_inv_user_created ON payments.invoices (user_id, created_at)`,
+    );
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX idx_inv_invoice_number ON payments.invoices (invoice_number)`,
+    );
 
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS payments.payment_webhook_events (
@@ -120,9 +134,15 @@ export class CreatePaymentsSchema1750900000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX idx_whe_provider ON payments.payment_webhook_events (provider)`);
-    await queryRunner.query(`CREATE INDEX idx_whe_processed ON payments.payment_webhook_events (processed)`);
-    await queryRunner.query(`CREATE INDEX idx_whe_received_at ON payments.payment_webhook_events (received_at)`);
+    await queryRunner.query(
+      `CREATE INDEX idx_whe_provider ON payments.payment_webhook_events (provider)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX idx_whe_processed ON payments.payment_webhook_events (processed)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX idx_whe_received_at ON payments.payment_webhook_events (received_at)`,
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {

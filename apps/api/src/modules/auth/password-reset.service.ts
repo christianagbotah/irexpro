@@ -1,7 +1,7 @@
 import { Injectable, Logger, BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThan, IsNull, DataSource } from 'typeorm';
+import { Repository, IsNull, DataSource } from 'typeorm';
 import { createHash, randomBytes, randomInt } from 'crypto';
 import * as argon2 from 'argon2';
 import { PasswordResetToken, ResetChannel } from './entities/password-reset-token.entity';
@@ -90,13 +90,17 @@ export class PasswordResetService {
       // reset-requested event (there's no user to audit against). Log a
       // safe operational note (no raw identifier beyond what was already
       // in the request).
-      this.logger.log('Password reset requested for unknown identifier — returning generic response');
+      this.logger.log(
+        'Password reset requested for unknown identifier — returning generic response',
+      );
       return { delivered: false, channel: null };
     }
 
     // Suspended/closed accounts cannot reset password via this flow.
     if (user.status === UserStatus.SUSPENDED || user.status === UserStatus.CLOSED) {
-      this.logger.log(`Password reset requested for ${user.status} user — returning generic response`);
+      this.logger.log(
+        `Password reset requested for ${user.status} user — returning generic response`,
+      );
       return { delivered: false, channel: null };
     }
 
@@ -113,9 +117,10 @@ export class PasswordResetService {
 
     // Persist the hash + metadata.
     const expiresAt = new Date(
-      Date.now() + (channel === ResetChannel.EMAIL
-        ? PasswordResetService.EMAIL_TOKEN_EXPIRY_MS
-        : PasswordResetService.PHONE_CODE_EXPIRY_MS),
+      Date.now() +
+        (channel === ResetChannel.EMAIL
+          ? PasswordResetService.EMAIL_TOKEN_EXPIRY_MS
+          : PasswordResetService.PHONE_CODE_EXPIRY_MS),
     );
 
     const resetToken = this.resetTokenRepo.create({
@@ -224,17 +229,12 @@ export class PasswordResetService {
     const phoneLookup = emailLogin ? null : normalizePhone(identifier);
 
     return this.userRepo.findOne({
-      where: emailLogin
-        ? { email: identifier.toLowerCase() }
-        : { phone: phoneLookup ?? '' },
+      where: emailLogin ? { email: identifier.toLowerCase() } : { phone: phoneLookup ?? '' },
     });
   }
 
   private async invalidatePriorTokens(userId: string): Promise<void> {
-    await this.resetTokenRepo.update(
-      { userId, usedAt: IsNull() },
-      { usedAt: new Date() },
-    );
+    await this.resetTokenRepo.update({ userId, usedAt: IsNull() }, { usedAt: new Date() });
   }
 
   /**
@@ -247,9 +247,10 @@ export class PasswordResetService {
       return { rawToken, tokenHash: this.hashToken(rawToken) };
     }
     // Phone: 6-digit numeric code
-    const rawToken = String(
-      randomInt(0, 10 ** PasswordResetService.PHONE_CODE_LENGTH),
-    ).padStart(PasswordResetService.PHONE_CODE_LENGTH, '0');
+    const rawToken = String(randomInt(0, 10 ** PasswordResetService.PHONE_CODE_LENGTH)).padStart(
+      PasswordResetService.PHONE_CODE_LENGTH,
+      '0',
+    );
     return { rawToken, tokenHash: this.hashToken(rawToken) };
   }
 
@@ -324,7 +325,9 @@ export class PasswordResetService {
         metadata: { channel: resetToken.channel },
       });
 
-      this.logger.log(`Password reset completed for user ${resetToken.userId} via ${resetToken.channel}`);
+      this.logger.log(
+        `Password reset completed for user ${resetToken.userId} via ${resetToken.channel}`,
+      );
     } catch (err) {
       await queryRunner.rollbackTransaction();
       throw err;

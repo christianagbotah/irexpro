@@ -2,10 +2,20 @@ import { BadRequestException, forwardRef, Inject, Injectable, Logger } from '@ne
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, QueryFailedError, Repository } from 'typeorm';
 import { PaymentWebhookEvent } from '../entities/payment-webhook-event.entity';
-import { PaymentTransaction, PaymentPurpose, PaymentTransactionStatus } from '../entities/payment-transaction.entity';
+import {
+  PaymentTransaction,
+  PaymentPurpose,
+  PaymentTransactionStatus,
+} from '../entities/payment-transaction.entity';
 import { Invoice, InvoiceStatus } from '../entities/invoice.entity';
-import { PerformanceFeeAssessment, AssessmentStatus } from '../../performance-fees/entities/performance-fee-assessment.entity';
-import { PerformanceFeeLedgerEntry, LedgerEntryType } from '../../performance-fees/entities/performance-fee-ledger-entry.entity';
+import {
+  PerformanceFeeAssessment,
+  AssessmentStatus,
+} from '../../performance-fees/entities/performance-fee-assessment.entity';
+import {
+  PerformanceFeeLedgerEntry,
+  LedgerEntryType,
+} from '../../performance-fees/entities/performance-fee-ledger-entry.entity';
 import { TradingAccountPerformance } from '../../performance-fees/entities/trading-account-performance.entity';
 import { PaymentProviderRegistry } from '../registry/payment-provider.registry';
 import { PaymentEventType } from '../interfaces/payment-provider.interface';
@@ -190,7 +200,9 @@ export class WebhookProcessorService {
       await this.webhookEventRepo.update(webhookRecord.id, {
         processingError: errorMessage,
       });
-      this.logger.error(`[Webhook] Processing failed for event ${event.providerEventId}: ${errorMessage}`);
+      this.logger.error(
+        `[Webhook] Processing failed for event ${event.providerEventId}: ${errorMessage}`,
+      );
       // Return success to provider to prevent retries for non-retryable errors
       return { accepted: true, idempotent: false, message: 'Received but processing failed' };
     }
@@ -199,7 +211,15 @@ export class WebhookProcessorService {
   }
 
   private async handleEvent(
-    event: { eventType: PaymentEventType; providerEventId: string; providerSubscriptionId?: string; providerTransactionReference?: string; amountMinor?: number; currency?: string; metadata?: Record<string, unknown> },
+    event: {
+      eventType: PaymentEventType;
+      providerEventId: string;
+      providerSubscriptionId?: string;
+      providerTransactionReference?: string;
+      amountMinor?: number;
+      currency?: string;
+      metadata?: Record<string, unknown>;
+    },
     webhookRecord: PaymentWebhookEvent,
     providerId: string,
   ): Promise<void> {
@@ -226,13 +246,24 @@ export class WebhookProcessorService {
   }
 
   private async handlePaymentSucceeded(
-    event: { eventType: PaymentEventType; providerEventId: string; providerTransactionReference?: string; providerSubscriptionId?: string; amountMinor?: number; currency?: string; metadata?: Record<string, unknown> },
+    event: {
+      eventType: PaymentEventType;
+      providerEventId: string;
+      providerTransactionReference?: string;
+      providerSubscriptionId?: string;
+      amountMinor?: number;
+      currency?: string;
+      metadata?: Record<string, unknown>;
+    },
     providerId: string,
   ): Promise<void> {
     // Find matching pending transaction
     const transaction = event.providerTransactionReference
       ? await this.transactionRepo.findOne({
-          where: { providerTransactionReference: event.providerTransactionReference, provider: providerId },
+          where: {
+            providerTransactionReference: event.providerTransactionReference,
+            provider: providerId,
+          },
         })
       : null;
 
@@ -329,7 +360,7 @@ export class WebhookProcessorService {
     const now = new Date();
 
     // Load plan to determine the correct billing period end
-    const planId = transaction.providerPayloadSummary?.planId as string | undefined ?? null;
+    const planId = (transaction.providerPayloadSummary?.planId as string | undefined) ?? null;
     let periodEnd: Date;
 
     if (planId) {
@@ -427,7 +458,8 @@ export class WebhookProcessorService {
     const performance = await this.performanceRepo.findOne({
       where: {
         userId: transaction.userId,
-        brokerConnectionId: assessment.brokerConnectionId === null ? IsNull() : assessment.brokerConnectionId,
+        brokerConnectionId:
+          assessment.brokerConnectionId === null ? IsNull() : assessment.brokerConnectionId,
       },
     });
 
@@ -453,11 +485,12 @@ export class WebhookProcessorService {
       // using BigInt comparison so no floating-point money math is introduced.
       const endingRealisedBalance = assessment.endingRealisedBalance;
       const oldHWM = performance.currentHighWaterMark;
-      const newHWM = BigInt(endingRealisedBalance) > BigInt(oldHWM)
-        ? endingRealisedBalance
-        : oldHWM;
+      const newHWM =
+        BigInt(endingRealisedBalance) > BigInt(oldHWM) ? endingRealisedBalance : oldHWM;
       const hwmRegulated = newHWM !== endingRealisedBalance;
-      const newTotalFees = (BigInt(performance.totalFeesCharged) + BigInt(transaction.amountMinor)).toString();
+      const newTotalFees = (
+        BigInt(performance.totalFeesCharged) + BigInt(transaction.amountMinor)
+      ).toString();
 
       await this.performanceRepo.update(performance.id, {
         currentHighWaterMark: newHWM,
@@ -532,12 +565,20 @@ export class WebhookProcessorService {
   }
 
   private async handlePaymentFailed(
-    event: { eventType: PaymentEventType; providerEventId: string; providerTransactionReference?: string; metadata?: Record<string, unknown> },
+    event: {
+      eventType: PaymentEventType;
+      providerEventId: string;
+      providerTransactionReference?: string;
+      metadata?: Record<string, unknown>;
+    },
     providerId: string,
   ): Promise<void> {
     const transaction = event.providerTransactionReference
       ? await this.transactionRepo.findOne({
-          where: { providerTransactionReference: event.providerTransactionReference, provider: providerId },
+          where: {
+            providerTransactionReference: event.providerTransactionReference,
+            provider: providerId,
+          },
         })
       : null;
 
@@ -560,10 +601,16 @@ export class WebhookProcessorService {
   }
 
   private async handleSubscriptionCancelled(
-    event: { eventType: PaymentEventType; providerEventId: string; metadata?: Record<string, unknown> },
+    event: {
+      eventType: PaymentEventType;
+      providerEventId: string;
+      metadata?: Record<string, unknown>;
+    },
     providerId: string,
   ): Promise<void> {
-    this.logger.log(`[Webhook] Subscription cancelled by provider ${providerId}: event=${event.providerEventId}`);
+    this.logger.log(
+      `[Webhook] Subscription cancelled by provider ${providerId}: event=${event.providerEventId}`,
+    );
     // Provider-level cancellation handling — subscription.cancelledAt will be set by admin review
     // or by a follow-up cancellation call from the subscriptions service
   }

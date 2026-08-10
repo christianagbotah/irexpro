@@ -140,13 +140,13 @@ jest.mock('@nestjs/typeorm', () => {
       providers: [],
       exports: [],
     }));
-    static forFeature = jest.fn((entities: Function[]) => ({
+    static forFeature = jest.fn((entities: Array<new (...args: unknown[]) => unknown>) => ({
       module: TypeOrmModuleMock,
-      providers: entities.map((e: Function) => ({
+      providers: entities.map((e: new (...args: unknown[]) => unknown) => ({
         provide: real.getRepositoryToken(e),
         useFactory: mockRepo,
       })),
-      exports: entities.map((e: Function) => real.getRepositoryToken(e)),
+      exports: entities.map((e: new (...args: unknown[]) => unknown) => real.getRepositoryToken(e)),
     }));
   }
 
@@ -186,6 +186,18 @@ import { AiEngineClientModule } from './modules/ai-engine-client/ai-engine-clien
 import { PerformanceFeesModule } from './modules/performance-fees/performance-fees.module';
 import { BrokerReconciliationModule } from './modules/broker-reconciliation/broker-reconciliation.module';
 import { PerformanceBillingModule } from './modules/performance-billing/performance-billing.module';
+
+// Service classes used by the DI-resolution assertions below. Imported here
+// (rather than via require() inside the tests) so that ESM static imports are
+// used consistently. The jest.mock() factories above are hoisted above these
+// imports by babel-jest, so the mocks are in place before any module resolves.
+import { ExecutionService } from './modules/execution/execution.service';
+import { CredentialEncryptionService } from './modules/broker/services/credential-encryption.service';
+import { BrokerService } from './modules/broker/broker.service';
+import { BrokerAdapterRegistry } from './modules/broker/adapters/broker-adapter.registry';
+import { MetaTraderAdapter } from './modules/broker/adapters/metatrader.adapter';
+import { PaperBrokerAdapter } from './modules/broker/adapters/paper-broker.adapter';
+import type { MetaApiClientService } from './modules/broker/services/metaapi-client.service';
 
 /**
  * The real feature-module graph — identical to AppModule's import list.
@@ -276,8 +288,7 @@ describe('Runtime bootstrap smoke test (Sprint 20)', () => {
     // CredentialEncryptionService, so this resolution threw:
     //   "Nest can't resolve dependencies of the ExecutionService
     //    (..., CredentialEncryptionService at index [4], ...)"
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { ExecutionService } = require('./modules/execution/execution.service');
+
     const executionService = moduleRef.get(ExecutionService);
     expect(executionService).toBeDefined();
     expect(typeof executionService.executeTrade).toBe('function');
@@ -286,27 +297,22 @@ describe('Runtime bootstrap smoke test (Sprint 20)', () => {
   it('CredentialEncryptionService is a single shared instance owned by BrokerModule', () => {
     // Defence-in-depth: confirms the service is NOT duplicated across modules.
     // BrokerService and ExecutionService should receive the same instance.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { CredentialEncryptionService } = require('./modules/broker/services/credential-encryption.service');
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { BrokerService } = require('./modules/broker/broker.service');
+
     const brokerService = moduleRef.get(BrokerService);
-    const encryptionFromBroker = (brokerService as unknown as { encryptionService: unknown }).encryptionService;
+    const encryptionFromBroker = (brokerService as unknown as { encryptionService: unknown })
+      .encryptionService;
     const encryptionFromModule = moduleRef.get(CredentialEncryptionService);
     expect(encryptionFromBroker).toBe(encryptionFromModule);
   });
 
   it('BrokerAdapterRegistry is resolvable and has both adapters registered (onModuleInit ran)', () => {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { BrokerAdapterRegistry } = require('./modules/broker/adapters/broker-adapter.registry');
     const registry = moduleRef.get(BrokerAdapterRegistry);
     expect(registry).toBeDefined();
     // BrokerModule.onModuleInit registers MetaTrader + PaperBroker adapters.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { MetaTraderAdapter } = require('./modules/broker/adapters/metatrader.adapter');
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { PaperBrokerAdapter } = require('./modules/broker/adapters/paper-broker.adapter');
-    expect(() => registry.getAdapter(new MetaTraderAdapter().brokerId)).not.toThrow();
+
+    expect(() =>
+      registry.getAdapter(new MetaTraderAdapter({} as unknown as MetaApiClientService).brokerId),
+    ).not.toThrow();
     expect(() => registry.getAdapter(new PaperBrokerAdapter().brokerId)).not.toThrow();
   });
 });

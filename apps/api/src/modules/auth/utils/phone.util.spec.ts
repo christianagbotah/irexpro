@@ -54,7 +54,9 @@ describe('normalizePhone (Hotfix — Ghana phone normalization)', () => {
 
   describe('malformed duplicate prefixes (Hotfix amendment — REJECTED)', () => {
     it('should REJECT +233+233243618186 (multiple +)', () => {
-      expect(() => normalizePhone('+233+233243618186', GH_CALLING_CODE)).toThrow(PhoneValidationError);
+      expect(() => normalizePhone('+233+233243618186', GH_CALLING_CODE)).toThrow(
+        PhoneValidationError,
+      );
     });
 
     it('should REJECT +233+233243618186 without callingCode', () => {

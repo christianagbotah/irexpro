@@ -74,13 +74,25 @@ export class AddTraderOnboardingFields1752000000000 implements MigrationInterfac
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`ALTER TABLE trading.risk_profiles DROP COLUMN IF EXISTS allowed_trading_modes`);
+    await queryRunner.query(
+      `ALTER TABLE trading.risk_profiles DROP COLUMN IF EXISTS allowed_trading_modes`,
+    );
     await queryRunner.query(`DROP TYPE IF EXISTS trading.allowed_trading_mode`);
-    await queryRunner.query(`ALTER TABLE trading.risk_profiles DROP COLUMN IF EXISTS max_leverage_allowed`);
-    await queryRunner.query(`ALTER TABLE trading.risk_profiles DROP COLUMN IF EXISTS max_trade_risk_percent`);
-    await queryRunner.query(`ALTER TABLE trading.risk_profiles DROP COLUMN IF EXISTS risk_acknowledgement_accepted_at`);
-    await queryRunner.query(`ALTER TABLE trading.risk_profiles DROP COLUMN IF EXISTS risk_acknowledgement_accepted`);
-    await queryRunner.query(`ALTER TABLE identity.user_profiles DROP COLUMN IF EXISTS trading_experience_level`);
+    await queryRunner.query(
+      `ALTER TABLE trading.risk_profiles DROP COLUMN IF EXISTS max_leverage_allowed`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE trading.risk_profiles DROP COLUMN IF EXISTS max_trade_risk_percent`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE trading.risk_profiles DROP COLUMN IF EXISTS risk_acknowledgement_accepted_at`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE trading.risk_profiles DROP COLUMN IF EXISTS risk_acknowledgement_accepted`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE identity.user_profiles DROP COLUMN IF EXISTS trading_experience_level`,
+    );
     await queryRunner.query(`DROP TYPE IF EXISTS identity.trading_experience_level`);
   }
 }

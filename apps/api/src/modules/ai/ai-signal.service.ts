@@ -43,7 +43,7 @@ export class AiSignalService {
   async receiveSignal(candidate: AiSignalCandidate): Promise<StrategyResult> {
     this.logger.log(
       `Signal received: id=${candidate.signalId} user=${candidate.userId} ` +
-      `instrument=${candidate.instrument} direction=${candidate.direction}`,
+        `instrument=${candidate.instrument} direction=${candidate.direction}`,
     );
 
     const validationError = this.validateCandidate(candidate);
@@ -55,7 +55,11 @@ export class AiSignalService {
         severity: AuditSeverity.INFO,
         resourceType: 'AiSignal',
         resourceId: candidate.signalId,
-        metadata: { validationError, instrument: candidate.instrument, direction: candidate.direction },
+        metadata: {
+          validationError,
+          instrument: candidate.instrument,
+          direction: candidate.direction,
+        },
       });
       return {
         outcome: 'SIGNAL_INVALID',
@@ -101,12 +105,19 @@ export class AiSignalService {
     if (!candidate.brokerConnectionId) return 'Missing brokerConnectionId';
     if (!candidate.instrument || candidate.instrument.length < 3) return 'Invalid instrument';
     if (!['BUY', 'SELL'].includes(candidate.direction)) return 'Invalid direction';
-    if (typeof candidate.confidenceScore !== 'number' || candidate.confidenceScore < 0 || candidate.confidenceScore > 1) {
+    if (
+      typeof candidate.confidenceScore !== 'number' ||
+      candidate.confidenceScore < 0 ||
+      candidate.confidenceScore > 1
+    ) {
       return 'confidenceScore must be 0–1';
     }
-    if (!candidate.suggestedStopLoss || candidate.suggestedStopLoss <= 0) return 'Invalid suggestedStopLoss';
-    if (!candidate.suggestedTakeProfit || candidate.suggestedTakeProfit <= 0) return 'Invalid suggestedTakeProfit';
-    if (!candidate.suggestedVolume || candidate.suggestedVolume <= 0) return 'Invalid suggestedVolume';
+    if (!candidate.suggestedStopLoss || candidate.suggestedStopLoss <= 0)
+      return 'Invalid suggestedStopLoss';
+    if (!candidate.suggestedTakeProfit || candidate.suggestedTakeProfit <= 0)
+      return 'Invalid suggestedTakeProfit';
+    if (!candidate.suggestedVolume || candidate.suggestedVolume <= 0)
+      return 'Invalid suggestedVolume';
     if (!candidate.strategyCode) return 'Missing strategyCode';
     if (!candidate.modelVersion) return 'Missing modelVersion';
     return null;
@@ -124,10 +135,7 @@ export class AiSignalService {
    * Build a signal candidate from the DEV simulate endpoint request.
    * Assigns a new signalId and generatedAt timestamp.
    */
-  buildSimulatedCandidate(
-    userId: string,
-    dto: Partial<AiSignalCandidate>,
-  ): AiSignalCandidate {
+  buildSimulatedCandidate(userId: string, dto: Partial<AiSignalCandidate>): AiSignalCandidate {
     return {
       signalId: uuidv4(),
       generatedAt: new Date(),

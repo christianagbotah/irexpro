@@ -41,7 +41,9 @@ export class ManualPaymentProvider implements IPaymentProvider {
   readonly supportedPaymentMethods = ['manual'];
 
   async createCustomer(params: CreateCustomerParams): Promise<ProviderCustomerResult> {
-    this.logger.warn(`[DEV/TEST] ManualPaymentProvider.createCustomer called for user ${params.userId}`);
+    this.logger.warn(
+      `[DEV/TEST] ManualPaymentProvider.createCustomer called for user ${params.userId}`,
+    );
     return {
       providerCustomerId: `manual_cust_${uuidv4()}`,
       provider: this.providerId,
@@ -51,7 +53,9 @@ export class ManualPaymentProvider implements IPaymentProvider {
   async createCheckoutSession(
     request: CreateCheckoutSessionRequest,
   ): Promise<CreateCheckoutSessionResult> {
-    this.logger.warn(`[DEV/TEST] ManualPaymentProvider.createCheckoutSession for user ${request.userId}`);
+    this.logger.warn(
+      `[DEV/TEST] ManualPaymentProvider.createCheckoutSession for user ${request.userId}`,
+    );
     const sessionId = `manual_session_${uuidv4()}`;
     return {
       sessionId,
@@ -65,7 +69,9 @@ export class ManualPaymentProvider implements IPaymentProvider {
     _rawBody: Buffer,
     _headers: Record<string, string | string[] | undefined>,
   ): boolean {
-    this.logger.warn('[DEV/TEST] ManualPaymentProvider.verifyWebhookSignature — always true in dev');
+    this.logger.warn(
+      '[DEV/TEST] ManualPaymentProvider.verifyWebhookSignature — always true in dev',
+    );
     return true;
   }
 
@@ -89,7 +95,9 @@ export class ManualPaymentProvider implements IPaymentProvider {
   }
 
   async cancelSubscription(providerSubscriptionId: string): Promise<void> {
-    this.logger.warn(`[DEV/TEST] ManualPaymentProvider.cancelSubscription: ${providerSubscriptionId}`);
+    this.logger.warn(
+      `[DEV/TEST] ManualPaymentProvider.cancelSubscription: ${providerSubscriptionId}`,
+    );
   }
 
   async refundPayment(providerReference: string, _amountMinor?: number): Promise<void> {
@@ -111,8 +119,12 @@ export class ManualPaymentProvider implements IPaymentProvider {
     };
   }
 
-  async createPaymentIntent(params: CreatePaymentIntentParams): Promise<ProviderPaymentIntentResult> {
-    this.logger.warn(`[DEV/TEST] ManualPaymentProvider.createPaymentIntent: ${params.amountCents} ${params.currency}`);
+  async createPaymentIntent(
+    params: CreatePaymentIntentParams,
+  ): Promise<ProviderPaymentIntentResult> {
+    this.logger.warn(
+      `[DEV/TEST] ManualPaymentProvider.createPaymentIntent: ${params.amountCents} ${params.currency}`,
+    );
     return {
       providerPaymentIntentId: `manual_pi_${uuidv4()}`,
       status: 'succeeded',
@@ -120,7 +132,9 @@ export class ManualPaymentProvider implements IPaymentProvider {
   }
 
   validateWebhookSignature(_rawBody: Buffer, _signature: string): boolean {
-    this.logger.warn('[DEV/TEST] ManualPaymentProvider.validateWebhookSignature — always true in dev');
+    this.logger.warn(
+      '[DEV/TEST] ManualPaymentProvider.validateWebhookSignature — always true in dev',
+    );
     return true;
   }
 }

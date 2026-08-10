@@ -51,7 +51,12 @@ describe('PerformanceFeesController', () => {
     it('passes the authenticated admin id as the actor', async () => {
       svc.calculateAssessment.mockResolvedValue({} as never);
       await controller.calculateAssessment(
-        { userId: 'target-user', currency: 'USD', periodStart: '2026-01-01T00:00:00Z', periodEnd: '2026-01-31T00:00:00Z' },
+        {
+          userId: 'target-user',
+          currency: 'USD',
+          periodStart: '2026-01-01T00:00:00Z',
+          periodEnd: '2026-01-31T00:00:00Z',
+        },
         adminId,
       );
       const args = svc.calculateAssessment.mock.calls[0];
@@ -71,13 +76,19 @@ describe('PerformanceFeesController', () => {
     ];
 
     it.each(adminEndpoints)('%s requires ADMIN or SUPER_ADMIN', (method) => {
-      const roles = reflector.get<RoleName[]>(ROLES_KEY, controller[method] as unknown as () => void);
+      const roles = reflector.get<RoleName[]>(
+        ROLES_KEY,
+        controller[method] as unknown as () => void,
+      );
       expect(roles).toBeDefined();
       expect(roles).toEqual(expect.arrayContaining([RoleName.ADMIN, RoleName.SUPER_ADMIN]));
     });
 
     it('me/summary has NO @Roles restriction (any authenticated user, own data only)', () => {
-      const roles = reflector.get<RoleName[]>(ROLES_KEY, controller.getMyPerformanceSummary as unknown as () => void);
+      const roles = reflector.get<RoleName[]>(
+        ROLES_KEY,
+        controller.getMyPerformanceSummary as unknown as () => void,
+      );
       expect(roles).toBeUndefined();
     });
   });

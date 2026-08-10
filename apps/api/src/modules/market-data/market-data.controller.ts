@@ -38,9 +38,7 @@ export class MarketDataController {
     description: 'Internal service API key',
     required: true,
   })
-  async getInternalOhlcv(
-    @Query() query: InternalOhlcvQueryDto,
-  ): Promise<InternalOhlcvResponseDto> {
+  async getInternalOhlcv(@Query() query: InternalOhlcvQueryDto): Promise<InternalOhlcvResponseDto> {
     return this.marketDataService.getInternalOhlcv(query);
   }
 }

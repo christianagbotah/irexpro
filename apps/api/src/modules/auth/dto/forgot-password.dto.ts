@@ -12,7 +12,10 @@ import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
  * account exists — this prevents account enumeration.
  */
 export class ForgotPasswordDto {
-  @ApiProperty({ example: 'user@example.com', description: 'Email address or international phone number' })
+  @ApiProperty({
+    example: 'user@example.com',
+    description: 'Email address or international phone number',
+  })
   @IsString()
   @IsNotEmpty()
   @MaxLength(255)

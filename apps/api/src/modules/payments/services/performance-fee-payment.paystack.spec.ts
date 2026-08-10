@@ -110,11 +110,26 @@ describe('PerformanceFeePaymentService — Paystack checkout integration', () =>
     http.request.mockResolvedValue({
       ok: true,
       status: 200,
-      body: { status: true, data: { authorization_url: 'https://checkout.paystack.com/pf1', reference: 'psk_pf_1' } },
+      body: {
+        status: true,
+        data: { authorization_url: 'https://checkout.paystack.com/pf1', reference: 'psk_pf_1' },
+      },
     });
-    const provider = new PaystackPaymentProvider(enabledConfigService(), http as unknown as PaystackHttpClient);
-    routingService = { routeForCheckout: jest.fn(async () => ({ provider, reason: 'country_config' })) };
-    service = new PerformanceFeePaymentService(invoiceRepo, transactionRepo, assessmentRepo, userRepo, routingService, auditService);
+    const provider = new PaystackPaymentProvider(
+      enabledConfigService(),
+      http as unknown as PaystackHttpClient,
+    );
+    routingService = {
+      routeForCheckout: jest.fn(async () => ({ provider, reason: 'country_config' })),
+    };
+    service = new PerformanceFeePaymentService(
+      invoiceRepo,
+      transactionRepo,
+      assessmentRepo,
+      userRepo,
+      routingService,
+      auditService,
+    );
 
     const result = await service.initiatePerformanceFeeCheckout(base);
 
@@ -122,7 +137,10 @@ describe('PerformanceFeePaymentService — Paystack checkout integration', () =>
     expect(result.checkoutUrl).toBe('https://checkout.paystack.com/pf1');
     expect(transactionRepo.update).toHaveBeenCalledWith(
       'tx-1',
-      expect.objectContaining({ provider: 'paystack', status: PaymentTransactionStatus.PROCESSING }),
+      expect.objectContaining({
+        provider: 'paystack',
+        status: PaymentTransactionStatus.PROCESSING,
+      }),
     );
     // Checkout must never mark paid.
     expect(invoiceRepo.update).not.toHaveBeenCalled();
@@ -135,9 +153,21 @@ describe('PerformanceFeePaymentService — Paystack checkout integration', () =>
       status: 200,
       body: { status: true, data: { authorization_url: 'https://x', reference: 'psk_pf_2' } },
     });
-    const provider = new PaystackPaymentProvider(enabledConfigService(), http as unknown as PaystackHttpClient);
-    routingService = { routeForCheckout: jest.fn(async () => ({ provider, reason: 'country_config' })) };
-    service = new PerformanceFeePaymentService(invoiceRepo, transactionRepo, assessmentRepo, userRepo, routingService, auditService);
+    const provider = new PaystackPaymentProvider(
+      enabledConfigService(),
+      http as unknown as PaystackHttpClient,
+    );
+    routingService = {
+      routeForCheckout: jest.fn(async () => ({ provider, reason: 'country_config' })),
+    };
+    service = new PerformanceFeePaymentService(
+      invoiceRepo,
+      transactionRepo,
+      assessmentRepo,
+      userRepo,
+      routingService,
+      auditService,
+    );
 
     await service.initiatePerformanceFeeCheckout(base);
     expect(invoiceRepo.update).not.toHaveBeenCalled();
@@ -150,9 +180,21 @@ describe('PerformanceFeePaymentService — Paystack checkout integration', () =>
       status: 200,
       body: { status: true, data: { authorization_url: 'https://x', reference: 'psk_pf_3' } },
     });
-    const provider = new PaystackPaymentProvider(enabledConfigService(), http as unknown as PaystackHttpClient);
-    routingService = { routeForCheckout: jest.fn(async () => ({ provider, reason: 'country_config' })) };
-    service = new PerformanceFeePaymentService(invoiceRepo, transactionRepo, assessmentRepo, userRepo, routingService, auditService);
+    const provider = new PaystackPaymentProvider(
+      enabledConfigService(),
+      http as unknown as PaystackHttpClient,
+    );
+    routingService = {
+      routeForCheckout: jest.fn(async () => ({ provider, reason: 'country_config' })),
+    };
+    service = new PerformanceFeePaymentService(
+      invoiceRepo,
+      transactionRepo,
+      assessmentRepo,
+      userRepo,
+      routingService,
+      auditService,
+    );
 
     await service.initiatePerformanceFeeCheckout(base);
     // The service has no assessment-write path at all — asserting no unexpected calls happened.
@@ -167,9 +209,21 @@ describe('PerformanceFeePaymentService — Paystack checkout integration', () =>
       status: 200,
       body: { status: true, data: { authorization_url: 'https://x', reference: 'psk_pf_4' } },
     });
-    const provider = new PaystackPaymentProvider(enabledConfigService(), http as unknown as PaystackHttpClient);
-    routingService = { routeForCheckout: jest.fn(async () => ({ provider, reason: 'country_config' })) };
-    service = new PerformanceFeePaymentService(invoiceRepo, transactionRepo, assessmentRepo, userRepo, routingService, auditService);
+    const provider = new PaystackPaymentProvider(
+      enabledConfigService(),
+      http as unknown as PaystackHttpClient,
+    );
+    routingService = {
+      routeForCheckout: jest.fn(async () => ({ provider, reason: 'country_config' })),
+    };
+    service = new PerformanceFeePaymentService(
+      invoiceRepo,
+      transactionRepo,
+      assessmentRepo,
+      userRepo,
+      routingService,
+      auditService,
+    );
 
     await service.initiatePerformanceFeeCheckout(base);
     // PerformanceFeePaymentService is constructed without a TradingAccountPerformance
@@ -179,8 +233,17 @@ describe('PerformanceFeePaymentService — Paystack checkout integration', () =>
 
   it('Paystack provider failure (disabled) leaves invoice ISSUED and assessment INVOICED', async () => {
     const provider = new PaystackPaymentProvider(disabledConfigService(), new PaystackHttpClient());
-    routingService = { routeForCheckout: jest.fn(async () => ({ provider, reason: 'country_config' })) };
-    service = new PerformanceFeePaymentService(invoiceRepo, transactionRepo, assessmentRepo, userRepo, routingService, auditService);
+    routingService = {
+      routeForCheckout: jest.fn(async () => ({ provider, reason: 'country_config' })),
+    };
+    service = new PerformanceFeePaymentService(
+      invoiceRepo,
+      transactionRepo,
+      assessmentRepo,
+      userRepo,
+      routingService,
+      auditService,
+    );
 
     await expect(service.initiatePerformanceFeeCheckout(base)).rejects.toThrow(BadRequestException);
 
@@ -199,9 +262,21 @@ describe('PerformanceFeePaymentService — Paystack checkout integration', () =>
       status: 200,
       body: { status: true, data: { authorization_url: 'https://x', reference: 'psk_pf_5' } },
     });
-    const provider = new PaystackPaymentProvider(enabledConfigService(), http as unknown as PaystackHttpClient);
-    routingService = { routeForCheckout: jest.fn(async () => ({ provider, reason: 'country_config' })) };
-    service = new PerformanceFeePaymentService(invoiceRepo, transactionRepo, assessmentRepo, userRepo, routingService, auditService);
+    const provider = new PaystackPaymentProvider(
+      enabledConfigService(),
+      http as unknown as PaystackHttpClient,
+    );
+    routingService = {
+      routeForCheckout: jest.fn(async () => ({ provider, reason: 'country_config' })),
+    };
+    service = new PerformanceFeePaymentService(
+      invoiceRepo,
+      transactionRepo,
+      assessmentRepo,
+      userRepo,
+      routingService,
+      auditService,
+    );
 
     const result = await service.initiatePerformanceFeeCheckout(base);
     expect(JSON.stringify(result)).not.toContain('sk_test_perf_fee_checkout');

@@ -36,9 +36,7 @@ export class InternalApiKeyGuard implements CanActivate {
     const expectedKey = this.configService.get<string>('internalApi.key');
 
     if (!expectedKey) {
-      this.logger.error(
-        'NESTJS_INTERNAL_API_KEY is not configured — internal endpoint blocked',
-      );
+      this.logger.error('NESTJS_INTERNAL_API_KEY is not configured — internal endpoint blocked');
       throw new UnauthorizedException(
         'Internal API key not configured. Contact platform administrator.',
       );
@@ -48,9 +46,7 @@ export class InternalApiKeyGuard implements CanActivate {
       this.logger.warn(
         `Internal endpoint called without ${INTERNAL_API_KEY_HEADER} header — BLOCKED`,
       );
-      throw new UnauthorizedException(
-        `Missing required header: ${INTERNAL_API_KEY_HEADER}`,
-      );
+      throw new UnauthorizedException(`Missing required header: ${INTERNAL_API_KEY_HEADER}`);
     }
 
     // Constant-time comparison to prevent timing attacks.
@@ -60,8 +56,14 @@ export class InternalApiKeyGuard implements CanActivate {
     const expectedBuf = Buffer.from(expectedKey);
 
     // Using a hash comparison to normalise lengths and prevent length-based timing
-    const providedHash = crypto.createHmac('sha256', 'irexpro-key-compare').update(providedBuf).digest();
-    const expectedHash = crypto.createHmac('sha256', 'irexpro-key-compare').update(expectedBuf).digest();
+    const providedHash = crypto
+      .createHmac('sha256', 'irexpro-key-compare')
+      .update(providedBuf)
+      .digest();
+    const expectedHash = crypto
+      .createHmac('sha256', 'irexpro-key-compare')
+      .update(expectedBuf)
+      .digest();
 
     const keysMatch = crypto.timingSafeEqual(providedHash, expectedHash);
 

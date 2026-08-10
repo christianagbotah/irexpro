@@ -37,7 +37,9 @@ describe('PerformanceFeePaymentController (Hotfix — UUID identity contract)', 
       initiatePerformanceFeeCheckout: jest.fn().mockResolvedValue({ id: 'checkout-1' }),
       getTransactionStatus: jest.fn().mockResolvedValue({ status: 'PENDING' }),
     };
-    controller = new PerformanceFeePaymentController(svc as unknown as PerformanceFeePaymentService);
+    controller = new PerformanceFeePaymentController(
+      svc as unknown as PerformanceFeePaymentService,
+    );
   });
 
   it('listInvoices passes principal.userId (via isAdmin check)', async () => {
@@ -65,7 +67,7 @@ describe('PerformanceFeePaymentController (Hotfix — UUID identity contract)', 
     expect(normalPrincipal.roles).not.toContain(RoleName.ADMIN);
   });
 
-  it('normal user cannot view another user\'s invoices (ForbiddenException)', () => {
+  it("normal user cannot view another user's invoices (ForbiddenException)", () => {
     expect(() =>
       controller.listInvoices(normalPrincipal, 'other-user-id', undefined, undefined),
     ).toThrow('You can only view your own performance-fee invoices');

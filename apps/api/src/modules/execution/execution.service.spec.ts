@@ -57,9 +57,27 @@ const mockBrokerConnection = {
 describe('ExecutionService', () => {
   let module: TestingModule;
   let service: ExecutionService;
-  let tradeRepo: jest.Mocked<{ findOne: jest.Mock; find: jest.Mock; count: jest.Mock; create: jest.Mock; save: jest.Mock; update: jest.Mock }>;
-  let sessionRepo: jest.Mocked<{ findOne: jest.Mock; create: jest.Mock; save: jest.Mock; update: jest.Mock }>;
-  let mockAdapter: { setMode: jest.Mock; connect: jest.Mock; placeOrder: jest.Mock; closeOrder: jest.Mock; getOrderStatus: jest.Mock };
+  let tradeRepo: jest.Mocked<{
+    findOne: jest.Mock;
+    find: jest.Mock;
+    count: jest.Mock;
+    create: jest.Mock;
+    save: jest.Mock;
+    update: jest.Mock;
+  }>;
+  let sessionRepo: jest.Mocked<{
+    findOne: jest.Mock;
+    create: jest.Mock;
+    save: jest.Mock;
+    update: jest.Mock;
+  }>;
+  let mockAdapter: {
+    setMode: jest.Mock;
+    connect: jest.Mock;
+    placeOrder: jest.Mock;
+    closeOrder: jest.Mock;
+    getOrderStatus: jest.Mock;
+  };
   let auditService: { log: jest.Mock };
   let dataSource: { query: jest.Mock };
 
@@ -77,7 +95,7 @@ describe('ExecutionService', () => {
       }),
       closeOrder: jest.fn().mockResolvedValue({
         success: true,
-        filledPrice: '1.09000',  // exit price comes through as filledPrice
+        filledPrice: '1.09000', // exit price comes through as filledPrice
         status: 'FILLED',
       }),
       getOrderStatus: jest.fn().mockResolvedValue({ status: 'OPEN' }),
@@ -124,7 +142,10 @@ describe('ExecutionService', () => {
         },
         { provide: AuditService, useValue: auditService },
         { provide: DataSource, useValue: dataSource },
-        { provide: DomainEventBus, useValue: { publish: jest.fn(), subscribe: jest.fn().mockReturnValue(() => {}) } },
+        {
+          provide: DomainEventBus,
+          useValue: { publish: jest.fn(), subscribe: jest.fn().mockReturnValue(() => {}) },
+        },
       ],
     }).compile();
 
@@ -230,8 +251,12 @@ describe('ExecutionService', () => {
   // ─── Broker rejects order ─────────────────────────────────────────────────
 
   describe('Broker rejection', () => {
-    beforeEach(() => { jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {}); });
-    afterEach(() => { jest.restoreAllMocks(); });
+    beforeEach(() => {
+      jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
+    });
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
 
     it('sets trade to REJECTED when broker returns success=false', async () => {
       mockAdapter.placeOrder.mockResolvedValueOnce({
@@ -252,8 +277,12 @@ describe('ExecutionService', () => {
   // ─── Broker error → RECONCILIATION_PENDING ───────────────────────────────
 
   describe('Broker error handling', () => {
-    beforeEach(() => { jest.spyOn(Logger.prototype, 'error').mockImplementation(() => {}); });
-    afterEach(() => { jest.restoreAllMocks(); });
+    beforeEach(() => {
+      jest.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
+    });
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
 
     it('sets trade to RECONCILIATION_PENDING on broker exception', async () => {
       mockAdapter.placeOrder.mockRejectedValueOnce(new Error('MetaAPI network error'));
@@ -278,7 +307,11 @@ describe('ExecutionService', () => {
     });
 
     it('throws ForbiddenException when trade is not OPEN', async () => {
-      tradeRepo.findOne.mockResolvedValue({ id: 'trade-1', userId: 'user-1', status: TradeStatus.CLOSED });
+      tradeRepo.findOne.mockResolvedValue({
+        id: 'trade-1',
+        userId: 'user-1',
+        status: TradeStatus.CLOSED,
+      });
       await expect(
         service.closeTrade('trade-1', 'user-1', TradeCloseReason.MANUAL_CLOSE),
       ).rejects.toThrow(ForbiddenException);

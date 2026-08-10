@@ -4,9 +4,16 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { WebhookProcessorService } from './webhook-processor.service';
 import { PaymentProviderRegistry } from '../registry/payment-provider.registry';
 import { PaymentWebhookEvent } from '../entities/payment-webhook-event.entity';
-import { PaymentTransaction, PaymentTransactionStatus, PaymentPurpose } from '../entities/payment-transaction.entity';
+import {
+  PaymentTransaction,
+  PaymentTransactionStatus,
+  PaymentPurpose,
+} from '../entities/payment-transaction.entity';
 import { Invoice } from '../entities/invoice.entity';
-import { PerformanceFeeAssessment, AssessmentStatus } from '../../performance-fees/entities/performance-fee-assessment.entity';
+import {
+  PerformanceFeeAssessment,
+  AssessmentStatus,
+} from '../../performance-fees/entities/performance-fee-assessment.entity';
 import { PerformanceFeeLedgerEntry } from '../../performance-fees/entities/performance-fee-ledger-entry.entity';
 import { TradingAccountPerformance } from '../../performance-fees/entities/trading-account-performance.entity';
 import { AuditService } from '../../audit/audit.service';
@@ -150,9 +157,9 @@ describe('WebhookProcessorService', () => {
     it('should reject the dev/test manual provider at the webhook endpoint', async () => {
       // manual.verifyWebhookSignature() always returns true, so it must be
       // blocked before reaching signature verification.
-      await expect(
-        service.processWebhook('manual', Buffer.from('{}'), {}),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.processWebhook('manual', Buffer.from('{}'), {})).rejects.toThrow(
+        BadRequestException,
+      );
       expect(mockWebhookEventRepo.save).not.toHaveBeenCalled();
     });
   });
@@ -192,7 +199,10 @@ describe('WebhookProcessorService', () => {
       expect(result.idempotent).toBe(false);
       expect(result.accepted).toBe(true);
       // Should mark processed=true after successful retry
-      expect(mockWebhookEventRepo.update).toHaveBeenCalledWith('wh-retry', expect.objectContaining({ processed: true }));
+      expect(mockWebhookEventRepo.update).toHaveBeenCalledWith(
+        'wh-retry',
+        expect.objectContaining({ processed: true }),
+      );
     });
 
     it('processed=false retry does not double-activate subscription', async () => {
@@ -304,7 +314,12 @@ describe('WebhookProcessorService', () => {
           },
         }),
       );
-      const webhookRecord = { id: 'wh-id', provider: 'mock_fail', providerEventId: 'mock_fail_evt', processed: false };
+      const webhookRecord = {
+        id: 'wh-id',
+        provider: 'mock_fail',
+        providerEventId: 'mock_fail_evt',
+        processed: false,
+      };
       mockWebhookEventRepo.create.mockReturnValue(webhookRecord);
       mockWebhookEventRepo.save.mockResolvedValue(webhookRecord);
       mockTransactionRepo.findOne.mockResolvedValue({
@@ -337,7 +352,12 @@ describe('WebhookProcessorService', () => {
     }
 
     function setupWebhookSuccess(providerId: string) {
-      const record = { id: 'wh-id', provider: providerId, providerEventId: `${providerId}_evt`, processed: false };
+      const record = {
+        id: 'wh-id',
+        provider: providerId,
+        providerEventId: `${providerId}_evt`,
+        processed: false,
+      };
       mockWebhookEventRepo.create.mockReturnValue(record);
       mockWebhookEventRepo.save.mockResolvedValue(record);
       mockSubscriptionsService.activateSubscriptionFromPayment.mockResolvedValue({ id: 'sub-id' });
@@ -347,12 +367,19 @@ describe('WebhookProcessorService', () => {
       registry.register(buildProviderWithRef('mock_mo', 'ref_mo'));
       setupWebhookSuccess('mock_mo');
       mockTransactionRepo.findOne.mockResolvedValue({
-        id: 'tx-mo', userId: 'u1', invoiceId: 'inv-mo', provider: 'mock_mo',
-        providerTransactionReference: 'ref_mo', paymentPurpose: PaymentPurpose.SUBSCRIPTION_INITIAL,
+        id: 'tx-mo',
+        userId: 'u1',
+        invoiceId: 'inv-mo',
+        provider: 'mock_mo',
+        providerTransactionReference: 'ref_mo',
+        paymentPurpose: PaymentPurpose.SUBSCRIPTION_INITIAL,
         providerPayloadSummary: { planId: 'plan-mo' },
-        amountMinor: '5000', currency: 'USD',
+        amountMinor: '5000',
+        currency: 'USD',
       });
-      mockSubscriptionsService.getPlanById.mockResolvedValue({ billingInterval: BillingInterval.MONTHLY });
+      mockSubscriptionsService.getPlanById.mockResolvedValue({
+        billingInterval: BillingInterval.MONTHLY,
+      });
 
       const before = new Date();
       await service.processWebhook('mock_mo', Buffer.from('{}'), {});
@@ -368,12 +395,19 @@ describe('WebhookProcessorService', () => {
       registry.register(buildProviderWithRef('mock_q', 'ref_q'));
       setupWebhookSuccess('mock_q');
       mockTransactionRepo.findOne.mockResolvedValue({
-        id: 'tx-q', userId: 'u1', invoiceId: 'inv-q', provider: 'mock_q',
-        providerTransactionReference: 'ref_q', paymentPurpose: PaymentPurpose.SUBSCRIPTION_INITIAL,
+        id: 'tx-q',
+        userId: 'u1',
+        invoiceId: 'inv-q',
+        provider: 'mock_q',
+        providerTransactionReference: 'ref_q',
+        paymentPurpose: PaymentPurpose.SUBSCRIPTION_INITIAL,
         providerPayloadSummary: { planId: 'plan-q' },
-        amountMinor: '5000', currency: 'USD',
+        amountMinor: '5000',
+        currency: 'USD',
       });
-      mockSubscriptionsService.getPlanById.mockResolvedValue({ billingInterval: BillingInterval.QUARTERLY });
+      mockSubscriptionsService.getPlanById.mockResolvedValue({
+        billingInterval: BillingInterval.QUARTERLY,
+      });
 
       const before = new Date();
       await service.processWebhook('mock_q', Buffer.from('{}'), {});
@@ -389,12 +423,19 @@ describe('WebhookProcessorService', () => {
       registry.register(buildProviderWithRef('mock_an', 'ref_an'));
       setupWebhookSuccess('mock_an');
       mockTransactionRepo.findOne.mockResolvedValue({
-        id: 'tx-an', userId: 'u1', invoiceId: 'inv-an', provider: 'mock_an',
-        providerTransactionReference: 'ref_an', paymentPurpose: PaymentPurpose.SUBSCRIPTION_INITIAL,
+        id: 'tx-an',
+        userId: 'u1',
+        invoiceId: 'inv-an',
+        provider: 'mock_an',
+        providerTransactionReference: 'ref_an',
+        paymentPurpose: PaymentPurpose.SUBSCRIPTION_INITIAL,
         providerPayloadSummary: { planId: 'plan-an' },
-        amountMinor: '5000', currency: 'USD',
+        amountMinor: '5000',
+        currency: 'USD',
       });
-      mockSubscriptionsService.getPlanById.mockResolvedValue({ billingInterval: BillingInterval.ANNUAL });
+      mockSubscriptionsService.getPlanById.mockResolvedValue({
+        billingInterval: BillingInterval.ANNUAL,
+      });
 
       const before = new Date();
       await service.processWebhook('mock_an', Buffer.from('{}'), {});
@@ -410,10 +451,15 @@ describe('WebhookProcessorService', () => {
       registry.register(buildProviderWithRef('mock_unk', 'ref_unk'));
       setupWebhookSuccess('mock_unk');
       mockTransactionRepo.findOne.mockResolvedValue({
-        id: 'tx-unk', userId: 'u1', invoiceId: 'inv-unk', provider: 'mock_unk',
-        providerTransactionReference: 'ref_unk', paymentPurpose: PaymentPurpose.SUBSCRIPTION_INITIAL,
+        id: 'tx-unk',
+        userId: 'u1',
+        invoiceId: 'inv-unk',
+        provider: 'mock_unk',
+        providerTransactionReference: 'ref_unk',
+        paymentPurpose: PaymentPurpose.SUBSCRIPTION_INITIAL,
         providerPayloadSummary: { planId: 'nonexistent-plan' },
-        amountMinor: '5000', currency: 'USD',
+        amountMinor: '5000',
+        currency: 'USD',
       });
       mockSubscriptionsService.getPlanById.mockResolvedValue(null); // plan not found
 
@@ -444,34 +490,57 @@ describe('WebhookProcessorService', () => {
 
     it('paid performance fee webhook marks assessment PAID and adds FEE_PAID ledger entry', async () => {
       registry.register(buildPerfFeeProvider('mock_pf', 'ref_pf'));
-      const record = { id: 'wh-pf', provider: 'mock_pf', providerEventId: 'mock_pf_evt', processed: false };
+      const record = {
+        id: 'wh-pf',
+        provider: 'mock_pf',
+        providerEventId: 'mock_pf_evt',
+        processed: false,
+      };
       mockWebhookEventRepo.create.mockReturnValue(record);
       mockWebhookEventRepo.save.mockResolvedValue(record);
 
       mockTransactionRepo.findOne.mockResolvedValue({
-        id: 'tx-pf', userId: 'user-pf', invoiceId: 'inv-pf', provider: 'mock_pf',
+        id: 'tx-pf',
+        userId: 'user-pf',
+        invoiceId: 'inv-pf',
+        provider: 'mock_pf',
         providerTransactionReference: 'ref_pf',
         paymentPurpose: PaymentPurpose.PERFORMANCE_FEE,
-        amountMinor: '200000', currency: 'USD',
+        amountMinor: '200000',
+        currency: 'USD',
         providerPayloadSummary: {},
       });
       mockAssessmentRepo.findOne.mockResolvedValue({
-        id: 'assess-pf', userId: 'user-pf', invoiceId: 'inv-pf',
-        status: AssessmentStatus.INVOICED, brokerConnectionId: null,
-        feeAmount: '200000', endingRealisedBalance: '5000000', currency: 'USD',
+        id: 'assess-pf',
+        userId: 'user-pf',
+        invoiceId: 'inv-pf',
+        status: AssessmentStatus.INVOICED,
+        brokerConnectionId: null,
+        feeAmount: '200000',
+        endingRealisedBalance: '5000000',
+        currency: 'USD',
       });
       mockPerformanceRepo.findOne.mockResolvedValue({
-        id: 'perf-pf', totalFeesCharged: '0', currentHighWaterMark: '4000000',
+        id: 'perf-pf',
+        totalFeesCharged: '0',
+        currentHighWaterMark: '4000000',
       });
 
       await service.processWebhook('mock_pf', Buffer.from('{}'), {});
 
-      expect(mockAssessmentRepo.update).toHaveBeenCalledWith('assess-pf', { status: AssessmentStatus.PAID });
-      expect(mockLedgerRepo.save).toHaveBeenCalledWith(expect.objectContaining({ assessmentId: 'assess-pf' }));
-      expect(mockPerformanceRepo.update).toHaveBeenCalledWith('perf-pf', expect.objectContaining({
-        currentHighWaterMark: '5000000',
-        totalFeesCharged: '200000',
-      }));
+      expect(mockAssessmentRepo.update).toHaveBeenCalledWith('assess-pf', {
+        status: AssessmentStatus.PAID,
+      });
+      expect(mockLedgerRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ assessmentId: 'assess-pf' }),
+      );
+      expect(mockPerformanceRepo.update).toHaveBeenCalledWith(
+        'perf-pf',
+        expect.objectContaining({
+          currentHighWaterMark: '5000000',
+          totalFeesCharged: '200000',
+        }),
+      );
       expect(mockAuditService.log).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'PERFORMANCE_FEE_PAID' }),
       );
@@ -480,20 +549,30 @@ describe('WebhookProcessorService', () => {
 
     it('already-paid performance fee webhook is idempotent', async () => {
       registry.register(buildPerfFeeProvider('mock_pf2', 'ref_pf2'));
-      const record = { id: 'wh-pf2', provider: 'mock_pf2', providerEventId: 'mock_pf2_evt', processed: false };
+      const record = {
+        id: 'wh-pf2',
+        provider: 'mock_pf2',
+        providerEventId: 'mock_pf2_evt',
+        processed: false,
+      };
       mockWebhookEventRepo.create.mockReturnValue(record);
       mockWebhookEventRepo.save.mockResolvedValue(record);
 
       mockTransactionRepo.findOne.mockResolvedValue({
-        id: 'tx-pf2', userId: 'user-pf2', invoiceId: 'inv-pf2', provider: 'mock_pf2',
+        id: 'tx-pf2',
+        userId: 'user-pf2',
+        invoiceId: 'inv-pf2',
+        provider: 'mock_pf2',
         providerTransactionReference: 'ref_pf2',
         paymentPurpose: PaymentPurpose.PERFORMANCE_FEE,
-        amountMinor: '200000', currency: 'USD',
+        amountMinor: '200000',
+        currency: 'USD',
         providerPayloadSummary: {},
       });
       // Assessment already PAID
       mockAssessmentRepo.findOne.mockResolvedValue({
-        id: 'assess-pf2', status: AssessmentStatus.PAID,
+        id: 'assess-pf2',
+        status: AssessmentStatus.PAID,
       });
 
       await service.processWebhook('mock_pf2', Buffer.from('{}'), {});
@@ -516,7 +595,10 @@ describe('WebhookProcessorService', () => {
       mockWebhookEventRepo.create.mockReturnValue(record);
       mockWebhookEventRepo.save.mockResolvedValue(record);
       mockTransactionRepo.findOne.mockResolvedValue({
-        id: 'tx-pf-fail', userId: 'user-pf', invoiceId: null, provider: 'mock_pf_fail',
+        id: 'tx-pf-fail',
+        userId: 'user-pf',
+        invoiceId: null,
+        provider: 'mock_pf_fail',
         providerTransactionReference: 'ref_pf_fail',
       });
 
@@ -538,36 +620,57 @@ describe('WebhookProcessorService', () => {
       // enforces max(oldHWM, endingRealisedBalance) so the HWM never moves
       // downward.
       registry.register(buildPerfFeeProvider('mock_pf_reg', 'ref_pf_reg'));
-      const record = { id: 'wh-pf-reg', provider: 'mock_pf_reg', providerEventId: 'mock_pf_reg_evt', processed: false };
+      const record = {
+        id: 'wh-pf-reg',
+        provider: 'mock_pf_reg',
+        providerEventId: 'mock_pf_reg_evt',
+        processed: false,
+      };
       mockWebhookEventRepo.create.mockReturnValue(record);
       mockWebhookEventRepo.save.mockResolvedValue(record);
 
       mockTransactionRepo.findOne.mockResolvedValue({
-        id: 'tx-pf-reg', userId: 'user-pf-reg', invoiceId: 'inv-pf-reg', provider: 'mock_pf_reg',
+        id: 'tx-pf-reg',
+        userId: 'user-pf-reg',
+        invoiceId: 'inv-pf-reg',
+        provider: 'mock_pf_reg',
         providerTransactionReference: 'ref_pf_reg',
         paymentPurpose: PaymentPurpose.PERFORMANCE_FEE,
-        amountMinor: '200000', currency: 'USD',
+        amountMinor: '200000',
+        currency: 'USD',
         providerPayloadSummary: {},
       });
       mockAssessmentRepo.findOne.mockResolvedValue({
-        id: 'assess-pf-reg', userId: 'user-pf-reg', invoiceId: 'inv-pf-reg',
-        status: AssessmentStatus.INVOICED, brokerConnectionId: null,
-        feeAmount: '200000', endingRealisedBalance: '7000000', currency: 'USD',
+        id: 'assess-pf-reg',
+        userId: 'user-pf-reg',
+        invoiceId: 'inv-pf-reg',
+        status: AssessmentStatus.INVOICED,
+        brokerConnectionId: null,
+        feeAmount: '200000',
+        endingRealisedBalance: '7000000',
+        currency: 'USD',
       });
       // Existing HWM is HIGHER than endingRealisedBalance — must not regress.
       mockPerformanceRepo.findOne.mockResolvedValue({
-        id: 'perf-pf-reg', totalFeesCharged: '0', currentHighWaterMark: '10000000',
+        id: 'perf-pf-reg',
+        totalFeesCharged: '0',
+        currentHighWaterMark: '10000000',
       });
 
       await service.processWebhook('mock_pf_reg', Buffer.from('{}'), {});
 
       // Assessment is still marked PAID (the payment was verified) ...
-      expect(mockAssessmentRepo.update).toHaveBeenCalledWith('assess-pf-reg', { status: AssessmentStatus.PAID });
+      expect(mockAssessmentRepo.update).toHaveBeenCalledWith('assess-pf-reg', {
+        status: AssessmentStatus.PAID,
+      });
       // ... but the HWM must stay at 10,000,000 — NOT regress to 7,000,000.
-      expect(mockPerformanceRepo.update).toHaveBeenCalledWith('perf-pf-reg', expect.objectContaining({
-        currentHighWaterMark: '10000000',
-        totalFeesCharged: '200000',
-      }));
+      expect(mockPerformanceRepo.update).toHaveBeenCalledWith(
+        'perf-pf-reg',
+        expect.objectContaining({
+          currentHighWaterMark: '10000000',
+          totalFeesCharged: '200000',
+        }),
+      );
       // Audit metadata records that the HWM was regulated (held at the old peak).
       expect(mockAuditService.log).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -590,32 +693,51 @@ describe('WebhookProcessorService', () => {
       // event, so the transaction must also carry amountMinor='200000' to pass
       // the amount/currency verification gate before the HWM update runs.
       registry.register(buildPerfFeeProvider('mock_pf_up', 'ref_pf_up'));
-      const record = { id: 'wh-pf-up', provider: 'mock_pf_up', providerEventId: 'mock_pf_up_evt', processed: false };
+      const record = {
+        id: 'wh-pf-up',
+        provider: 'mock_pf_up',
+        providerEventId: 'mock_pf_up_evt',
+        processed: false,
+      };
       mockWebhookEventRepo.create.mockReturnValue(record);
       mockWebhookEventRepo.save.mockResolvedValue(record);
 
       mockTransactionRepo.findOne.mockResolvedValue({
-        id: 'tx-pf-up', userId: 'user-pf-up', invoiceId: 'inv-pf-up', provider: 'mock_pf_up',
+        id: 'tx-pf-up',
+        userId: 'user-pf-up',
+        invoiceId: 'inv-pf-up',
+        provider: 'mock_pf_up',
         providerTransactionReference: 'ref_pf_up',
         paymentPurpose: PaymentPurpose.PERFORMANCE_FEE,
-        amountMinor: '200000', currency: 'USD',
+        amountMinor: '200000',
+        currency: 'USD',
         providerPayloadSummary: {},
       });
       mockAssessmentRepo.findOne.mockResolvedValue({
-        id: 'assess-pf-up', userId: 'user-pf-up', invoiceId: 'inv-pf-up',
-        status: AssessmentStatus.INVOICED, brokerConnectionId: null,
-        feeAmount: '200000', endingRealisedBalance: '12000000', currency: 'USD',
+        id: 'assess-pf-up',
+        userId: 'user-pf-up',
+        invoiceId: 'inv-pf-up',
+        status: AssessmentStatus.INVOICED,
+        brokerConnectionId: null,
+        feeAmount: '200000',
+        endingRealisedBalance: '12000000',
+        currency: 'USD',
       });
       mockPerformanceRepo.findOne.mockResolvedValue({
-        id: 'perf-pf-up', totalFeesCharged: '100000', currentHighWaterMark: '8000000',
+        id: 'perf-pf-up',
+        totalFeesCharged: '100000',
+        currentHighWaterMark: '8000000',
       });
 
       await service.processWebhook('mock_pf_up', Buffer.from('{}'), {});
 
-      expect(mockPerformanceRepo.update).toHaveBeenCalledWith('perf-pf-up', expect.objectContaining({
-        currentHighWaterMark: '12000000',
-        totalFeesCharged: '300000',
-      }));
+      expect(mockPerformanceRepo.update).toHaveBeenCalledWith(
+        'perf-pf-up',
+        expect.objectContaining({
+          currentHighWaterMark: '12000000',
+          totalFeesCharged: '300000',
+        }),
+      );
       expect(mockAuditService.log).toHaveBeenCalledWith(
         expect.objectContaining({
           action: 'HIGH_WATER_MARK_UPDATED',
@@ -648,9 +770,14 @@ describe('WebhookProcessorService', () => {
       mockWebhookEventRepo.create.mockReturnValue(record);
       mockWebhookEventRepo.save.mockResolvedValue(record);
       mockTransactionRepo.findOne.mockResolvedValue({
-        id: 'tx-under', userId: 'u1', invoiceId: 'inv-under', provider: 'mock_under',
-        providerTransactionReference: 'ref_under', paymentPurpose: PaymentPurpose.SUBSCRIPTION_INITIAL,
-        amountMinor: '5000', currency: 'USD',
+        id: 'tx-under',
+        userId: 'u1',
+        invoiceId: 'inv-under',
+        provider: 'mock_under',
+        providerTransactionReference: 'ref_under',
+        paymentPurpose: PaymentPurpose.SUBSCRIPTION_INITIAL,
+        amountMinor: '5000',
+        currency: 'USD',
       });
 
       await service.processWebhook('mock_under', Buffer.from('{}'), {});
@@ -683,9 +810,14 @@ describe('WebhookProcessorService', () => {
       mockWebhookEventRepo.create.mockReturnValue(record);
       mockWebhookEventRepo.save.mockResolvedValue(record);
       mockTransactionRepo.findOne.mockResolvedValue({
-        id: 'tx-over', userId: 'u1', invoiceId: 'inv-over', provider: 'mock_over',
-        providerTransactionReference: 'ref_over', paymentPurpose: PaymentPurpose.SUBSCRIPTION_INITIAL,
-        amountMinor: '5000', currency: 'USD',
+        id: 'tx-over',
+        userId: 'u1',
+        invoiceId: 'inv-over',
+        provider: 'mock_over',
+        providerTransactionReference: 'ref_over',
+        paymentPurpose: PaymentPurpose.SUBSCRIPTION_INITIAL,
+        amountMinor: '5000',
+        currency: 'USD',
       });
 
       await service.processWebhook('mock_over', Buffer.from('{}'), {});
@@ -711,9 +843,14 @@ describe('WebhookProcessorService', () => {
       mockWebhookEventRepo.create.mockReturnValue(record);
       mockWebhookEventRepo.save.mockResolvedValue(record);
       mockTransactionRepo.findOne.mockResolvedValue({
-        id: 'tx-curr', userId: 'u1', invoiceId: 'inv-curr', provider: 'mock_curr',
-        providerTransactionReference: 'ref_curr', paymentPurpose: PaymentPurpose.SUBSCRIPTION_INITIAL,
-        amountMinor: '5000', currency: 'USD',
+        id: 'tx-curr',
+        userId: 'u1',
+        invoiceId: 'inv-curr',
+        provider: 'mock_curr',
+        providerTransactionReference: 'ref_curr',
+        paymentPurpose: PaymentPurpose.SUBSCRIPTION_INITIAL,
+        amountMinor: '5000',
+        currency: 'USD',
       });
 
       await service.processWebhook('mock_curr', Buffer.from('{}'), {});
@@ -738,9 +875,14 @@ describe('WebhookProcessorService', () => {
       mockWebhookEventRepo.create.mockReturnValue(record);
       mockWebhookEventRepo.save.mockResolvedValue(record);
       mockTransactionRepo.findOne.mockResolvedValue({
-        id: 'tx-missing', userId: 'u1', invoiceId: 'inv-missing', provider: 'mock_missing',
-        providerTransactionReference: 'ref_missing', paymentPurpose: PaymentPurpose.SUBSCRIPTION_INITIAL,
-        amountMinor: '5000', currency: 'USD',
+        id: 'tx-missing',
+        userId: 'u1',
+        invoiceId: 'inv-missing',
+        provider: 'mock_missing',
+        providerTransactionReference: 'ref_missing',
+        paymentPurpose: PaymentPurpose.SUBSCRIPTION_INITIAL,
+        amountMinor: '5000',
+        currency: 'USD',
       });
 
       await service.processWebhook('mock_missing', Buffer.from('{}'), {});
@@ -754,7 +896,12 @@ describe('WebhookProcessorService', () => {
     it('should not include raw body in audit logs', async () => {
       registry.register(buildMockProvider('mock_sec', { signatureValid: true }));
       const rawBody = Buffer.from(JSON.stringify({ secret: 'sk_live_supersecret' }));
-      const webhookRecord = { id: 'wh-id', provider: 'mock_sec', providerEventId: 'evt-secret', processed: false };
+      const webhookRecord = {
+        id: 'wh-id',
+        provider: 'mock_sec',
+        providerEventId: 'evt-secret',
+        processed: false,
+      };
       mockWebhookEventRepo.create.mockReturnValue(webhookRecord);
       mockWebhookEventRepo.save.mockResolvedValue(webhookRecord);
       mockTransactionRepo.findOne.mockResolvedValue(null);

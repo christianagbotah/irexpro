@@ -41,7 +41,10 @@ export class AuthService {
     private dataSource: DataSource,
   ) {}
 
-  async register(dto: RegisterDto, ipAddress?: string): Promise<{ accessToken: string; refreshToken: string }> {
+  async register(
+    dto: RegisterDto,
+    ipAddress?: string,
+  ): Promise<{ accessToken: string; refreshToken: string }> {
     // Sprint 27: validate that at least one of email or phone is provided
     if (!dto.email && !dto.phone) {
       throw new BadRequestException('At least one of email or phone is required');
@@ -54,7 +57,9 @@ export class AuthService {
 
     // Check for duplicate email (if provided)
     if (dto.email) {
-      const existingByEmail = await this.userRepo.findOne({ where: { email: dto.email.toLowerCase() } });
+      const existingByEmail = await this.userRepo.findOne({
+        where: { email: dto.email.toLowerCase() },
+      });
       if (existingByEmail) {
         throw new ConflictException('An account with this email already exists');
       }
@@ -133,7 +138,10 @@ export class AuthService {
     }
   }
 
-  async login(dto: LoginDto, ipAddress?: string): Promise<{ accessToken: string; refreshToken: string }> {
+  async login(
+    dto: LoginDto,
+    ipAddress?: string,
+  ): Promise<{ accessToken: string; refreshToken: string }> {
     // Sprint 27: support email OR phone as identifier.
     const identifier = dto.identifier.trim();
     const emailLogin = isEmail(identifier);
@@ -141,9 +149,7 @@ export class AuthService {
     const phoneLookup = emailLogin ? null : normalizePhone(identifier);
 
     const user = await this.userRepo.findOne({
-      where: emailLogin
-        ? { email: identifier.toLowerCase() }
-        : { phone: phoneLookup ?? '' },
+      where: emailLogin ? { email: identifier.toLowerCase() } : { phone: phoneLookup ?? '' },
       relations: ['userRoles', 'userRoles.role'],
     });
 
@@ -191,7 +197,9 @@ export class AuthService {
     return this.generateTokens(user, roles);
   }
 
-  async refreshTokens(refreshToken: string): Promise<{ accessToken: string; refreshToken: string }> {
+  async refreshTokens(
+    refreshToken: string,
+  ): Promise<{ accessToken: string; refreshToken: string }> {
     let payload: JwtPayload;
     try {
       // Hotfix: do NOT pass { secret } explicitly. The JwtModule is already
@@ -223,7 +231,10 @@ export class AuthService {
     return this.generateTokens(user, roles);
   }
 
-  private generateTokens(user: User, roles: string[]): { accessToken: string; refreshToken: string } {
+  private generateTokens(
+    user: User,
+    roles: string[],
+  ): { accessToken: string; refreshToken: string } {
     const payload: JwtPayload = { sub: user.id, email: user.email, roles };
     const accessToken = this.jwtService.sign(payload, {
       expiresIn: this.configService.get<string>('jwt.accessExpiry', '15m'),
@@ -293,9 +304,22 @@ export class AuthService {
   private callingCodeForCountry(countryCode?: string): string | undefined {
     if (!countryCode) return undefined;
     const map: Record<string, string> = {
-      GH: '+233', NG: '+234', GB: '+44', US: '+1', CA: '+1', ZA: '+27',
-      KE: '+254', CI: '+225', TG: '+228', BJ: '+229', BF: '+226',
-      SL: '+232', LR: '+231', AE: '+971', IN: '+91', CN: '+86',
+      GH: '+233',
+      NG: '+234',
+      GB: '+44',
+      US: '+1',
+      CA: '+1',
+      ZA: '+27',
+      KE: '+254',
+      CI: '+225',
+      TG: '+228',
+      BJ: '+229',
+      BF: '+226',
+      SL: '+232',
+      LR: '+231',
+      AE: '+971',
+      IN: '+91',
+      CN: '+86',
     };
     return map[countryCode.toUpperCase()];
   }

@@ -9,10 +9,22 @@ import { AuthenticatedPrincipal } from '../../common/interfaces/authenticated-pr
  * AuthenticatedPrincipal` (they all call `isAdmin()` for role checks).
  */
 function normalUser(): AuthenticatedPrincipal {
-  return { userId: 'user-1', email: null, phone: null, roles: [RoleName.USER], status: UserStatus.ACTIVE };
+  return {
+    userId: 'user-1',
+    email: null,
+    phone: null,
+    roles: [RoleName.USER],
+    status: UserStatus.ACTIVE,
+  };
 }
 function adminUser(): AuthenticatedPrincipal {
-  return { userId: 'admin-1', email: null, phone: null, roles: [RoleName.ADMIN], status: UserStatus.ACTIVE };
+  return {
+    userId: 'admin-1',
+    email: null,
+    phone: null,
+    roles: [RoleName.ADMIN],
+    status: UserStatus.ACTIVE,
+  };
 }
 
 let svc: any;
@@ -36,14 +48,17 @@ describe('listInvoices', () => {
 
   it('normal user cannot list another user invoices (403)', () => {
     // The guard throws synchronously before any promise is returned.
-    expect(() =>
-      controller.listInvoices(normalUser(), 'other-user', undefined, undefined),
-    ).toThrow(ForbiddenException);
+    expect(() => controller.listInvoices(normalUser(), 'other-user', undefined, undefined)).toThrow(
+      ForbiddenException,
+    );
   });
 
   it('admin can list any user invoices', async () => {
     await controller.listInvoices(adminUser(), 'target-user', undefined, undefined);
-    expect(svc.listUserPerformanceFeeInvoices).toHaveBeenCalledWith('target-user', expect.anything());
+    expect(svc.listUserPerformanceFeeInvoices).toHaveBeenCalledWith(
+      'target-user',
+      expect.anything(),
+    );
   });
 
   it('admin with no userId defaults to own id', async () => {

@@ -144,23 +144,27 @@ describe('BootstrapAdminService', () => {
 
   describe('validateBootstrapInput (standalone, no ValidationPipe)', () => {
     it('should throw BadRequestException if neither email nor phone is provided', () => {
-      expect(() => validateBootstrapInput({ password: 'StrongAdminPass123!' }))
-        .toThrow(BadRequestException);
+      expect(() => validateBootstrapInput({ password: 'StrongAdminPass123!' })).toThrow(
+        BadRequestException,
+      );
     });
 
     it('should throw BadRequestException if password is too short', () => {
-      expect(() => validateBootstrapInput({ email: 'a@b.com', password: 'Short1!' }))
-        .toThrow(BadRequestException);
+      expect(() => validateBootstrapInput({ email: 'a@b.com', password: 'Short1!' })).toThrow(
+        BadRequestException,
+      );
     });
 
     it('should throw BadRequestException if password has no letters', () => {
-      expect(() => validateBootstrapInput({ email: 'a@b.com', password: '123456789012' }))
-        .toThrow(BadRequestException);
+      expect(() => validateBootstrapInput({ email: 'a@b.com', password: '123456789012' })).toThrow(
+        BadRequestException,
+      );
     });
 
     it('should throw BadRequestException if password has no numbers', () => {
-      expect(() => validateBootstrapInput({ email: 'a@b.com', password: 'NoNumbersHere!!' }))
-        .toThrow(BadRequestException);
+      expect(() =>
+        validateBootstrapInput({ email: 'a@b.com', password: 'NoNumbersHere!!' }),
+      ).toThrow(BadRequestException);
     });
 
     it('should NOT throw for valid email + strong password', () => {
@@ -186,8 +190,9 @@ describe('BootstrapAdminService', () => {
     });
 
     it('should throw if password is empty string', () => {
-      expect(() => validateBootstrapInput({ email: 'a@b.com', password: '' }))
-        .toThrow(BadRequestException);
+      expect(() => validateBootstrapInput({ email: 'a@b.com', password: '' })).toThrow(
+        BadRequestException,
+      );
     });
   });
 
@@ -263,9 +268,7 @@ describe('BootstrapAdminService', () => {
 
       await service.bootstrapSuperAdmin(validInput);
 
-      const userCreateCall = mockManager.create.mock.calls.find(
-        (c) => c[0] === User,
-      );
+      const userCreateCall = mockManager.create.mock.calls.find((c) => c[0] === User);
       expect(userCreateCall).toBeDefined();
       const createdUser = userCreateCall![1] as Record<string, unknown>;
       // argon2 hashes start with $argon2

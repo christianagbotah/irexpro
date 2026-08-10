@@ -4,13 +4,28 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { QueryFailedError } from 'typeorm';
 import { BrokerTradeReconciliationService } from './broker-trade-reconciliation.service';
 import { ClosedTradeNormalizerService } from './closed-trade-normalizer.service';
-import { BrokerTradeReconciliationRun, ReconciliationRunStatus } from '../entities/broker-trade-reconciliation-run.entity';
+import {
+  BrokerTradeReconciliationRun,
+  ReconciliationRunStatus,
+} from '../entities/broker-trade-reconciliation-run.entity';
 import { BrokerReconciledTrade, TradeSourceType } from '../entities/broker-reconciled-trade.entity';
-import { PerformanceFeeLedgerEntry, LedgerEntryType } from '../../performance-fees/entities/performance-fee-ledger-entry.entity';
-import { PerformanceFeePolicy, BillingFrequency } from '../../performance-fees/entities/performance-fee-policy.entity';
-import { UserSubscription, SubscriptionStatus } from '../../subscriptions/entities/user-subscription.entity';
+import {
+  PerformanceFeeLedgerEntry,
+  LedgerEntryType,
+} from '../../performance-fees/entities/performance-fee-ledger-entry.entity';
+import {
+  PerformanceFeePolicy,
+  BillingFrequency,
+} from '../../performance-fees/entities/performance-fee-policy.entity';
+import {
+  UserSubscription,
+  SubscriptionStatus,
+} from '../../subscriptions/entities/user-subscription.entity';
 import { BrokerService } from '../../broker/broker.service';
-import { BrokerMode, BrokerConnectionStatus } from '../../broker/interfaces/broker-adapter.interface';
+import {
+  BrokerMode,
+  BrokerConnectionStatus,
+} from '../../broker/interfaces/broker-adapter.interface';
 import { AuditService } from '../../audit/audit.service';
 import { BrokerConnection } from '../../broker/entities/broker-connection.entity';
 
@@ -45,22 +60,24 @@ function makeLiveConnection(overrides: Partial<BrokerConnection> = {}): BrokerCo
   } as BrokerConnection;
 }
 
-function makeClosedTrade(overrides: Partial<{
-  externalOrderId: string;
-  instrument: string;
-  direction: 'BUY' | 'SELL';
-  lotSize: string;
-  openPrice: string;
-  closePrice: string;
-  realisedPnl: string;
-  openedAt: Date;
-  closedAt: Date;
-  commission: string;
-  swap: string;
-  closeReason: string;
-  stopLoss: string;
-  takeProfit: string;
-}> = {}) {
+function makeClosedTrade(
+  overrides: Partial<{
+    externalOrderId: string;
+    instrument: string;
+    direction: 'BUY' | 'SELL';
+    lotSize: string;
+    openPrice: string;
+    closePrice: string;
+    realisedPnl: string;
+    openedAt: Date;
+    closedAt: Date;
+    commission: string;
+    swap: string;
+    closeReason: string;
+    stopLoss: string;
+    takeProfit: string;
+  }> = {},
+) {
   const past = new Date(Date.now() - 24 * 60 * 60 * 1000); // yesterday
   return {
     externalOrderId: 'trade-001',
@@ -82,7 +99,12 @@ function makeClosedTrade(overrides: Partial<{
 }
 
 function makeActiveSubscription(): Partial<UserSubscription> {
-  return { id: 'sub-1', userId: 'user-1', subscriptionPlanId: 'plan-1', status: SubscriptionStatus.ACTIVE };
+  return {
+    id: 'sub-1',
+    userId: 'user-1',
+    subscriptionPlanId: 'plan-1',
+    status: SubscriptionStatus.ACTIVE,
+  };
 }
 
 function makePolicy(): Partial<PerformanceFeePolicy> {
@@ -134,7 +156,6 @@ const TO = new Date(Date.now() - 1000);
 
 describe('BrokerTradeReconciliationService', () => {
   let service: BrokerTradeReconciliationService;
-  let normalizer: ClosedTradeNormalizerService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -172,7 +193,6 @@ describe('BrokerTradeReconciliationService', () => {
     }).compile();
 
     service = module.get<BrokerTradeReconciliationService>(BrokerTradeReconciliationService);
-    normalizer = module.get<ClosedTradeNormalizerService>(ClosedTradeNormalizerService);
   });
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -217,9 +237,7 @@ describe('BrokerTradeReconciliationService', () => {
     });
 
     it('does not proceed if broker connection belongs to another user (findConnectionById throws)', async () => {
-      mockBrokerService.findConnectionById.mockRejectedValue(
-        new ForbiddenException('Not found'),
-      );
+      mockBrokerService.findConnectionById.mockRejectedValue(new ForbiddenException('Not found'));
       await expect(
         service.runReconciliation('user-2', 'conn-1', FROM, TO, 'admin-1'),
       ).rejects.toThrow(ForbiddenException);
@@ -560,8 +578,14 @@ describe('BrokerTradeReconciliationService', () => {
         .mockResolvedValueOnce(conn2);
 
       mockBrokerService.getClosedTradesForConnection
-        .mockResolvedValueOnce({ connection: conn1, trades: [makeClosedTrade({ externalOrderId: 't-1' })] })
-        .mockResolvedValueOnce({ connection: conn2, trades: [makeClosedTrade({ externalOrderId: 't-2' })] });
+        .mockResolvedValueOnce({
+          connection: conn1,
+          trades: [makeClosedTrade({ externalOrderId: 't-1' })],
+        })
+        .mockResolvedValueOnce({
+          connection: conn2,
+          trades: [makeClosedTrade({ externalOrderId: 't-2' })],
+        });
 
       mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
       mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
@@ -630,9 +654,7 @@ describe('BrokerTradeReconciliationService', () => {
     it('returns all runs when no userId filter', async () => {
       mockRunRepo.find.mockResolvedValue([]);
       await service.getRuns();
-      expect(mockRunRepo.find).toHaveBeenCalledWith(
-        expect.objectContaining({ where: {} }),
-      );
+      expect(mockRunRepo.find).toHaveBeenCalledWith(expect.objectContaining({ where: {} }));
     });
 
     it('returns reconciled trades filtered by userId and brokerConnectionId', async () => {
@@ -671,7 +693,9 @@ describe('BrokerTradeReconciliationService', () => {
       );
       expect(mockLedgerRepo.save).toHaveBeenCalled();
       // Ensure audit log doesn't contain any invoice or assessment creation actions
-      const auditActions = mockAuditService.log.mock.calls.map((c: unknown[]) => (c[0] as { action: string }).action);
+      const auditActions = mockAuditService.log.mock.calls.map(
+        (c: unknown[]) => (c[0] as { action: string }).action,
+      );
       expect(auditActions).not.toContain('PERFORMANCE_FEE_ASSESSMENT_CALCULATED');
       expect(auditActions).not.toContain('PERFORMANCE_FEE_ASSESSMENT_INVOICED');
     });
@@ -781,10 +805,9 @@ describe('BrokerTradeReconciliationService', () => {
           entryType: LedgerEntryType.REALISED_TRADE_PROFIT,
         }),
       );
-      expect(mockTradeRepo.update).toHaveBeenCalledWith(
-        'rtrade-existing',
-        { ledgerEntryId: 'ledger-1' },
-      );
+      expect(mockTradeRepo.update).toHaveBeenCalledWith('rtrade-existing', {
+        ledgerEntryId: 'ledger-1',
+      });
     });
 
     it('does NOT backfill when the existing trade already has a ledger entry (genuine duplicate)', async () => {
@@ -842,7 +865,10 @@ describe('BrokerTradeReconciliationService', () => {
 
 // ── ClosedTradeNormalizerService unit tests ────────────────────────────────────
 
-import { ClosedTradeNormalizerService as NormSvc, majorToMinorUnits } from './closed-trade-normalizer.service';
+import {
+  ClosedTradeNormalizerService as NormSvc,
+  majorToMinorUnits,
+} from './closed-trade-normalizer.service';
 
 describe('ClosedTradeNormalizerService', () => {
   let svc: NormSvc;
@@ -852,18 +878,22 @@ describe('ClosedTradeNormalizerService', () => {
   });
 
   describe('majorToMinorUnits', () => {
-    it('converts 100.00 → 10000 (2dp default)', () => expect(majorToMinorUnits('100.00')).toBe('10000'));
+    it('converts 100.00 → 10000 (2dp default)', () =>
+      expect(majorToMinorUnits('100.00')).toBe('10000'));
     it('converts -2.50 → -250', () => expect(majorToMinorUnits('-2.50')).toBe('-250'));
     it('converts 0.00 → 0', () => expect(majorToMinorUnits('0.00')).toBe('0'));
-    it('converts 1000 → 100000 (no decimal)', () => expect(majorToMinorUnits('1000')).toBe('100000'));
+    it('converts 1000 → 100000 (no decimal)', () =>
+      expect(majorToMinorUnits('1000')).toBe('100000'));
     it('converts -0.01 → -1', () => expect(majorToMinorUnits('-0.01')).toBe('-1'));
     it('returns null for empty string (invalid)', () => expect(majorToMinorUnits('')).toBeNull());
     it('returns null for non-numeric input', () => expect(majorToMinorUnits('abc')).toBeNull());
-    it('truncates extra decimals toward zero', () => expect(majorToMinorUnits('1.119')).toBe('111'));
+    it('truncates extra decimals toward zero', () =>
+      expect(majorToMinorUnits('1.119')).toBe('111'));
 
     // Currency exponent handling
     it('JPY (0 digits): 1000 → 1000', () => expect(majorToMinorUnits('1000', 0)).toBe('1000'));
-    it('JPY (0 digits): 1000.50 → 1000 (drops sub-unit)', () => expect(majorToMinorUnits('1000.50', 0)).toBe('1000'));
+    it('JPY (0 digits): 1000.50 → 1000 (drops sub-unit)', () =>
+      expect(majorToMinorUnits('1000.50', 0)).toBe('1000'));
     it('JPY (0 digits): -250 → -250', () => expect(majorToMinorUnits('-250', 0)).toBe('-250'));
     it('KWD (3 digits): 1.234 → 1234', () => expect(majorToMinorUnits('1.234', 3)).toBe('1234'));
     it('KWD (3 digits): 1.2 → 1200', () => expect(majorToMinorUnits('1.2', 3)).toBe('1200'));
@@ -921,7 +951,14 @@ describe('ClosedTradeNormalizerService', () => {
     it('computes netRealisedPnl without double-subtracting commission/swap', () => {
       const past = new Date(now.getTime() - 3600_000);
       const { valid } = svc.normalize(
-        [makeClosedTrade({ closedAt: past, realisedPnl: '100.00', commission: '-2.50', swap: '-0.50' }) as any],
+        [
+          makeClosedTrade({
+            closedAt: past,
+            realisedPnl: '100.00',
+            commission: '-2.50',
+            swap: '-0.50',
+          }) as any,
+        ],
         'mt5',
         'USD',
         now,
@@ -934,7 +971,14 @@ describe('ClosedTradeNormalizerService', () => {
     it('uses JPY 0-decimal exponent for a JPY account', () => {
       const past = new Date(now.getTime() - 3600_000);
       const { valid } = svc.normalize(
-        [makeClosedTrade({ closedAt: past, realisedPnl: '1000', commission: '0', swap: '0' }) as any],
+        [
+          makeClosedTrade({
+            closedAt: past,
+            realisedPnl: '1000',
+            commission: '0',
+            swap: '0',
+          }) as any,
+        ],
         'mt5',
         'JPY',
         now,

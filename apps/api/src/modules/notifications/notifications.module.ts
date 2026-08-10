@@ -5,18 +5,8 @@ import { HubtelSmsProvider } from './providers/hubtel-sms.provider';
 import { ArkeselSmsProvider } from './providers/arkesel-sms.provider';
 
 @Module({
-  providers: [
-    SmsProviderRegistry,
-    TwilioSmsProvider,
-    HubtelSmsProvider,
-    ArkeselSmsProvider,
-  ],
-  exports: [
-    SmsProviderRegistry,
-    TwilioSmsProvider,
-    HubtelSmsProvider,
-    ArkeselSmsProvider,
-  ],
+  providers: [SmsProviderRegistry, TwilioSmsProvider, HubtelSmsProvider, ArkeselSmsProvider],
+  exports: [SmsProviderRegistry, TwilioSmsProvider, HubtelSmsProvider, ArkeselSmsProvider],
 })
 export class NotificationsModule implements OnModuleInit {
   constructor(

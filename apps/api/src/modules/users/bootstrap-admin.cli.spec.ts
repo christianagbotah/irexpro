@@ -41,9 +41,9 @@ describe('bootstrap-admin.ts CLI script (hotfix — no useGlobalPipes)', () => {
       // Comments explaining the fix are allowed, but there must be no actual
       // `app.useGlobalPipes(...)` call statement (a line that starts with
       // optional whitespace then `app.useGlobalPipes(`).
-      const codeLines = source.split('\n').filter(
-        (l) => !l.trim().startsWith('//') && !l.trim().startsWith('*'),
-      );
+      const codeLines = source
+        .split('\n')
+        .filter((l) => !l.trim().startsWith('//') && !l.trim().startsWith('*'));
       const codeOnly = codeLines.join('\n');
       expect(codeOnly).not.toMatch(/app\.useGlobalPipes\s*\(/);
     });
@@ -70,13 +70,17 @@ describe('bootstrap-admin.ts CLI script (hotfix — no useGlobalPipes)', () => {
 
     it('should close the app context in the error path', () => {
       // The catch block must also close the app before exiting 1
-      const catchBlockMatch = source.match(/catch\s*\(err\)\s*\{[\s\S]*?await app\.close\(\)[\s\S]*?process\.exit\(1\)/);
+      const catchBlockMatch = source.match(
+        /catch\s*\(err\)\s*\{[\s\S]*?await app\.close\(\)[\s\S]*?process\.exit\(1\)/,
+      );
       expect(catchBlockMatch).not.toBeNull();
     });
 
     it('should close the app context in the dry-run path', () => {
       // The dry-run branch must also close the app before exiting 0
-      const dryRunMatch = source.match(/isDryRun[\s\S]*?await app\.close\(\)[\s\S]*?process\.exit\(0\)/);
+      const dryRunMatch = source.match(
+        /isDryRun[\s\S]*?await app\.close\(\)[\s\S]*?process\.exit\(0\)/,
+      );
       expect(dryRunMatch).not.toBeNull();
     });
   });
@@ -136,7 +140,9 @@ describe('bootstrap-admin.ts CLI script (hotfix — no useGlobalPipes)', () => {
       // Validation should happen BEFORE createApplicationContext (fail fast).
       // We look for the actual CALL (not the import or comment mentions).
       const validateCallIdx = source.indexOf('validateBootstrapInput(input)');
-      const contextCallIdx = source.indexOf('NestFactory.createApplicationContext(BootstrapAppModule');
+      const contextCallIdx = source.indexOf(
+        'NestFactory.createApplicationContext(BootstrapAppModule',
+      );
       expect(validateCallIdx).toBeGreaterThan(-1);
       expect(contextCallIdx).toBeGreaterThan(-1);
       expect(validateCallIdx).toBeLessThan(contextCallIdx);
