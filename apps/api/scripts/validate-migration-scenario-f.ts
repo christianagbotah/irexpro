@@ -64,6 +64,7 @@ const ORPHAN_DB_NAME = 'irexpro_scenario_f_orphan';
 
 interface ConstraintMeta {
   conname: string;
+  contype: string;
   convalidated: boolean;
   definition: string;
 }
@@ -171,6 +172,7 @@ async function getCheckConstraint(
   const result = await client.query<ConstraintMeta>(
     `SELECT
        c.conname,
+       c.contype,
        c.convalidated,
        pg_get_constraintdef(c.oid) AS definition
      FROM pg_constraint c
@@ -536,35 +538,37 @@ async function main(): Promise<void> {
       assert(after.display_name === before.display_name, `broker connection ${i} display_name unchanged`);
     }
 
-    // 4f. Three CHECK constraints exist via pg_constraint + pg_get_constraintdef
+    // 4f. Three CHECK constraints exist via pg_constraint + semantic validation
+    // PostgreSQL canonicalizes CHECK expressions (e.g., IN → ANY(ARRAY[])),
+    // so we verify semantic components rather than exact SQL text.
     const chk1 = await getCheckConstraint(verifyClient, 'chk_trades_direction');
     assert(chk1 !== null, 'chk_trades_direction exists in pg_constraint');
     if (chk1) {
-      assert(
-        /CHECK\s*\(\s*direction\s+IN\s*\(\s*'BUY'\s*,\s*'SELL'\s*\)\s*\)/i.test(chk1.definition),
-        `chk_trades_direction definition matches CHECK (direction IN ('BUY','SELL')) (got ${chk1.definition})`,
-      );
+      assert(chk1.contype === 'c', `chk_trades_direction is a CHECK constraint (contype='c')`);
       assert(chk1.convalidated === true, `chk_trades_direction is validated (convalidated=true)`);
+      assert(chk1.definition.includes('direction'), `chk_trades_direction references 'direction' column (got ${chk1.definition})`);
+      assert(chk1.definition.includes("'BUY'"), `chk_trades_direction contains 'BUY' value (got ${chk1.definition})`);
+      assert(chk1.definition.includes("'SELL'"), `chk_trades_direction contains 'SELL' value (got ${chk1.definition})`);
     }
 
     const chk2 = await getCheckConstraint(verifyClient, 'chk_broker_reconciled_trades_direction');
     assert(chk2 !== null, 'chk_broker_reconciled_trades_direction exists in pg_constraint');
     if (chk2) {
-      assert(
-        /CHECK\s*\(\s*direction\s+IN\s*\(\s*'BUY'\s*,\s*'SELL'\s*\)\s*\)/i.test(chk2.definition),
-        `chk_broker_reconciled_trades_direction definition matches CHECK (direction IN ('BUY','SELL')) (got ${chk2.definition})`,
-      );
+      assert(chk2.contype === 'c', `chk_broker_reconciled_trades_direction is a CHECK constraint (contype='c')`);
       assert(chk2.convalidated === true, `chk_broker_reconciled_trades_direction is validated`);
+      assert(chk2.definition.includes('direction'), `chk_broker_reconciled_trades_direction references 'direction' column (got ${chk2.definition})`);
+      assert(chk2.definition.includes("'BUY'"), `chk_broker_reconciled_trades_direction contains 'BUY' value (got ${chk2.definition})`);
+      assert(chk2.definition.includes("'SELL'"), `chk_broker_reconciled_trades_direction contains 'SELL' value (got ${chk2.definition})`);
     }
 
     const chk3 = await getCheckConstraint(verifyClient, 'chk_broker_connections_account_type');
     assert(chk3 !== null, 'chk_broker_connections_account_type exists in pg_constraint');
     if (chk3) {
-      assert(
-        /CHECK\s*\(\s*account_type\s+IN\s*\(\s*'DEMO'\s*,\s*'LIVE'\s*\)\s*\)/i.test(chk3.definition),
-        `chk_broker_connections_account_type definition matches CHECK (account_type IN ('DEMO','LIVE')) (got ${chk3.definition})`,
-      );
+      assert(chk3.contype === 'c', `chk_broker_connections_account_type is a CHECK constraint (contype='c')`);
       assert(chk3.convalidated === true, `chk_broker_connections_account_type is validated`);
+      assert(chk3.definition.includes('account_type'), `chk_broker_connections_account_type references 'account_type' column (got ${chk3.definition})`);
+      assert(chk3.definition.includes("'DEMO'"), `chk_broker_connections_account_type contains 'DEMO' value (got ${chk3.definition})`);
+      assert(chk3.definition.includes("'LIVE'"), `chk_broker_connections_account_type contains 'LIVE' value (got ${chk3.definition})`);
     }
 
     // ─── Stage 5: Valid-value acceptance tests ──────────────────────────
