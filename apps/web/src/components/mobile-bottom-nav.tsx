@@ -1,71 +1,94 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ComponentType } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import {
+  DashboardIcon,
+  PaymentsIcon,
+  MoreIcon,
+  UserIcon,
+  ShieldIcon,
+  PlugIcon,
+  LogoutIcon,
+  CloseIcon,
+  type IconProps,
+} from '@/components/icons';
 
 /**
- * Mobile bottom navigation — Sprint 31.
+ * Mobile bottom navigation — Sprint 31 (remediated).
  *
- * Renders a fixed bottom navigation bar that is only visible on small screens
- * (≤ 700px). On larger screens it is `display: none` via CSS so the desktop
- * sidebar remains the primary navigation. This avoids any JS viewport polling
- * and is SSR-safe (no hydration mismatch).
+ * Renders a fixed bottom navigation bar visible only on small screens
+ * (≤ 700px via CSS). On larger screens it is `display: none` so the desktop
+ * sidebar remains the primary navigation. SSR-safe (no viewport polling).
  *
- * Primary destinations (4): Dashboard, Onboarding, Payments, More.
- *   - The destinations are chosen from the *actual* route tree — no invented
- *     routes. /dashboard and /payments/success exist; /onboarding/profile is
- *     the entry point to the onboarding flow (risk/broker follow).
+ * ── Information architecture (architect §11 re-evaluation) ───────────────────
+ * Primary (3): Dashboard, Payments, More.
+ *   - The previous iteration listed "Onboarding" as a primary destination that
+ *     linked to /onboarding/profile — but the More sheet already contains a
+ *     "Profile" item linking to the SAME route (/onboarding/profile). That was
+ *     a redundant entry point. Onboarding is a transitional flow, not a
+ *     permanent high-frequency destination; once a user has completed it they
+ *     reach profile/risk/broker adjustments via the More sheet. The dashboard's
+ *     onboarding-checklist card remains the primary prompt for users who have
+ *     NOT yet completed onboarding. No business logic changed; nav only.
  *
- * "More" opens an accessible bottom Sheet containing secondary destinations:
- *   - Onboarding: Profile / Risk / Broker
- *   - Log out (calls onLogout)
+ * More sheet (4): Profile, Risk limits, Broker, Log out.
  *
- * Accessibility:
+ * ── Accessibility (architect §9 — verified, not asserted) ────────────────────
  *   - role="navigation" + aria-label on the <nav> landmark
  *   - Each item is an <a> (or <button> for "More" + logout) with aria-label
  *   - aria-current="page" on the active route
- *   - Sheet uses role="dialog" + aria-modal="true" + aria-labelledby
- *   - Escape closes the sheet; focus returns to the trigger button
- *   - Touch targets are ≥ 44×44 CSS px (enforced via CSS `.mobile-bottom-nav__item`)
+ *   - Sheet: role="dialog" + aria-modal="true" + aria-labelledby
+ *   - Focus trap: Tab/Shift+Tab cycle within the sheet (cannot escape behind it)
+ *   - Focus enters the sheet (close button) on open
+ *   - Escape closes the sheet; focus restores to the trigger button
+ *   - Overlay click closes the sheet
+ *   - Body scroll is locked while the sheet is open and restored on close
+ *   - Icons are decorative (aria-hidden) — the text label is the accessible name
+ *   - Touch targets ≥ 44×44 CSS px (enforced via CSS .mobile-bottom-nav__item)
  *
- * Safe-area: the bar uses padding-bottom: env(safe-area-inset-bottom) so it
- * respects iPhone home indicators without introducing excessive padding on
- * devices without safe areas.
+ * ── Icons (architect §7) ─────────────────────────────────────────────────────
+ * Professional SVG icons (apps/web/src/components/icons.tsx) replace the
+ * previous emoji. SVG renders identically across Android, iOS, Windows and
+ * macOS; emoji do not. Zero new dependencies — mirrors the existing
+ * InfoCircleIcon pattern. currentColor, 24×24 viewBox, 1.75 stroke.
  *
- * No new dependencies. No business logic. The onLogout prop is the same
- * callback the desktop sidebar uses (passed through from DashboardShell).
+ * Safe-area: padding-bottom: env(safe-area-inset-bottom) respects iPhone home
+ * indicators without excessive padding on devices without safe areas.
  */
 
 interface NavDestination {
   href: string;
   label: string;
-  icon: string;
-  /** Prefix match for active state (e.g. /onboarding matches /onboarding/*). */
+  /** Icon component — decorative; the text label is the accessible name. */
+  Icon: ComponentType<IconProps>;
+  /** Prefix match for active state (e.g. /payments matches /payments/*). */
   matchPrefix?: boolean;
 }
 
 const PRIMARY_NAV: NavDestination[] = [
-  { href: '/dashboard', label: 'Dashboard', icon: '📊' },
-  { href: '/onboarding/profile', label: 'Onboarding', icon: '🧭', matchPrefix: true },
-  { href: '/payments/success', label: 'Payments', icon: '💳', matchPrefix: true },
+  { href: '/dashboard', label: 'Dashboard', Icon: DashboardIcon },
+  { href: '/payments/success', label: 'Payments', Icon: PaymentsIcon, matchPrefix: true },
 ];
 
 const SECONDARY_NAV: NavDestination[] = [
-  { href: '/onboarding/profile', label: 'Profile', icon: '👤' },
-  { href: '/onboarding/risk', label: 'Risk limits', icon: '🛡️' },
-  { href: '/onboarding/broker', label: 'Broker', icon: '🔌' },
+  { href: '/onboarding/profile', label: 'Profile', Icon: UserIcon },
+  { href: '/onboarding/risk', label: 'Risk limits', Icon: ShieldIcon },
+  { href: '/onboarding/broker', label: 'Broker', Icon: PlugIcon },
 ];
 
 function isActive(pathname: string | null, dest: NavDestination): boolean {
   if (!pathname) return false;
   if (dest.matchPrefix) {
-    // /onboarding/profile is the prefix for /onboarding/*
-    const base = dest.href.split('/').slice(0, -1).join('/') || dest.href;
-    return pathname === dest.href || pathname.startsWith(base + '/');
+    return pathname === dest.href || pathname.startsWith(dest.href + '/');
   }
   return pathname === dest.href;
 }
+
+/** CSS selector for focusable elements, in tab order. */
+const FOCUSABLE_SELECTOR =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 interface MobileBottomNavProps {
   onLogout: () => void;
@@ -75,36 +98,73 @@ export default function MobileBottomNav({ onLogout }: MobileBottomNavProps) {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
   const moreButtonRef = useRef<HTMLButtonElement | null>(null);
+  const sheetRef = useRef<HTMLDivElement | null>(null);
   const sheetCloseRef = useRef<HTMLButtonElement | null>(null);
+  // The element that had focus before the sheet opened — focus returns here.
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
 
-  // Close the sheet on Escape; restore focus to the trigger button.
-  // Focus is restored BEFORE setState so the trigger receives focus while
-  // the sheet is still in the DOM (the cleanup then unmounts it after the
-  // re-render). This avoids a race where focus would be lost when the sheet
-  // unmounts before the trigger receives focus.
+  // ── Sheet open/close lifecycle ─────────────────────────────────────────────
   useEffect(() => {
     if (!moreOpen) return;
+
+    // Capture the trigger as the restore target (it still has focus at this
+    // point in the open transition).
+    previouslyFocusedRef.current = moreButtonRef.current;
+
+    // Lock body scroll while the sheet is open. The overlay itself doesn't
+    // scroll; only the sheet content scrolls (overflow-y: auto).
+    const prevBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    // Move focus into the sheet (the close button is the first focusable).
+    const rafId = requestAnimationFrame(() => {
+      sheetCloseRef.current?.focus();
+    });
+
+    // Focus trap + Escape handler.
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        moreButtonRef.current?.focus();
-        setMoreOpen(false);
+        closeSheet();
+        return;
+      }
+      if (e.key !== 'Tab') return;
+      const sheet = sheetRef.current;
+      if (!sheet) return;
+      const focusables = Array.from(
+        sheet.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
+      ).filter((el) => el.offsetParent !== null); // visible only
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      if (e.shiftKey) {
+        if (active === first || !sheet.contains(active)) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (active === last) {
+          e.preventDefault();
+          first.focus();
+        }
       }
     };
     document.addEventListener('keydown', handleKey);
-    // Move focus into the sheet when it opens.
-    requestAnimationFrame(() => {
-      sheetCloseRef.current?.focus();
-    });
+
     return () => {
       document.removeEventListener('keydown', handleKey);
+      cancelAnimationFrame(rafId);
+      // Restore body scroll.
+      document.body.style.overflow = prevBodyOverflow;
+      // Restore focus to the trigger.
+      previouslyFocusedRef.current?.focus();
     };
+    // closeSheet is stable via setState; intentionally not in deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [moreOpen]);
 
-  // Restore focus to the More button when the sheet closes via overlay click
-  // or item selection.
   function closeSheet() {
-    moreButtonRef.current?.focus();
     setMoreOpen(false);
   }
 
@@ -113,6 +173,7 @@ export default function MobileBottomNav({ onLogout }: MobileBottomNavProps) {
       <nav className="mobile-bottom-nav" aria-label="Primary mobile navigation">
         {PRIMARY_NAV.map((dest) => {
           const active = isActive(pathname, dest);
+          const { Icon } = dest;
           return (
             <Link
               key={dest.href}
@@ -121,7 +182,9 @@ export default function MobileBottomNav({ onLogout }: MobileBottomNavProps) {
               aria-current={active ? 'page' : undefined}
               aria-label={dest.label}
             >
-              <span className="mobile-bottom-nav__icon" aria-hidden="true">{dest.icon}</span>
+              <span className="mobile-bottom-nav__icon" aria-hidden="true">
+                <Icon size={22} />
+              </span>
               <span className="mobile-bottom-nav__label">{dest.label}</span>
             </Link>
           );
@@ -136,7 +199,9 @@ export default function MobileBottomNav({ onLogout }: MobileBottomNavProps) {
           aria-label="More navigation"
           onClick={() => setMoreOpen(true)}
         >
-          <span className="mobile-bottom-nav__icon" aria-hidden="true">⋯</span>
+          <span className="mobile-bottom-nav__icon" aria-hidden="true">
+            <MoreIcon size={22} />
+          </span>
           <span className="mobile-bottom-nav__label">More</span>
         </button>
       </nav>
@@ -149,6 +214,7 @@ export default function MobileBottomNav({ onLogout }: MobileBottomNavProps) {
         >
           <div
             id="mobile-more-sheet"
+            ref={sheetRef}
             role="dialog"
             aria-modal="true"
             aria-labelledby="mobile-more-sheet-title"
@@ -166,22 +232,27 @@ export default function MobileBottomNav({ onLogout }: MobileBottomNavProps) {
                 aria-label="Close more navigation"
                 onClick={closeSheet}
               >
-                ✕
+                <CloseIcon size={20} />
               </button>
             </div>
             <ul className="mobile-sheet__list">
-              {SECONDARY_NAV.map((dest) => (
-                <li key={dest.href}>
-                  <Link
-                    href={dest.href}
-                    className="mobile-sheet__item"
-                    onClick={closeSheet}
-                  >
-                    <span className="mobile-sheet__item-icon" aria-hidden="true">{dest.icon}</span>
-                    <span>{dest.label}</span>
-                  </Link>
-                </li>
-              ))}
+              {SECONDARY_NAV.map((dest) => {
+                const { Icon } = dest;
+                return (
+                  <li key={dest.href}>
+                    <Link
+                      href={dest.href}
+                      className="mobile-sheet__item"
+                      onClick={closeSheet}
+                    >
+                      <span className="mobile-sheet__item-icon" aria-hidden="true">
+                        <Icon size={20} />
+                      </span>
+                      <span>{dest.label}</span>
+                    </Link>
+                  </li>
+                );
+              })}
               <li>
                 <button
                   type="button"
@@ -191,7 +262,9 @@ export default function MobileBottomNav({ onLogout }: MobileBottomNavProps) {
                     onLogout();
                   }}
                 >
-                  <span className="mobile-sheet__item-icon" aria-hidden="true">⏻</span>
+                  <span className="mobile-sheet__item-icon" aria-hidden="true">
+                    <LogoutIcon size={20} />
+                  </span>
                   <span>Log out</span>
                 </button>
               </li>

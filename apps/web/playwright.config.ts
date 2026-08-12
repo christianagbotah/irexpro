@@ -14,10 +14,16 @@ export default defineConfig({
     video: 'retain-on-failure',
   },
   projects: [
+    // ── Mobile (architect §4 — required minimum automated viewport matrix) ─────
     { name: 'mobile-small', use: { viewport: { width: 360, height: 800 } } },
     { name: 'mobile-standard', use: { viewport: { width: 390, height: 844 } } },
+    { name: 'mobile-large', use: { viewport: { width: 430, height: 932 } } },
+    // ── Tablet (architect §13 — required tablet coverage) ─────────────────────
     { name: 'tablet-portrait', use: { viewport: { width: 768, height: 1024 } } },
+    // tablet-landscape (1024×768) is retained as ADDITIONAL coverage; it does
+    // NOT replace the required 430×932 viewport (architect §4).
     { name: 'tablet-landscape', use: { viewport: { width: 1024, height: 768 } } },
+    // ── Desktop ───────────────────────────────────────────────────────────────
     { name: 'desktop', use: { viewport: { width: 1440, height: 900 } } },
   ],
   webServer: {

@@ -79,7 +79,7 @@ test.describe('Mobile bottom navigation', () => {
 
   // ── Primary destinations ───────────────────────────────────────────────────
 
-  test('bottom nav contains the 4 primary destinations on mobile', async ({ page }) => {
+  test('bottom nav contains the 3 primary destinations on mobile', async ({ page }) => {
     const viewport = page.viewportSize();
     if (!viewport || viewport.width > 700) {
       // Skip on desktop — bottom nav is hidden there.
@@ -88,15 +88,18 @@ test.describe('Mobile bottom navigation', () => {
     }
 
     const bottomNav = page.locator('.mobile-bottom-nav').first();
-    // 3 primary <a> items + 1 "More" <button> = 4 items total.
+    // 2 primary <a> items (Dashboard, Payments) + 1 "More" <button> = 3 items.
+    // (Sprint 31 remediation: the redundant Onboarding primary — which linked
+    // to /onboarding/profile, the same destination as the "Profile" item in the
+    // More sheet — was removed. Onboarding is reachable via the dashboard's
+    // onboarding-checklist card and via Profile/Risk/Broker in the More sheet.)
     const items = bottomNav.locator('.mobile-bottom-nav__item');
-    await expect(items).toHaveCount(4);
+    await expect(items).toHaveCount(3);
 
-    // Labels: Dashboard, Onboarding, Payments, More.
+    // Labels: Dashboard, Payments, More.
     const labels = await items.allTextContents();
     const joined = labels.join(' ').toLowerCase();
     expect(joined, `Expected primary destinations, got: ${labels.join(' | ')}`).toContain('dashboard');
-    expect(joined).toContain('onboarding');
     expect(joined).toContain('payments');
     expect(joined).toContain('more');
   });
@@ -132,8 +135,8 @@ test.describe('Mobile bottom navigation', () => {
       expect(box, `Bottom nav item ${i} has no bounding box`).not.toBeNull();
       if (!box) continue;
       // Touch target ≥ 44px in both dimensions. The nav items are min-height:
-      // 56px (tall enough) and flex: 1 (so width is viewport/4 ≈ 90px on a
-      // 360px viewport). We assert height ≥ 44 strictly.
+      // 56px (tall enough) and flex: 1 (so width is viewport/3 ≈ 120px on a
+      // 360px viewport with 3 items). We assert height ≥ 44 strictly.
       expect(box.height, `Bottom nav item ${i} height=${box.height} < 44`).toBeGreaterThanOrEqual(44);
       expect(box.width, `Bottom nav item ${i} width=${box.width} < 44`).toBeGreaterThanOrEqual(44);
     }
@@ -178,10 +181,11 @@ test.describe('Mobile bottom navigation', () => {
     const sheet = page.locator('#mobile-more-sheet');
     await expect(sheet).toBeVisible();
 
-    // The sheet should list the onboarding sub-routes + a Log out button.
+    // The sheet should list the onboarding sub-routes (Profile, Risk, Broker)
+    // + a Log out button = 4 items.
     const items = sheet.locator('.mobile-sheet__item');
     const count = await items.count();
-    expect(count, 'Expected at least 3 secondary destinations + logout').toBeGreaterThanOrEqual(3);
+    expect(count, 'Expected 3 secondary destinations + logout').toBeGreaterThanOrEqual(4);
 
     const labels = (await items.allTextContents()).map((s) => s.trim().toLowerCase());
     const joined = labels.join(' | ');
@@ -227,6 +231,99 @@ test.describe('Mobile bottom navigation', () => {
     const overlay = page.locator('.mobile-sheet-overlay');
     await overlay.click({ position: { x: 5, y: 5 } });
     await expect(sheet).toHaveCount(0);
+  });
+
+  // ── Focus trap + body scroll lock (architect §9 — verified, not asserted) ───
+
+  test('More sheet traps focus: Tab cannot escape the sheet', async ({ page, browserName }) => {
+    const viewport = page.viewportSize();
+    if (!viewport || viewport.width > 700) {
+      test.skip();
+      return;
+    }
+    test.skip(browserName === 'webkit', 'Focus timing on webkit is flaky in CI');
+
+    // Use the class-based trigger selector to avoid ambiguity — the regex
+    // /more navigation/i also matches the close button's "Close more
+    // navigation" aria-label once the sheet is open.
+    const moreButton = page.locator('.mobile-bottom-nav__item[aria-label="More navigation"]');
+    await moreButton.click();
+    const sheet = page.locator('#mobile-more-sheet');
+    await expect(sheet).toBeVisible();
+
+    // The sheet's focusable elements (in tab order):
+    //   1. Close button (focused on open)
+    //   2. Profile link
+    //   3. Risk limits link
+    //   4. Broker link
+    //   5. Log out button
+    // Tabbing forward from the last focusable should wrap to the first (close).
+    const logoutButton = sheet.locator('.mobile-sheet__item--danger');
+    await logoutButton.focus();
+    await expect(logoutButton).toBeFocused();
+
+    await page.keyboard.press('Tab');
+
+    // Focus should wrap to the FIRST focusable element in the sheet (the close
+    // button), NOT escape to the More trigger or the page behind the overlay.
+    const closeButton = sheet.locator('.mobile-sheet__close');
+    await expect(closeButton).toBeFocused();
+    // The More trigger must NOT have focus (it's behind the overlay).
+    await expect(moreButton).not.toBeFocused();
+  });
+
+  test('More sheet traps focus: Shift+Tab wraps from first to last', async ({ page, browserName }) => {
+    const viewport = page.viewportSize();
+    if (!viewport || viewport.width > 700) {
+      test.skip();
+      return;
+    }
+    test.skip(browserName === 'webkit', 'Focus timing on webkit is flaky in CI');
+
+    const moreButton = page.locator('.mobile-bottom-nav__item[aria-label="More navigation"]');
+    await moreButton.click();
+    const sheet = page.locator('#mobile-more-sheet');
+    await expect(sheet).toBeVisible();
+
+    // The close button is the first focusable (focused on open via the focus
+    // trap effect). Shift+Tab should wrap to the LAST focusable (Log out).
+    const closeButton = sheet.locator('.mobile-sheet__close');
+    await expect(closeButton).toBeFocused();
+
+    await page.keyboard.press('Shift+Tab');
+
+    const logoutButton = sheet.locator('.mobile-sheet__item--danger');
+    await expect(logoutButton).toBeFocused();
+  });
+
+  test('More sheet locks body scroll while open and restores on close', async ({ page }) => {
+    const viewport = page.viewportSize();
+    if (!viewport || viewport.width > 700) {
+      test.skip();
+      return;
+    }
+
+    // Before opening: body scroll is not locked.
+    const overflowBefore = await page.evaluate(() => document.body.style.overflow);
+    expect(overflowBefore, 'Body overflow should not be hidden before sheet opens').not.toBe('hidden');
+
+    const moreButton = page.locator('.mobile-bottom-nav__item[aria-label="More navigation"]');
+    await moreButton.click();
+    const sheet = page.locator('#mobile-more-sheet');
+    await expect(sheet).toBeVisible();
+
+    // While open: body overflow is locked to 'hidden'.
+    const overflowDuring = await page.evaluate(() => document.body.style.overflow);
+    expect(overflowDuring, 'Body overflow must be hidden while sheet is open').toBe('hidden');
+
+    // Close via the close button (class selector — unambiguous).
+    await sheet.locator('.mobile-sheet__close').click();
+    await expect(sheet).toHaveCount(0);
+
+    // After close: body scroll lock is released (restored to the previous value,
+    // which was '' — empty string, not 'hidden').
+    const overflowAfter = await page.evaluate(() => document.body.style.overflow);
+    expect(overflowAfter, 'Body overflow must be restored after sheet closes').not.toBe('hidden');
   });
 
   // ── Layout invariants ───────────────────────────────────────────────────────
