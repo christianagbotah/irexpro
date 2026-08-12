@@ -5,6 +5,7 @@
  */
 
 import { ButtonHTMLAttributes, ReactNode } from 'react';
+import MobileBottomNav from '@/components/mobile-bottom-nav';
 
 // ── Button ───────────────────────────────────────────────────────────────────
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
@@ -175,6 +176,14 @@ export function DashboardShell({ user, onLogout, activeRoute, children }: Dashbo
         </header>
         <div className="dashboard-content">{children}</div>
       </div>
+      {/*
+        Sprint 31: mobile bottom navigation. Hidden on desktop via CSS
+        (.mobile-bottom-nav is display:none above 700px). Rendered here so
+        every authenticated page using DashboardShell gets the same mobile
+        nav without per-page wiring. The desktop sidebar remains the primary
+        navigation on tablet/desktop. Safe-area-aware (env(safe-area-inset-bottom)).
+      */}
+      <MobileBottomNav onLogout={onLogout} />
     </div>
   );
 }

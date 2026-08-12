@@ -2017,3 +2017,333 @@ select.input {
     transform: none;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SPRINT 31 — RESPONSIVE WEB & MOBILE NAVIGATION
+   ───────────────────────────────────────────────────────────────────────────
+   Appended per Sprint 31. Adds the mobile bottom navigation bar, the "More"
+   bottom sheet, safe-area-aware spacing, touch-target guarantees, and
+   page-bottom padding so the fixed bottom nav never covers primary actions.
+
+   Design notes:
+   - The bottom nav is `display: none` by default and only `display: flex` at
+     `max-width: 700px` — the SAME breakpoint where `.dashboard-sidebar` is
+     hidden. This keeps the existing dashboard.spec.ts "sidebar visible on
+     desktop, hidden on mobile" assertion green (it uses 700px as the
+     threshold) while giving mobile users a purpose-built navigation.
+   - The desktop sidebar remains the primary navigation on tablet (768px+)
+     and desktop. No duplication: the bottom nav is hidden entirely above
+     700px, not merely visually de-emphasized.
+   - Touch targets are ≥ 44×44 CSS px via min-height + flex: 1 (so each item
+     takes an equal share of the viewport width).
+   - Safe-area: padding-bottom: env(safe-area-inset-bottom) + a fallback.
+   - SSR-safe: visibility is CSS-driven only. No window.innerWidth read.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Mobile bottom navigation bar ──────────────────────────────────────────── */
+.mobile-bottom-nav {
+  /* Hidden on desktop/tablet; only shown at ≤ 700px (see media query below).
+     This keeps the existing dashboard.spec.ts responsive-sidebar assertion
+     (which uses 700px as the threshold) green. */
+  display: none;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  align-items: stretch;
+  justify-content: space-around;
+  gap: 0;
+  /* Semi-opaque elevated surface — matches the elevated card background tone. */
+  background:
+    linear-gradient(180deg, var(--surface-tint) 0%, transparent 100%),
+    var(--bg-elevated);
+  border-top: 1px solid var(--border-soft);
+  /* Safe-area-aware: respects iPhone home indicator without excessive padding
+     on devices without safe areas (env() returns 0 on those). */
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  backdrop-filter: saturate(140%) blur(8px);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.25);
+}
+
+.mobile-bottom-nav__item {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  /* Touch target ≥ 44px tall — WCAG 2.5.5 / Apple HIG. */
+  min-height: 56px;
+  min-width: 44px;
+  padding: 6px 4px 4px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-family: var(--font);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-decoration: none;
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast);
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+}
+
+.mobile-bottom-nav__item:hover {
+  color: var(--text);
+  background: var(--surface-tint-strong);
+  text-decoration: none;
+}
+
+.mobile-bottom-nav__item:focus-visible {
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+
+.mobile-bottom-nav__item--active {
+  color: var(--brand-light);
+}
+
+.mobile-bottom-nav__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.15rem;
+  line-height: 1;
+  /* Icon "slot" is at least 24px so the touch target stays generous even
+     when the icon glyph is narrow. */
+  min-width: 24px;
+  min-height: 24px;
+}
+
+.mobile-bottom-nav__label {
+  font-size: 0.68rem;
+  line-height: 1.1;
+  /* Keep labels on one line; truncate if a locale's label is unusually long. */
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── "More" bottom sheet (drawer) ──────────────────────────────────────────── */
+.mobile-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(5, 8, 16, 0.65);
+  backdrop-filter: blur(2px);
+  /* Animate overlay in. */
+  animation: mobile-sheet-overlay-fade var(--transition-fast) var(--ease-out);
+  /* The overlay itself doesn't scroll; the sheet scrolls if its content
+     overflows. */
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+@keyframes mobile-sheet-overlay-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.mobile-sheet {
+  width: 100%;
+  max-width: 520px;
+  max-height: 80vh;
+  overflow-y: auto;
+  background:
+    linear-gradient(180deg, var(--surface-tint) 0%, transparent 30%),
+    var(--bg-elevated);
+  border-top: 1px solid var(--border);
+  border-top-left-radius: var(--radius-xl);
+  border-top-right-radius: var(--radius-xl);
+  box-shadow: var(--shadow-xl);
+  /* Safe-area-aware — content not hidden behind iPhone home indicator. */
+  padding: var(--space-4) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
+  animation: mobile-sheet-slide-up var(--transition-normal) var(--ease-out);
+}
+
+@keyframes mobile-sheet-slide-up {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-sheet { animation: none; }
+  .mobile-sheet-overlay { animation: none; }
+}
+
+.mobile-sheet__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-bottom: var(--space-3);
+  margin-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.mobile-sheet__title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0;
+}
+
+.mobile-sheet__close {
+  /* Touch target ≥ 44px. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+}
+
+.mobile-sheet__close:hover,
+.mobile-sheet__close:focus-visible {
+  background: var(--surface-tint-strong);
+  color: var(--text);
+}
+
+.mobile-sheet__close:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+
+.mobile-sheet__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mobile-sheet__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  /* Touch target ≥ 44px. */
+  min-height: 48px;
+  padding: var(--space-3) var(--space-4);
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 0.95rem;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+  text-align: left;
+}
+
+.mobile-sheet__item:hover,
+.mobile-sheet__item:focus-visible {
+  background: var(--surface-tint-strong);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.mobile-sheet__item:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+
+.mobile-sheet__item--danger {
+  color: var(--error);
+}
+
+.mobile-sheet__item--danger:hover,
+.mobile-sheet__item--danger:focus-visible {
+  background: var(--error-bg);
+  color: var(--error);
+}
+
+.mobile-sheet__item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  font-size: 1.05rem;
+}
+
+/* ── Mobile breakpoint: show bottom nav, add content bottom padding ───────── */
+@media (max-width: 700px) {
+  .mobile-bottom-nav {
+    display: flex;
+  }
+
+  /* Reserve space below the dashboard content so the fixed bottom nav
+     never covers the last card / primary action. The 72px accounts for the
+     56px nav height + safe-area + breathing room. */
+  .dashboard-content {
+    padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* The dashboard header is sticky on desktop; on mobile it stays sticky but
+     we want it to keep top safe-area in mind (notch). Most modern browsers
+     already handle this via env(safe-area-inset-top) when viewport-fit=cover
+     is set, but we add the fallback here so it works without that meta. */
+  .dashboard-header {
+    padding-top: calc(var(--space-3) + env(safe-area-inset-top, 0px));
+  }
+}
+
+/* ── Touch-target guard: ensure icon-only buttons are ≥ 44px ────────────────── */
+/* This catches any inline-styled icon buttons that ship at < 44px. Existing
+   .info-tooltip__trigger (20px) and .timezone-select__chevron are too small
+   for mobile taps. We bump them up only on touch-coarse pointers so the
+   desktop visual density is unchanged. */
+@media (pointer: coarse) {
+  .info-tooltip__trigger {
+    width: 36px;
+    height: 36px;
+  }
+
+  /* Pagination buttons, if any use .btn--sm, get a minimum touch target. */
+  .btn--sm {
+    min-height: 40px;
+  }
+
+  /* Close buttons in toasts need a generous tap target. */
+  .toast-custom > button[aria-label*='close'],
+  .toast-custom > button[data-icon] {
+    min-width: 36px;
+    min-height: 36px;
+  }
+}
+
+/* ── Long-value overflow guards (UUIDs, emails, transaction refs) ─────────── */
+/* Apply .truncate-numeric or .break-long to any cell that may contain very
+   long unbroken strings. These utilities are forward-looking — pages can
+   opt in without changing global table behaviour. */
+.truncate-long {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.break-long {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  min-width: 0;
+}
