@@ -405,3 +405,45 @@ export interface ApiError {
   message: string;
   error?: string;
 }
+
+// ── Presentation: enum/label humanization ────────────────────────────────────
+//
+// Presentation-only utility for rendering backend enum values as human-readable
+// labels in the UI. This is PURELY presentational: it does NOT modify any enum
+// value, API payload, database value, CHECK constraint, role constant,
+// RolesGuard expectation, permission check, route guard, or test that validates
+// raw API/domain values.
+//
+// Example: SUPER_ADMIN → "Super Admin", PENDING_REVIEW → "Pending Review".
+//
+// Behavior:
+//   - null/undefined/empty → '' (safe for optional fields)
+//   - splits on underscores, then title-cases each word
+//   - preserves already-human-readable text (e.g. "Active" stays "Active")
+//   - does NOT alter identifiers; only the rendered label changes
+//
+// Why this lives here: every frontend app (web, admin, mobile) imports from
+// @irexpro/types for the enum/string-literal contracts. Co-locating the
+// presentation formatter avoids duplicated `.replace('_', ' ')` calls across
+// components and keeps a single authoritative humanization rule.
+/**
+ * Format a backend enum string as a human-readable label.
+ *
+ * `SUPER_ADMIN` → `Super Admin`
+ * `PENDING_REVIEW` → `Pending Review`
+ * `BROKER_CONNECTED` → `Broker Connected`
+ *
+ * Safely handles null/undefined/empty (returns ''). Preserves
+ * already-human-readable text. Does NOT alter the input value or any
+ * backend/domain enum.
+ */
+export function formatEnumLabel(value: string | null | undefined): string {
+  if (!value) return '';
+  // Split on underscores, trim, and title-case each token.
+  return value
+    .split('_')
+    .map((word) => word.trim())
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+}

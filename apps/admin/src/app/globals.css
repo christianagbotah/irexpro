@@ -42,17 +42,30 @@ a:hover { text-decoration: underline; }
 code { font-family: var(--font-mono); font-size: 0.9em; }
 
 /* Auth layout (admin) */
-/* Hotfix: overflow-x: hidden on the root container prevents the decorative
-   ::before circle (positioned at right: -10%) from creating horizontal scroll. */
-.auth-layout { display: flex; height: 100vh; overflow: hidden; overflow-x: hidden; }
+/* Post-Sprint-31 hotfix Issue D: the base rule sets ONLY flex layout. The
+   height: 100vh + overflow are set in the desktop media query below so the
+   minifier cannot extract mobile `height: auto` into a shared rule that
+   overrides desktop. The mobile override sets height: auto + overflow:
+   visible for natural document flow. */
+.auth-layout { display: flex; }
+/* Desktop: split-screen two-panel layout, full viewport height. */
+@media (min-width: 901px) {
+  .auth-layout { height: 100vh; overflow-x: hidden; overflow-y: hidden; }
+}
 .auth-layout__brand {
   flex: 1; display: flex; flex-direction: column; justify-content: center;
   padding: var(--space-12);
   background: linear-gradient(135deg, #0a0e1a 0%, #1a1205 50%, #0f0a02 100%);
-  /* Hotfix: overflow-x: hidden clips the decorative ::before circle that is
-     positioned at right: -10%. overflow-y: auto still allows vertical scroll
-     on short viewports. min-width: 0 lets the flex child shrink properly. */
-  position: relative; overflow-x: hidden; overflow-y: auto; height: 100vh; flex-shrink: 0; min-width: 0;
+  /* Post-Sprint-31 hotfix Issue D: height + overflow-y moved to desktop media
+     query to prevent the minifier from extracting mobile overflow into a
+     shared rule that overrides desktop. overflow-x: hidden stays in base to
+     clip the decorative ::before circle. */
+  position: relative; overflow-x: hidden; flex-shrink: 0; min-width: 0;
+}
+/* Desktop: the brand panel is height:100vh; allow vertical scroll if content
+   is taller than the viewport. Only applies at ≥ 901px. */
+@media (min-width: 901px) {
+  .auth-layout__brand { overflow-y: auto; height: 100vh; }
 }
 /* Hotfix: the decorative radial-gradient circle is positioned at right: -10%
    with a fixed 500px width. Because the parent now has overflow-x: hidden,
@@ -95,16 +108,21 @@ code { font-family: var(--font-mono); font-size: 0.9em; }
 }
 /* Hotfix: min-width: 0 on the form-side flex child prevents overflow when the
    form inputs are wider than the available space. */
-.auth-layout__form-side { flex: 1; display: flex; align-items: center; justify-content: center; padding: var(--space-8); height: 100vh; overflow-y: auto; overflow-x: hidden; min-width: 0; }
+.auth-layout__form-side { flex: 1; display: flex; align-items: center; justify-content: center; padding: var(--space-8); overflow-x: hidden; min-width: 0; }
+/* Desktop: form-side is height:100vh; allow vertical scroll. */
+@media (min-width: 901px) {
+  .auth-layout__form-side { height: 100vh; overflow-y: auto; }
+}
 .auth-layout__form-container { width: 100%; max-width: 440px; min-width: 0; }
 
 @media (max-width: 900px) {
-  .auth-layout { flex-direction: column; height: auto; min-height: 100vh; overflow: visible; overflow-x: hidden; }
-  /* Hotfix: keep overflow-x: hidden on mobile too — the decorative ::before
-     circle is positioned at right: -10% and would still escape on mobile. */
-  .auth-layout__brand { min-height: 140px; height: auto; padding: var(--space-6); flex-shrink: 0; overflow: visible; overflow-x: hidden; }
+  .auth-layout { flex-direction: column; min-height: 100vh; overflow-x: hidden; overflow-y: visible; }
+  /* Post-Sprint-31 hotfix Issue D: on mobile the brand panel flows at its
+     natural content height (no height set → default auto) and is NOT a
+     scroll container. overflow-y: visible via longhand. Page/body owns scroll. */
+  .auth-layout__brand { min-height: 140px; padding: var(--space-6); flex-shrink: 0; overflow-x: hidden; overflow-y: visible; }
   .auth-layout__features { display: none; }
-  .auth-layout__form-side { height: auto; overflow: visible; padding: var(--space-6); }
+  .auth-layout__form-side { overflow-x: hidden; overflow-y: visible; padding: var(--space-6); }
 }
 /* Hotfix: at very narrow widths, shrink the decorative circle and reduce
    headline size so nothing overflows on 360–390px phones. */
@@ -136,6 +154,80 @@ code { font-family: var(--font-mono); font-size: 0.9em; }
 .content h1 { margin-top: 0; }
 
 @media (max-width: 700px) { .admin-shell { grid-template-columns: 1fr; } .sidebar { display: none; } }
+
+/* ── Access denied / not-signed-in shell (post-Sprint-31 hotfix) ─────────────
+   When the admin is not authenticated or lacks the admin role, the sidebar
+   is NOT rendered. Previously these branches used `.admin-shell` (grid
+   240px 1fr) with an empty 240px column, leaving the content card
+   off-center on desktop. `.access-denied-shell` is a dedicated full-viewport
+   flex container that centers the card both horizontally and vertically
+   with a sensible max-width. The h1 moves inside the card so the whole
+   panel is balanced. Mobile keeps a stacked layout (top-aligned, not
+   vertically centered) so short viewports don't clip the card. */
+.access-denied-shell {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  background: var(--bg);
+}
+.access-denied-shell__content {
+  /* Override the default .content grid-scroll behaviour — this shell is a
+     flex child, not a grid column. Center the card within it. */
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 0;
+  overflow-y: visible;
+  display: flex;
+  justify-content: center;
+}
+.access-denied-card {
+  width: 100%;
+  /* max-width keeps the card readable on wide desktops instead of stretching. */
+  max-width: 520px;
+  /* Slightly larger than a normal card for visual weight befitting a
+     full-page access-denied state. */
+  padding: var(--space-8);
+  box-shadow: var(--shadow-md);
+  /* Allow the card to shrink below its content's intrinsic width so long
+     email/role <code> values wrap rather than overflow the viewport at
+     360px. (post-Sprint-31 hotfix Issue A.) */
+  min-width: 0;
+}
+/* Long email/role <code> values must wrap on narrow viewports, not overflow. */
+.access-denied-card code {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+/* The alert inside the access-denied card must also allow shrinking so the
+   <code> inside it can wrap rather than force the card wider than the viewport. */
+.access-denied-card .alert {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.access-denied-card__title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin-bottom: var(--space-4);
+  letter-spacing: -0.02em;
+}
+@media (max-width: 700px) {
+  /* On mobile, don't vertically center — top-align so short viewports
+     (360×800) don't clip the card behind the bottom nav or viewport top. */
+  .access-denied-shell {
+    align-items: flex-start;
+    padding: var(--space-4);
+    padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  }
+  .access-denied-card {
+    padding: var(--space-6);
+  }
+  .access-denied-card__title {
+    font-size: 1.4rem;
+  }
+}
 
 /* Components (shared pattern with web) */
 .btn {
@@ -554,6 +646,26 @@ h2 { font-size: 1.3rem; font-weight: 600; }
   .admin-users-grid {
     grid-template-columns: 1fr;
   }
+  /* On mobile, hide the desktop side-by-side onboarding pane — the
+     AdminUserOnboardingModal renders the same content in a dialog instead.
+     (Post-Sprint-31 hotfix Issue B.) */
+  .admin-users-pane--desktop-only {
+    display: none !important;
+  }
+}
+
+/* ── Mobile onboarding-status modal (post-Sprint-31 hotfix Issue B) ─────── */
+/* The modal reuses the .mobile-sheet / .mobile-sheet-overlay classes from
+   Sprint 31. The body needs its own scroll because the onboarding content
+   can be taller than the sheet max-height (80vh). */
+.admin-onboarding-modal {
+  max-width: 520px;
+  max-height: 85vh;
+}
+.admin-onboarding-modal__body {
+  /* The sheet already has overflow-y: auto; this ensures the content flows
+     inside the capped height. */
+  padding-bottom: var(--space-2);
 }
 
 /* ── Admin user card (mobile-friendly structured card per user row) ─────── */

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/auth-context';
 import { AuthLayout, Button, Input, Alert } from '@/components/ui';
+import { formatEnumLabel } from '@irexpro/types';
 
 /**
  * Admin login page — public, NO sidebar.
@@ -47,12 +48,13 @@ export default function AdminLoginPage() {
 
   // Signed in but NOT an admin — show access denied on the login page.
   if (user && !hasAdminRole) {
+    const humanRoles = (user.roles ?? []).map((r) => formatEnumLabel(r)).join(', ') || 'none';
     return (
       <AuthLayout title="Access denied" subtitle="Your account does not have admin access">
         <Alert variant="error">
           You are signed in as <code>{user.email ?? user.phone ?? 'unknown'}</code> with roles:{' '}
-          <code>{user.roles?.join(', ') || 'none'}</code>. Admin access requires the ADMIN or
-          SUPER_ADMIN role.
+          <code>{humanRoles}</code>. Admin access requires the Admin or
+          Super Admin role.
         </Alert>
         <Button
           variant="secondary"
@@ -121,7 +123,7 @@ export default function AdminLoginPage() {
         </Button>
       </form>
       <Alert variant="info">
-        Admin access requires ADMIN or SUPER_ADMIN role. The backend enforces RBAC via RolesGuard.
+        Admin access requires the Admin or Super Admin role. The backend enforces RBAC via RolesGuard.
       </Alert>
     </AuthLayout>
   );

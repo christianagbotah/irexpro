@@ -29,6 +29,11 @@ import {
 test.describe('Admin Users page responsiveness', () => {
   test.beforeEach(async ({ page }) => {
     await gotoAsAdmin(page, '/admin/users', { heading: /^users$/i });
+    // Wait for the first user card + give the isMobile state effect a tick to
+    // settle (post-Sprint-31 hotfix: the Users page now uses an isMobile flag
+    // to decide modal vs desktop pane, set via useEffect after mount).
+    await page.locator('.admin-user-card').first().waitFor({ timeout: 5000 });
+    await page.waitForTimeout(200);
   });
 
   // ── Layout structure (architect §6 — actual DOM) ───────────────────────────
@@ -124,14 +129,25 @@ test.describe('Admin Users page responsiveness', () => {
   // ── Card selection works (actions remain accessible) ───────────────────────
 
   test('clicking a user card loads onboarding status detail', async ({ page }) => {
+    const viewport = page.viewportSize();
+    // On mobile, wait for the desktop pane to be hidden (confirms the
+    // isMobile effect has run) before clicking — otherwise the click sets
+    // selectedUserId but the modal (open = isMobile && selected) doesn't
+    // render yet because isMobile is still false (SSR initial state).
+    if (viewport && viewport.width <= 700) {
+      await expect(page.locator('.admin-users-pane--desktop-only')).toBeHidden({ timeout: 5000 });
+    }
     const firstCard = page.locator('.admin-user-card').first();
     await firstCard.click();
 
-    // The onboarding-status card should now populate (the "Select a user"
-    // empty state disappears and the "Can start trading:" label appears).
-    // Use .first() + exact string to avoid matching both the <strong> label
-    // and the success alert ("...can start trading.") that also contains it.
-    await expect(page.getByText('Can start trading:').first()).toBeVisible({ timeout: 5000 });
+    // After clicking, the onboarding-status content should appear. On mobile
+    // (≤ 700px) it renders inside the AdminUserOnboardingModal; on desktop
+    // it renders in the side-by-side pane. Either way, the "Can start
+    // trading:" label should become visible.
+    // NOTE: on mobile the desktop pane's <strong>Can start trading:</strong>
+    // is in the DOM but hidden (display:none). Use the :visible pseudo-class
+    // to pick the visible copy (the modal's on mobile, the pane's on desktop).
+    await expect(page.locator('strong:has-text("Can start trading:")').first()).toBeVisible({ timeout: 10000 });
   });
 
   // ── Touch targets on mobile (WCAG 2.5.5) ────────────────────────────────────

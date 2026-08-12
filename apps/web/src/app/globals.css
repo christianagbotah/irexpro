@@ -79,13 +79,22 @@ a:hover { text-decoration: underline; }
 code { font-family: var(--font-mono); font-size: 0.9em; }
 
 /* ── Auth Layout (split-screen login/register) ──────────────────────────────── */
-/* Sprint 28 amendment: overflow-x: hidden prevents the decorative ::before
-   circle (right: -10%) from creating horizontal scroll — same fix as admin. */
+/* Post-Sprint-31 hotfix Issue D: the base rule sets ONLY flex layout (no
+   height, no overflow). Desktop sets height: 100vh + overflow in a
+   min-width media query; mobile sets flex-direction: column + overflow:
+   visible in a max-width media query. This prevents the CSS minifier from
+   extracting mobile `height: auto` / `overflow-y: visible` into a shared
+   non-media rule (`.auth-layout, .auth-layout__brand { ... }`) that would
+   override the desktop `height: 100vh` at large viewports. With height
+   absent from the base rule, mobile inherits the default `height: auto` and
+   desktop gets `height: 100vh` from the media query (which the minifier
+   cannot extract from). */
 .auth-layout {
   display: flex;
-  height: 100vh;
-  overflow: hidden;
-  overflow-x: hidden;
+}
+/* Desktop: split-screen two-panel layout, full viewport height. */
+@media (min-width: 901px) {
+  .auth-layout { height: 100vh; overflow-x: hidden; overflow-y: hidden; }
 }
 
 .auth-layout__brand {
@@ -96,12 +105,23 @@ code { font-family: var(--font-mono); font-size: 0.9em; }
   padding: var(--space-12);
   background: linear-gradient(135deg, #0a0e1a 0%, #0d2520 50%, #0a1a18 100%);
   position: relative;
-  /* Sprint 28 amendment: clip decorative ::before; min-width:0 lets flex child shrink */
+  /* Post-Sprint-31 hotfix Issue D: overflow-y is set ONLY in the desktop
+     media query below. Previously overflow-y: auto was in this base rule, and
+     the mobile override's overflow-y: visible did not reliably override it
+     (browsers retained `auto`), producing an unnecessary internal vertical
+     scrollbar on mobile even when content fit. Now the base rule has NO
+     overflow-y, so mobile inherits the default (visible) and the page/body
+     owns vertical scrolling. Desktop sets overflow-y: auto + height:100vh via
+     min-width media query so the panel can scroll if content is tall. */
   overflow-x: hidden;
-  overflow-y: auto;
-  height: 100vh;
   flex-shrink: 0;
   min-width: 0;
+}
+/* Desktop: the brand panel is height:100vh; allow vertical scroll if content
+   is taller than the viewport. Only applies at ≥ 901px (above the mobile
+   breakpoint). */
+@media (min-width: 901px) {
+  .auth-layout__brand { overflow-y: auto; height: 100vh; }
 }
 
 /* Sprint 28 amendment: max-width + pointer-events for safety; parent clips */
@@ -202,10 +222,15 @@ code { font-family: var(--font-mono); font-size: 0.9em; }
   align-items: center;
   justify-content: center;
   padding: var(--space-8);
-  height: 100vh;
-  overflow-y: auto;
+  /* Post-Sprint-31 hotfix Issue D: height + overflow-y moved to desktop media
+     query to prevent the minifier from extracting mobile overflow into a
+     shared rule that overrides desktop. */
   overflow-x: hidden;
   min-width: 0;
+}
+/* Desktop: form-side is height:100vh; allow vertical scroll if content is tall. */
+@media (min-width: 901px) {
+  .auth-layout__form-side { height: 100vh; overflow-y: auto; }
 }
 
 .auth-layout__form-container {
@@ -215,13 +240,16 @@ code { font-family: var(--font-mono); font-size: 0.9em; }
 }
 
 @media (max-width: 900px) {
-  .auth-layout { flex-direction: column; height: auto; min-height: 100vh; overflow: visible; overflow-x: hidden; }
-  /* Sprint 28 amendment: keep overflow-x: hidden on mobile too */
-  .auth-layout__brand { min-height: 140px; height: auto; padding: var(--space-6); flex-shrink: 0; overflow: visible; overflow-x: hidden; }
+  .auth-layout { flex-direction: column; min-height: 100vh; overflow-x: hidden; overflow-y: visible; }
+  /* Post-Sprint-31 hotfix Issue D: on mobile the brand panel flows at its
+     natural content height (no height set → default auto) and is NOT a
+     scroll container. overflow-y: visible is set explicitly via longhand.
+     The page/body owns vertical scrolling. */
+  .auth-layout__brand { min-height: 140px; padding: var(--space-6); flex-shrink: 0; overflow-x: hidden; overflow-y: visible; }
   .auth-layout__features { display: none; }
   .auth-layout__headline { font-size: 1.2rem; }
   .auth-layout__subheadline { font-size: 0.9rem; }
-  .auth-layout__form-side { height: auto; overflow: visible; padding: var(--space-6); }
+  .auth-layout__form-side { overflow-x: hidden; overflow-y: visible; padding: var(--space-6); }
 }
 /* Sprint 28 amendment: shrink decorative circle + reduce headline on phones */
 @media (max-width: 480px) {
