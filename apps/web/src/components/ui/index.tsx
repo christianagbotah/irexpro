@@ -4,7 +4,9 @@
  * These are simple functional components — no state library needed.
  */
 
-import { ButtonHTMLAttributes, ReactNode } from 'react';
+import { ButtonHTMLAttributes, ComponentType, ReactNode } from 'react';
+import MobileBottomNav from '@/components/mobile-bottom-nav';
+import { DashboardIcon, PaymentsIcon } from '@/components/icons';
 
 // ── Button ───────────────────────────────────────────────────────────────────
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
@@ -140,8 +142,8 @@ interface DashboardShellProps {
 
 export function DashboardShell({ user, onLogout, activeRoute, children }: DashboardShellProps) {
   const navItems = [
-    { href: '/dashboard', label: 'Dashboard', icon: '📊' },
-    { href: '/payments/success', label: 'Payments', icon: '💳' },
+    { href: '/dashboard', label: 'Dashboard', Icon: DashboardIcon },
+    { href: '/payments/success', label: 'Payments', Icon: PaymentsIcon },
   ];
 
   return (
@@ -152,11 +154,14 @@ export function DashboardShell({ user, onLogout, activeRoute, children }: Dashbo
           iRexPro
         </div>
         <nav className="dashboard-sidebar__nav">
-          {navItems.map((item) => (
-            <a key={item.href} href={item.href} className={activeRoute === item.href ? 'active' : ''}>
-              <span>{item.icon}</span> {item.label}
-            </a>
-          ))}
+          {navItems.map((item) => {
+            const { Icon } = item;
+            return (
+              <a key={item.href} href={item.href} className={activeRoute === item.href ? 'active' : ''}>
+                <span aria-hidden="true"><Icon size={18} /></span> {item.label}
+              </a>
+            );
+          })}
         </nav>
         {user && (
           <div className="dashboard-sidebar__user">
@@ -175,6 +180,14 @@ export function DashboardShell({ user, onLogout, activeRoute, children }: Dashbo
         </header>
         <div className="dashboard-content">{children}</div>
       </div>
+      {/*
+        Sprint 31: mobile bottom navigation. Hidden on desktop via CSS
+        (.mobile-bottom-nav is display:none above 700px). Rendered here so
+        every authenticated page using DashboardShell gets the same mobile
+        nav without per-page wiring. The desktop sidebar remains the primary
+        navigation on tablet/desktop. Safe-area-aware (env(safe-area-inset-bottom)).
+      */}
+      <MobileBottomNav onLogout={onLogout} />
     </div>
   );
 }

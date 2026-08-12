@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useAuth } from '@/context/auth-context';
 import AdminNav, { AdminSidebarUser } from '@/components/admin-nav';
+import AdminMobileBottomNav from '@/components/mobile-bottom-nav';
 import { Alert, Button } from '@/components/ui';
 
 /**
@@ -123,6 +124,14 @@ export default function AdminProtectedLayout({ children }: { children: React.Rea
         <AdminSidebarUser />
       </aside>
       <main className="content">{children}</main>
+      {/*
+        Sprint 31: admin mobile bottom navigation. Hidden on desktop/tablet
+        via CSS (.mobile-bottom-nav is display:none above 700px). Rendered
+        here so every authenticated admin page gets the same mobile nav
+        without per-page wiring. The desktop sidebar remains the primary
+        navigation on tablet/desktop. Safe-area-aware.
+      */}
+      <AdminMobileBottomNav onLogout={logout} />
     </div>
   );
 }

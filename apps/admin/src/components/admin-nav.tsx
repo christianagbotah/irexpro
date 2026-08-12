@@ -4,9 +4,24 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/context/auth-context';
 import { Button } from '@/components/ui';
+import type { ComponentType } from 'react';
+import type { IconProps } from '@/components/icons';
+import {
+  DashboardIcon,
+  UsersIcon,
+  SubscriptionsIcon,
+  PaymentsIcon,
+  PlugIcon,
+  AuditIcon,
+} from '@/components/icons';
 
 /**
- * Admin navigation items.
+ * Admin desktop sidebar navigation items.
+ *
+ * Sprint 31 remediation: emoji icons replaced with professional SVG icons
+ * (apps/admin/src/components/icons.tsx) for deterministic cross-platform
+ * rendering. The mobile bottom nav (apps/admin/src/components/mobile-bottom-nav.tsx)
+ * uses the same icon set.
  *
  * Hotfix: these are only rendered inside the (protected) layout, which already
  * gates on hasAdminRole. But AdminNav also checks hasAdminRole as defense in
@@ -15,13 +30,13 @@ import { Button } from '@/components/ui';
  * The backend RolesGuard is the real security boundary. This visual hiding is
  * a UX concern, not a security control.
  */
-const NAV = [
-  { href: '/admin/dashboard', label: 'Dashboard', icon: '📊' },
-  { href: '/admin/users', label: 'Users', icon: '👥' },
-  { href: '/admin/subscriptions', label: 'Subscriptions', icon: '📋' },
-  { href: '/admin/payments', label: 'Payments', icon: '💳' },
-  { href: '/admin/brokers', label: 'Brokers', icon: '🔌' },
-  { href: '/admin/audit', label: 'Audit Log', icon: '📜' },
+const NAV: Array<{ href: string; label: string; Icon: ComponentType<IconProps> }> = [
+  { href: '/admin/dashboard', label: 'Dashboard', Icon: DashboardIcon },
+  { href: '/admin/users', label: 'Users', Icon: UsersIcon },
+  { href: '/admin/subscriptions', label: 'Subscriptions', Icon: SubscriptionsIcon },
+  { href: '/admin/payments', label: 'Payments', Icon: PaymentsIcon },
+  { href: '/admin/brokers', label: 'Brokers', Icon: PlugIcon },
+  { href: '/admin/audit', label: 'Audit Log', Icon: AuditIcon },
 ];
 
 export default function AdminNav() {
@@ -34,16 +49,19 @@ export default function AdminNav() {
 
   return (
     <nav aria-label="Admin navigation">
-      {NAV.map((item) => (
-        <Link
-          key={item.href}
-          href={item.href}
-          className={pathname === item.href ? 'active' : ''}
-          aria-current={pathname === item.href ? 'page' : undefined}
-        >
-          <span aria-hidden="true">{item.icon}</span> {item.label}
-        </Link>
-      ))}
+      {NAV.map((item) => {
+        const { Icon } = item;
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            className={pathname === item.href ? 'active' : ''}
+            aria-current={pathname === item.href ? 'page' : undefined}
+          >
+            <span aria-hidden="true"><Icon size={18} /></span> {item.label}
+          </Link>
+        );
+      })}
     </nav>
   );
 }
