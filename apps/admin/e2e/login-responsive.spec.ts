@@ -29,16 +29,23 @@ test.describe('Admin login — descriptive panel no internal scrollbar', () => {
     const metrics = await brand.evaluate((el) => {
       const s = getComputedStyle(el);
       return {
+        overflowX: s.overflowX,
         overflowY: s.overflowY,
         scrollHeight: el.scrollHeight,
         clientHeight: el.clientHeight,
       };
     });
+    // Per CSS Overflow Module Level 3, when one axis is `visible` and the
+    // other is `hidden`/`scroll`/`auto`, the `visible` value computes to
+    // `auto` — creating a nested scroll container with a scrollbar.
+    // The fix uses `overflow-x: clip` (NOT hidden) so that `overflow-y: visible`
+    // computes as `visible` (not `auto`). With `overflow-y: visible`, NO
+    // scrollbar is rendered even if content overflows the element's box.
+    expect(metrics.overflowX, `brand overflow-x should be clip on mobile, got ${metrics.overflowX}`).toBe('clip');
     expect(metrics.overflowY, `brand overflow-y should be visible on mobile, got ${metrics.overflowY}`).toBe('visible');
-    expect(
-      metrics.scrollHeight,
-      `brand scrollHeight=${metrics.scrollHeight} should be ≤ clientHeight=${metrics.clientHeight} (no internal scroll)`,
-    ).toBeLessThanOrEqual(metrics.clientHeight + 2);
+    // NOTE: scrollHeight > clientHeight is EXPECTED with overflow-y: visible —
+    // content spills out (no scrollbar). The page/body owns vertical scrolling.
+    // The overflow-y:visible assertion is the correct behavioral guarantee.
   });
 
   test('login form is visible and usable', async ({ page }) => {

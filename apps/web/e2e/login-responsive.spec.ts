@@ -42,16 +42,30 @@ test.describe('Web login — descriptive panel no internal scrollbar', () => {
     const metrics = await brand.evaluate((el) => {
       const s = getComputedStyle(el);
       return {
+        overflowX: s.overflowX,
         overflowY: s.overflowY,
         scrollHeight: el.scrollHeight,
         clientHeight: el.clientHeight,
       };
     });
+    // Per CSS Overflow Module Level 3, when one axis is `visible` and the
+    // other is `hidden`/`scroll`/`auto`, the `visible` value computes to
+    // `auto` — creating a nested scroll container with a scrollbar.
+    // The fix uses `overflow-x: clip` (NOT hidden) so that `overflow-y: visible`
+    // computes as `visible` (not `auto`). With `overflow-y: visible`, NO
+    // scrollbar is rendered even if content overflows the element's box
+    // (content spills out and the page/body owns vertical scrolling).
+    // Assert the fix is applied: overflow-x must be `clip` (not `hidden`).
+    expect(metrics.overflowX, `brand overflow-x should be clip on mobile, got ${metrics.overflowX}`).toBe('clip');
+    // overflow-y must be `visible` (not `auto`) — `auto` would create a
+    // nested scroll container with a scrollbar.
     expect(metrics.overflowY, `brand overflow-y should be visible on mobile, got ${metrics.overflowY}`).toBe('visible');
-    expect(
-      metrics.scrollHeight,
-      `brand scrollHeight=${metrics.scrollHeight} should be ≤ clientHeight=${metrics.clientHeight} (no internal scroll)`,
-    ).toBeLessThanOrEqual(metrics.clientHeight + 2);
+    // NOTE: scrollHeight > clientHeight is EXPECTED with overflow-y: visible —
+    // it means content overflows the element's box and spills out (no
+    // scrollbar). The page/body owns vertical scrolling. We do NOT assert
+    // scrollHeight <= clientHeight because that would incorrectly fail for
+    // valid visible overflow. The overflow-y:visible assertion above is the
+    // correct behavioral guarantee that no nested scrollbar exists.
   });
 
   test('login form is visible and usable', async ({ page }) => {

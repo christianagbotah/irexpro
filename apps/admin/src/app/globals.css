@@ -42,11 +42,17 @@ a:hover { text-decoration: underline; }
 code { font-family: var(--font-mono); font-size: 0.9em; }
 
 /* Auth layout (admin) */
-/* Post-Sprint-31 hotfix Issue D: the base rule sets ONLY flex layout. The
-   height: 100vh + overflow are set in the desktop media query below so the
-   minifier cannot extract mobile `height: auto` into a shared rule that
-   overrides desktop. The mobile override sets height: auto + overflow:
-   visible for natural document flow. */
+/* Post-Sprint-31 hotfix Issue D (CI remediation): the previous fix used
+   `overflow-x: hidden` on the brand/form panels. Per CSS Overflow Module
+   Level 3, when one axis is `visible` and the other is `hidden`, the
+   `visible` value computes to `auto` — creating an unwanted nested vertical
+   scroll container on mobile. The fix: use `overflow-x: clip` instead of
+   `overflow-x: hidden`. `clip` clips horizontal overflow (the decorative
+   ::before circle) but does NOT force `overflow-y: visible` to compute as
+   `auto`. Verified empirically via Playwright computed-style inspection.
+   The base rule sets ONLY flex layout (no height, no overflow-y). Desktop
+   sets height: 100vh + overflow in a min-width media query; mobile sets
+   flex-direction: column + overflow-y: visible in a max-width media query. */
 .auth-layout { display: flex; }
 /* Desktop: split-screen two-panel layout, full viewport height. */
 @media (min-width: 901px) {
@@ -56,11 +62,12 @@ code { font-family: var(--font-mono); font-size: 0.9em; }
   flex: 1; display: flex; flex-direction: column; justify-content: center;
   padding: var(--space-12);
   background: linear-gradient(135deg, #0a0e1a 0%, #1a1205 50%, #0f0a02 100%);
-  /* Post-Sprint-31 hotfix Issue D: height + overflow-y moved to desktop media
-     query to prevent the minifier from extracting mobile overflow into a
-     shared rule that overrides desktop. overflow-x: hidden stays in base to
-     clip the decorative ::before circle. */
-  position: relative; overflow-x: hidden; flex-shrink: 0; min-width: 0;
+  /* Post-Sprint-31 hotfix Issue D: overflow-x: clip (NOT hidden) so that the
+     mobile overflow-y: visible does NOT compute to `auto` (per CSS Overflow
+     Module Level 3, `visible` computes to `auto` when the other axis is
+     `hidden`/`scroll`/`auto`, but NOT when it's `clip`). Desktop sets
+     overflow-y: auto + height:100vh via min-width media query. */
+  position: relative; overflow-x: clip; flex-shrink: 0; min-width: 0;
 }
 /* Desktop: the brand panel is height:100vh; allow vertical scroll if content
    is taller than the viewport. Only applies at ≥ 901px. */
@@ -106,9 +113,9 @@ code { font-family: var(--font-mono); font-size: 0.9em; }
   width: 22px; height: 22px; background: var(--success-bg); color: var(--success);
   border-radius: var(--radius-full); font-size: 0.75rem; font-weight: 700; flex-shrink: 0;
 }
-/* Hotfix: min-width: 0 on the form-side flex child prevents overflow when the
-   form inputs are wider than the available space. */
-.auth-layout__form-side { flex: 1; display: flex; align-items: center; justify-content: center; padding: var(--space-8); overflow-x: hidden; min-width: 0; }
+/* Post-Sprint-31 hotfix Issue D: overflow-x: clip (NOT hidden) on form side
+   so mobile overflow-y: visible does not compute to `auto`. */
+.auth-layout__form-side { flex: 1; display: flex; align-items: center; justify-content: center; padding: var(--space-8); overflow-x: clip; min-width: 0; }
 /* Desktop: form-side is height:100vh; allow vertical scroll. */
 @media (min-width: 901px) {
   .auth-layout__form-side { height: 100vh; overflow-y: auto; }
@@ -116,13 +123,15 @@ code { font-family: var(--font-mono); font-size: 0.9em; }
 .auth-layout__form-container { width: 100%; max-width: 440px; min-width: 0; }
 
 @media (max-width: 900px) {
-  .auth-layout { flex-direction: column; min-height: 100vh; overflow-x: hidden; overflow-y: visible; }
+  .auth-layout { flex-direction: column; min-height: 100vh; overflow-x: clip; overflow-y: visible; }
   /* Post-Sprint-31 hotfix Issue D: on mobile the brand panel flows at its
      natural content height (no height set → default auto) and is NOT a
-     scroll container. overflow-y: visible via longhand. Page/body owns scroll. */
-  .auth-layout__brand { min-height: 140px; padding: var(--space-6); flex-shrink: 0; overflow-x: hidden; overflow-y: visible; }
+     scroll container. overflow-x: clip + overflow-y: visible (both longhand).
+     Per CSS Overflow Module Level 3, `clip` does NOT force `visible` to
+     compute as `auto` (unlike `hidden`). Page/body owns vertical scrolling. */
+  .auth-layout__brand { min-height: 140px; padding: var(--space-6); flex-shrink: 0; overflow-x: clip; overflow-y: visible; }
   .auth-layout__features { display: none; }
-  .auth-layout__form-side { overflow-x: hidden; overflow-y: visible; padding: var(--space-6); }
+  .auth-layout__form-side { overflow-x: clip; overflow-y: visible; padding: var(--space-6); }
 }
 /* Hotfix: at very narrow widths, shrink the decorative circle and reduce
    headline size so nothing overflows on 360–390px phones. */
