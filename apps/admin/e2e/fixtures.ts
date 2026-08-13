@@ -249,3 +249,67 @@ export async function gotoAsAdmin(
     await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible();
   }
 }
+
+// ── Non-admin (access-denied) fixture ────────────────────────────────────────
+
+/**
+ * Mock non-admin user with a SUPER_ADMIN-lacking role set (USER + SUPER_ADMIN
+ * mixed to exercise the humanization: "User, Super Admin" would render, but
+ * here we use a plain USER role to trigger the access-denied branch). The
+ * backend RolesGuard is the real security boundary; this only exercises the
+ * frontend presentation.
+ *
+ * For the access-denied branch we use roles: ['USER'] so hasAdminRole is
+ * false and the (protected) layout renders the access-denied shell.
+ */
+export const mockNonAdminUser: AuthUser = {
+  id: 'usr_nonadmin_00000000-0000-0000-0000-000000000001',
+  email: 'regular.user.with.a.long.email@example.com',
+  phone: '+233249999999',
+  firstName: 'Regular',
+  lastName: 'User',
+  countryCode: 'GH',
+  status: 'ACTIVE',
+  roles: ['USER'],
+  mfaEnabled: false,
+  lastLoginAt: '2025-01-15T10:00:00.000Z',
+  createdAt: '2024-09-01T08:00:00.000Z',
+};
+
+/**
+ * Intercept auth APIs with a NON-admin user so the (protected) layout's
+ * hasAdminRole guard fails and renders the access-denied shell. Used by
+ * the access-denied responsive tests.
+ */
+export async function setupNonAdminAuthInterception(page: Page): Promise<void> {
+  await page.route('**/api/v1/**', (route) => {
+    const apiPath = extractApiPath(route.request().url());
+    if (apiPath === 'auth/refresh') {
+      return route.fulfill(jsonFulfill(200, mockAdminTokens));
+    }
+    if (apiPath === 'auth/me') {
+      return route.fulfill(jsonFulfill(200, mockNonAdminUser));
+    }
+    if (apiPath === 'auth/logout') {
+      return route.fulfill(jsonFulfill(200, { message: 'Logged out' }));
+    }
+    return route.fulfill(jsonFulfill(200, {}));
+  });
+  await page.route('**/favicon.ico', (route) => route.fulfill({ status: 204, body: '' }));
+}
+
+/**
+ * Navigate to an admin page as an authenticated NON-admin (roles: ['USER'])
+ * so the access-denied shell renders. Returns once the "Access denied"
+ * heading is visible.
+ */
+export async function gotoAsNonAdmin(
+  page: Page,
+  path: string,
+): Promise<void> {
+  await setupErrorCollectors(page);
+  await setupNonAdminAuthInterception(page);
+  await page.goto(path);
+  await expect(page.getByText('Restoring session…')).toHaveCount(0);
+  await expect(page.getByRole('heading', { level: 1, name: /access denied/i })).toBeVisible();
+}

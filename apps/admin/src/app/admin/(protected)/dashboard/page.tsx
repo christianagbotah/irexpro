@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useAuth } from '@/context/auth-context';
 import { Card, EmptyState } from '@/components/ui';
+import { formatEnumLabel } from '@irexpro/types';
 
 /**
  * Admin dashboard — rendered inside the (protected) layout.
@@ -13,13 +14,14 @@ import { Card, EmptyState } from '@/components/ui';
  */
 export default function AdminDashboardPage() {
   const { user } = useAuth();
+  const humanStatus = user?.status ? formatEnumLabel(user.status) : null;
 
   return (
     <>
       <h1>Admin dashboard</h1>
       <p className="muted" style={{ marginBottom: '1.5rem' }}>
         Signed in as <code>{user?.email ?? user?.phone}</code>
-        {user?.status ? <> (status: {user.status})</> : null}
+        {humanStatus ? <> (status: {humanStatus})</> : null}
       </p>
 
       <div className="stat-grid">

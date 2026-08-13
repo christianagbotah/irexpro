@@ -1,34 +1,46 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '@/context/auth-context';
 import { Card, Badge, Alert, EmptyState } from '@/components/ui';
 import { api } from '@/lib/api';
+import { formatEnumLabel } from '@irexpro/types';
 import type { OnboardingStatus } from '@irexpro/types';
+import AdminUserOnboardingModal, {
+  OnboardingStatusContent,
+  type AdminUserLite,
+} from '@/components/admin-user-onboarding-modal';
 
 /**
- * Admin users list — Sprint 29 + Sprint 31 responsive hardening.
+ * Admin users list — Sprint 29 + Sprint 31 responsive + post-Sprint-31 hotfix.
  *
- * Shows all users with onboarding status badges.
- * Admins can click a user card to see their onboarding detail.
- * Broker credentials are NEVER shown.
+ * Shows all users with onboarding status badges. Admins can click a user card
+ * to see their onboarding detail. Broker credentials are NEVER shown.
  *
- * ── Sprint 31 responsive transformation ────────────────────────────────────
- * Previously the users list rendered a 2-column grid (`gridTemplateColumns:
- * '1fr 1fr'`) of inline-styled buttons that did NOT collapse on mobile,
- * producing cramped two-column rows on phones.
+ * ── Post-Sprint-31 hotfix (Issue B) ────────────────────────────────────────
+ * Previously, selecting a user rendered the Onboarding Status detail in a
+ * second column beneath/beside the users list. On mobile this meant the
+ * detail appeared BENEATH the entire list, forcing the admin to scroll to
+ * the bottom of the page to review the selected user.
  *
- * The page now uses:
- *   - `.admin-users-grid` (1fr 1fr on desktop, 1fr on mobile via @media)
- *   - `.admin-user-card` structured cards with: identity (name + contact),
- *     meta row (country / trading experience / created date), status badge.
+ * Now: ADAPTIVE presentation sharing one state/fetch.
+ *   - Desktop (≥ 701px): side-by-side Users list + Onboarding detail pane
+ *     (unchanged — no desktop regression).
+ *   - Mobile (≤ 700px): users list; selecting a user opens the Onboarding
+ *     Status in an accessible modal/sheet. The users list stays at its
+ *     current scroll position; closing the modal restores focus to the
+ *     selected card so the admin can immediately pick another user.
  *
- * The whole card remains the clickable trigger (preserving the existing
- * selection semantics). All data, API calls, and authorization unchanged.
+ * The onboarding-status CONTENT (OnboardingStatusContent) is shared between
+ * the desktop pane and the mobile modal — zero duplication of data
+ * presentation. selectedUserId, selectedOnboarding, onboardingLoading, and
+ * error are owned by this page and passed as props to both presentations.
  *
- * On mobile (< 700px) the grid collapses to a single column and each card
- * spans the full viewport width with a clear hierarchy:
- *   identity → contact → meta → status
+ * ── Label humanization (Issue C) ────────────────────────────────────────────
+ * user.status, brokerConnectionStatus, and missingSteps are humanized via
+ * formatEnumLabel (SUPER_ADMIN → "Super Admin", CONNECTED → "Connected",
+ * PROFILE_INCOMPLETE → "Profile Incomplete"). The backend enum values are
+ * unchanged; only the rendered label changes.
  */
 interface AdminUser {
   id: string;
@@ -47,28 +59,21 @@ interface AdminUser {
 /** Human-readable label for the tradingExperienceLevel enum (or null). */
 function experienceLabel(level: string | null): string | null {
   if (!level) return null;
-  // The backend enum is BEGINNER / INTERMEDIATE / ADVANCED / EXPERT — surface
-  // a friendlier label without changing the underlying value.
-  const map: Record<string, string> = {
-    BEGINNER: 'Beginner',
-    INTERMEDIATE: 'Intermediate',
-    ADVANCED: 'Advanced',
-    EXPERT: 'Expert',
-  };
-  return map[level] ?? level;
+  return formatEnumLabel(level);
 }
 
 /** Format the ISO createdAt as a short date (YYYY-MM-DD) for the meta row. */
 function formatDate(iso: string): string {
-  // Defensive: if the backend returns a non-ISO string, show it as-is.
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  // YYYY-MM-DD — locale-independent, sortable, short.
   const yyyy = d.getUTCFullYear();
   const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
   const dd = String(d.getUTCDate()).padStart(2, '0');
   return `${yyyy}-${mm}-${dd}`;
 }
+
+/** Mobile breakpoint — matches the CSS @media (max-width: 700px). */
+const MOBILE_BREAKPOINT = 700;
 
 export default function AdminUsersPage() {
   const { hasAdminRole } = useAuth();
@@ -78,6 +83,24 @@ export default function AdminUsersPage() {
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [selectedOnboarding, setSelectedOnboarding] = useState<OnboardingStatus | null>(null);
   const [onboardingLoading, setOnboardingLoading] = useState(false);
+  const [onboardingError, setOnboardingError] = useState<string | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Ref to the currently-selected user card, so the mobile modal can restore
+  // focus to it after close.
+  const selectedCardRef = useRef<HTMLButtonElement | null>(null);
+
+  // Track viewport width to decide desktop-pane vs mobile-modal.
+  // SSR-safe: initial state is false (desktop). The effect runs after mount
+  // and corrects to the actual viewport. Because Next.js hydrates the client
+  // component tree synchronously after the first paint, the effect runs before
+  // any user interaction is possible.
+  useEffect(() => {
+    const update = () => setIsMobile(window.innerWidth <= MOBILE_BREAKPOINT);
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
 
   useEffect(() => {
     if (!hasAdminRole) return;
@@ -98,22 +121,28 @@ export default function AdminUsersPage() {
   useEffect(() => {
     if (!selectedUserId) {
       setSelectedOnboarding(null);
+      setOnboardingError(null);
       return;
     }
     let cancelled = false;
     setOnboardingLoading(true);
+    setOnboardingError(null);
     (async () => {
       try {
         const status = await api.request<OnboardingStatus>(`/admin/users/${selectedUserId}/onboarding-status`);
         if (!cancelled) setSelectedOnboarding(status);
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load onboarding status.');
+        if (!cancelled) setOnboardingError(err instanceof Error ? err.message : 'Failed to load onboarding status.');
       } finally {
         if (!cancelled) setOnboardingLoading(false);
       }
     })();
     return () => { cancelled = true; };
   }, [selectedUserId]);
+
+  const handleCloseModal = useCallback(() => {
+    setSelectedUserId(null);
+  }, []);
 
   if (!hasAdminRole) {
     return (
@@ -134,6 +163,11 @@ export default function AdminUsersPage() {
       </>
     );
   }
+
+  const selectedUser: AdminUserLite | null = selectedUserId
+    ? (users.find((u) => u.id === selectedUserId) ?? null)
+    : null;
+  const modalOpen = isMobile && selectedUserId !== null;
 
   return (
     <>
@@ -161,6 +195,7 @@ export default function AdminUsersPage() {
                 return (
                   <button
                     key={u.id}
+                    ref={isSelected ? selectedCardRef : undefined}
                     type="button"
                     onClick={() => setSelectedUserId(u.id)}
                     className={`admin-user-card${isSelected ? ' admin-user-card--selected' : ''}`}
@@ -177,7 +212,9 @@ export default function AdminUsersPage() {
                           {displayContact}
                         </div>
                       </div>
-                      <Badge variant={u.status === 'ACTIVE' ? 'success' : 'warning'}>{u.status}</Badge>
+                      <Badge variant={u.status === 'ACTIVE' ? 'success' : 'warning'}>
+                        {formatEnumLabel(u.status)}
+                      </Badge>
                     </div>
                     {/* Meta row: country / trading experience / created date.
                         Only render the items that have data — no empty chips. */}
@@ -210,51 +247,43 @@ export default function AdminUsersPage() {
           )}
         </Card>
 
-        <Card title="Onboarding status">
-          {!selectedUserId ? (
-            <EmptyState icon="📋" title="Select a user" description="Tap a user on the left to view their onboarding status." />
-          ) : onboardingLoading ? (
-            <p className="muted">Loading onboarding status…</p>
-          ) : selectedOnboarding ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <strong>Can start trading:</strong>
-                <Badge variant={selectedOnboarding.canStartTrading ? 'success' : 'warning'}>
-                  {selectedOnboarding.canStartTrading ? 'Yes' : 'No'}
-                </Badge>
-              </div>
-              <OnboardingStep label="Profile complete" done={selectedOnboarding.profileCompleted} />
-              <OnboardingStep label="Risk profile complete" done={selectedOnboarding.riskProfileCompleted} />
-              <OnboardingStep label="Broker connected" done={selectedOnboarding.brokerConnected} />
-              {selectedOnboarding.brokerConnected && (
-                <div className="text-sm muted">
-                  Broker status: <Badge variant="info">{selectedOnboarding.brokerConnectionStatus}</Badge>
-                </div>
-              )}
-              {selectedOnboarding.missingSteps.length > 0 && (
-                <Alert variant="warning">
-                  Missing steps: {selectedOnboarding.missingSteps.join(', ')}
-                </Alert>
-              )}
-              {selectedOnboarding.canStartTrading && (
-                <Alert variant="success">This user has completed all onboarding steps and can start trading.</Alert>
-              )}
-            </div>
-          ) : (
-            <Alert variant="error">Failed to load onboarding status.</Alert>
-          )}
-        </Card>
+        {/*
+          Desktop side-by-side Onboarding detail pane (≥ 701px).
+          Conditionally rendered: on mobile the AdminUserOnboardingModal
+          renders instead, so the desktop pane's content is NOT in the DOM
+          on mobile (avoids duplicate <strong>Can start trading:</strong>
+          that would confuse screen readers and Playwright's .first()).
+          (Post-Sprint-31 hotfix Issue B.)
+        */}
+        {!isMobile && (
+          <Card title="Onboarding status" className="admin-users-pane--desktop-only">
+            {!selectedUserId ? (
+              <EmptyState icon="📋" title="Select a user" description="Tap a user on the left to view their onboarding status." />
+            ) : (
+              <OnboardingStatusContent
+                onboarding={selectedOnboarding}
+                loading={onboardingLoading}
+                error={onboardingError}
+              />
+            )}
+          </Card>
+        )}
       </div>
-    </>
-  );
-}
 
-function OnboardingStep({ label, done }: { label: string; done: boolean }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-      <span>{done ? '✅' : '⬜'}</span>
-      <span>{label}</span>
-      <Badge variant={done ? 'success' : 'warning'}>{done ? 'Done' : 'Pending'}</Badge>
-    </div>
+      {/*
+        Mobile onboarding-status modal (≤ 700px). Renders the SAME content as
+        the desktop pane, but in an accessible dialog. The users list keeps
+        its scroll position; closing restores focus to the selected card.
+      */}
+      <AdminUserOnboardingModal
+        open={modalOpen}
+        user={selectedUser}
+        onboarding={selectedOnboarding}
+        loading={onboardingLoading}
+        error={onboardingError}
+        onClose={handleCloseModal}
+        triggerRef={selectedCardRef}
+      />
+    </>
   );
 }

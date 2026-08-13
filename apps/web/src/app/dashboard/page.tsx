@@ -7,6 +7,7 @@ import { DashboardShell, Card, Badge, EmptyState, LoadingSpinner, Alert, Button 
 import { useNotification } from '@/hooks/useNotification';
 import { mapApiError } from '@/lib/error-mapping';
 import { api } from '@/lib/api';
+import { formatEnumLabel } from '@irexpro/types';
 import type { OnboardingStatus } from '@irexpro/types';
 
 /**
@@ -105,7 +106,7 @@ export default function DashboardPage() {
           <span className="stat-card__icon" aria-hidden="true">👤</span>
           <h2 className="card__title" style={{ marginBottom: 'var(--space-2)' }}>Account status</h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-3)' }}>
-            <Badge variant={user.status === 'ACTIVE' ? 'success' : 'warning'}>{user.status}</Badge>
+            <Badge variant={user.status === 'ACTIVE' ? 'success' : 'warning'}>{formatEnumLabel(user.status)}</Badge>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
             <p className="text-sm muted">Email: {user.email ?? '(phone-only)'}</p>

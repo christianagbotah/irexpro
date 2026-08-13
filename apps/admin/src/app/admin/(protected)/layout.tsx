@@ -5,6 +5,7 @@ import { useAuth } from '@/context/auth-context';
 import AdminNav, { AdminSidebarUser } from '@/components/admin-nav';
 import AdminMobileBottomNav from '@/components/mobile-bottom-nav';
 import { Alert, Button } from '@/components/ui';
+import { formatEnumLabel } from '@irexpro/types';
 
 /**
  * (protected) route group layout — authenticated admin shell.
@@ -16,10 +17,6 @@ import { Alert, Button } from '@/components/ui';
  *   - /admin/payments
  *   - /admin/subscriptions
  *   - /admin/audit
- *
- * Hotfix: previously app/admin/layout.tsx wrapped EVERY /admin/* route
- * (including /admin/login) with the sidebar. Now the sidebar only appears
- * here, inside the (protected) group.
  *
  * Three-state guard (mirrors the dashboard page logic, but at the layout
  * level so every protected page inherits it):
@@ -42,6 +39,23 @@ import { Alert, Button } from '@/components/ui';
  * The sidebar itself (AdminNav) is also role-aware: it only renders nav
  * items when hasAdminRole is true (defense in depth, though this layout
  * already prevents the sidebar from showing otherwise).
+ *
+ * ── Access denied layout hotfix (post-Sprint-31) ───────────────────────────
+ * Previously the access-denied/not-signed-in branches rendered inside
+ * `.admin-shell` (grid-template-columns: 240px 1fr) with no sidebar. The
+ * empty 240px column pushed `.content` right, but the card's `margin: auto`
+ * centered within the 1fr column only — leaving the h1 far-left and the
+ * card off-center, producing a tiny left-aligned content block on desktop.
+ *
+ * These branches now use `.access-denied-shell` — a dedicated full-viewport
+ * flex container that centers the card BOTH horizontally and vertically with
+ * a sensible max-width. The h1 moves inside the card so the whole panel is
+ * balanced. Mobile keeps a stacked layout via CSS. Authorization behavior
+ * is unchanged; only presentation.
+ *
+ * Role labels are humanized via formatEnumLabel (SUPER_ADMIN → "Super Admin")
+ * for presentation only; the backend RolesGuard continues using the raw
+ * enum values.
  */
 export default function AdminProtectedLayout({ children }: { children: React.ReactNode }) {
   const { user, restoring, hasAdminRole, logout, loading } = useAuth();
@@ -58,13 +72,15 @@ export default function AdminProtectedLayout({ children }: { children: React.Rea
     );
   }
 
-  // 2. Not authenticated — clean login prompt, NO sidebar
+  // 2. Not authenticated — clean login prompt, NO sidebar.
+  //    Uses .access-denied-shell so the card is centered on desktop/tablet
+  //    (not left-aligned in a 240px-offset grid column).
   if (!user) {
     return (
-      <div className="admin-shell admin-shell--not-signed-in">
-        <main className="content">
-          <h1>Admin</h1>
-          <div className="card" style={{ maxWidth: 420, margin: '2rem auto' }}>
+      <div className="access-denied-shell">
+        <main className="content access-denied-shell__content">
+          <div className="card access-denied-card">
+            <h1 className="access-denied-card__title">Admin</h1>
             <h2 className="card__title">Not signed in</h2>
             <p className="muted" style={{ marginBottom: '1rem' }}>
               You need to sign in with an admin account to view this page.
@@ -78,18 +94,22 @@ export default function AdminProtectedLayout({ children }: { children: React.Rea
     );
   }
 
-  // 3. Authenticated but lacks admin role — access denied, NO sidebar
+  // 3. Authenticated but lacks admin role — access denied, NO sidebar.
+  //    Uses .access-denied-shell so the card is centered on desktop/tablet
+  //    (not left-aligned in a 240px-offset grid column). Role labels are
+  //    humanized for presentation; the backend RolesGuard is unchanged.
   if (!hasAdminRole) {
+    const humanRoles = (user.roles ?? []).map((r) => formatEnumLabel(r)).join(', ') || 'none';
     return (
-      <div className="admin-shell admin-shell--access-denied">
-        <main className="content">
-          <h1>Access denied</h1>
-          <div className="card" style={{ maxWidth: 520, margin: '2rem auto' }}>
+      <div className="access-denied-shell">
+        <main className="content access-denied-shell__content">
+          <div className="card access-denied-card">
+            <h1 className="access-denied-card__title">Access denied</h1>
             <h2 className="card__title">Insufficient permissions</h2>
             <Alert variant="error">
               Your account does not have an admin role. You are signed in as{' '}
               <code>{user.email ?? user.phone ?? 'unknown'}</code> with roles:{' '}
-              <code>{user.roles?.join(', ') || 'none'}</code>.
+              <code>{humanRoles}</code>.
             </Alert>
             <p className="muted" style={{ marginTop: '1rem' }}>
               The backend RolesGuard will also reject your requests with 403.

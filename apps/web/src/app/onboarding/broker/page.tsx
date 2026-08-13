@@ -9,6 +9,7 @@ import { ConfirmDialog } from '@/components/notifications/ConfirmDialog';
 import { useNotification } from '@/hooks/useNotification';
 import { mapApiError } from '@/lib/error-mapping';
 import { api } from '@/lib/api';
+import { formatEnumLabel } from '@irexpro/types';
 import type { SupportedBroker, BrokerConnectionView, BrokerTestResult } from '@irexpro/types';
 
 /**
@@ -329,7 +330,7 @@ export default function OnboardingBrokerPage() {
                   >
                     <strong style={{ fontSize: '0.95rem', color: 'var(--text)' }}>{conn.brokerName}</strong>
                     {conn.displayName && <span className="muted text-sm">— {conn.displayName}</span>}
-                    <Badge variant={statusVariant(conn.status)}>{conn.status}</Badge>
+                    <Badge variant={statusVariant(conn.status)}>{formatEnumLabel(conn.status)}</Badge>
                   </div>
                   <div
                     className="text-sm muted"
