@@ -123,6 +123,7 @@ export interface RiskContextSnapshot {
   brokerBalance?: string;
   brokerEquity?: string;
   openTradesCount?: number;
+  dailyTradesCount?: number;
   dailyRealisedPnl?: string;
   proposedLotSize: string;
   proposedInstrument: string;

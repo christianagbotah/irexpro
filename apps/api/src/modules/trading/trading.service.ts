@@ -121,7 +121,17 @@ export class TradingService {
     const brokerState = await this.brokerService.getBrokerAccountState(connection.id);
     const openingBalance = brokerState?.balance ?? '0';
 
-    const session = await this.executionService.startSession(userId, connection.id, openingBalance);
+    // Sprint 32: snapshot the risk profile at session start so future edits
+    // don't rewrite history. The snapshot is a deterministic JSON object of
+    // risk-relevant fields (no credentials/secrets/PII).
+    const riskProfileSnapshot = this.riskService.createRiskProfileSnapshot(riskProfile);
+
+    const session = await this.executionService.startSession(
+      userId,
+      connection.id,
+      openingBalance,
+      riskProfileSnapshot,
+    );
 
     await this.auditService.log({
       actorUserId: userId,

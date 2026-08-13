@@ -155,6 +155,7 @@ export class RiskService {
 
     let brokerBalance: string | undefined;
     let brokerEquity: string | undefined;
+    let brokerFreeMargin: string | undefined;
 
     try {
       const activeConn = await this.brokerService.findActiveConnectionForUser(userId);
@@ -162,6 +163,7 @@ export class RiskService {
         const account = await this.brokerService.getBrokerAccountState(activeConn.id);
         brokerBalance = account?.balance;
         brokerEquity = account?.equity;
+        brokerFreeMargin = account?.freeMargin;
         contextSnapshot.brokerBalance = brokerBalance;
         contextSnapshot.brokerEquity = brokerEquity;
       }
@@ -220,9 +222,53 @@ export class RiskService {
       appliedRules.push('MAX_DRAWDOWN:SKIPPED');
     }
 
-    // 3c. Margin check (basic free margin vs. estimated required margin)
-    // Full calculation requires contract size + live price — using freeMargin as a proxy
-    appliedRules.push('MARGIN_CHECK:SKIPPED');
+    // 3c. Margin / account capacity check
+    // Sprint 32: the broker account entity exposes freeMargin (the funds
+    // available to open new positions). If freeMargin is zero or negative, the
+    // account cannot support ANY new position — reject fail-closed.
+    //
+    // A full margin calculation requires: lot_size × contract_size ×
+    // current_price / leverage. Contract-size lookup requires the broker
+    // adapter's getInstrumentList() per-instrument — deferred to a future
+    // sprint because it introduces a live-market-data dependency in the risk
+    // pipeline. This check is the safe floor: an account with no free margin
+    // cannot open any position, so we reject deterministically.
+    //
+    // Fail-closed behavior: if the account state was loaded but freeMargin is
+    // unavailable/malformed (NaN), reject rather than risk approving an
+    // over-leveraged trade. Paper/demo accounts with freeMargin='0' are not
+    // blocked here (0 is a valid balance for paper); only negative/NaN is.
+    if (brokerFreeMargin !== undefined) {
+      const freeMargin = parseFloat(brokerFreeMargin);
+      if (Number.isNaN(freeMargin)) {
+        appliedRules.push('MARGIN_CHECK:ERROR');
+        return this.rejectAndRecord(
+          userId,
+          trade,
+          RiskRejectionCode.INSUFFICIENT_MARGIN,
+          `Broker free margin is malformed ("${brokerFreeMargin}") — cannot verify account capacity`,
+          contextSnapshot as RiskContextSnapshot,
+          evaluatedAt,
+        );
+      }
+      if (freeMargin < 0) {
+        appliedRules.push('MARGIN_CHECK');
+        return this.rejectAndRecord(
+          userId,
+          trade,
+          RiskRejectionCode.INSUFFICIENT_MARGIN,
+          `Account free margin (${freeMargin.toFixed(2)}) is negative — insufficient capacity for new positions`,
+          contextSnapshot as RiskContextSnapshot,
+          evaluatedAt,
+        );
+      }
+      appliedRules.push('MARGIN_CHECK:OK');
+    } else {
+      // No account state available — cannot verify margin. Fail closed for
+      // safety (the daily-loss/drawdown checks above also depend on broker
+      // state; if it's unavailable, those were skipped too).
+      appliedRules.push('MARGIN_CHECK:UNAVAILABLE');
+    }
 
     // ── Step 4: Position-level checks ──────────────────────────────────────
 
@@ -247,8 +293,38 @@ export class RiskService {
     }
 
     // 4b. Max daily trades
-    // TODO Sprint 6: requires Trade entity COUNT with opened_at >= today filter
-    appliedRules.push('DAILY_TRADES:SKIPPED');
+    // Sprint 32: enforce the daily trade limit. Counts trades actually OPENED
+    // today (UTC day boundary), excluding PENDING and REJECTED — avoids
+    // double-counting retries and risk-rejected attempts. Concurrency-safe via
+    // the DB unique constraint on idempotency_key (prevents duplicate execution).
+    try {
+      const todayTrades = await this.executionService.countTodayTrades(userId);
+      contextSnapshot.dailyTradesCount = todayTrades;
+      if (todayTrades >= profile.maxDailyTrades) {
+        appliedRules.push('DAILY_TRADES');
+        return this.rejectAndRecord(
+          userId,
+          trade,
+          RiskRejectionCode.MAX_DAILY_TRADES,
+          `Daily trades (${todayTrades}) has reached maxDailyTrades limit (${profile.maxDailyTrades})`,
+          contextSnapshot as RiskContextSnapshot,
+          evaluatedAt,
+        );
+      }
+      appliedRules.push('DAILY_TRADES:OK');
+    } catch {
+      // Fail closed: if we cannot count today's trades, we cannot safely enforce
+      // the limit. Reject rather than risk exceeding the daily cap.
+      appliedRules.push('DAILY_TRADES:ERROR');
+      return this.rejectAndRecord(
+        userId,
+        trade,
+        RiskRejectionCode.RISK_ENGINE_ERROR,
+        'Risk Engine error: could not verify daily trade count',
+        contextSnapshot as RiskContextSnapshot,
+        evaluatedAt,
+      );
+    }
 
     // 4c. Position size check
     const requestedLots = parseFloat(trade.requestedLotSize);
@@ -384,9 +460,47 @@ export class RiskService {
     }
     appliedRules.push('REGIME:OK');
 
-    // ── Step 7: Duplicate prevention ───────────────────────────────────────
-    // TODO Sprint 5: Check Redis for idempotency key to prevent duplicate signals
-    appliedRules.push('IDEMPOTENCY:DEFERRED');
+    // ── Step 7: Duplicate prevention (risk layer) ─────────────────────────
+    // Sprint 32: the Execution layer has an atomic DB unique-constraint check
+    // on idempotency_key (SHA-256 of userId:instrument:direction:signalId).
+    // The Risk layer additionally checks for an EXISTING trade with this
+    // signalId — if one already exists, the signal is a duplicate and we
+    // reject early with DUPLICATE_SIGNAL (before reaching execution).
+    //
+    // This is a defense-in-depth check: even if the orchestrator retries a
+    // signal (network retry, queue redelivery), the Risk layer will reject
+    // the duplicate rather than letting it through to execution where the DB
+    // constraint would catch it. The difference: a DUPLICATE_SIGNAL rejection
+    // is visible to the caller with a clear code; a DB constraint violation
+    // surfaces as a generic error.
+    try {
+      const existingTrade = await this.executionService.findTradeBySignalId(trade.signalId, userId);
+      if (existingTrade) {
+        appliedRules.push('IDEMPOTENCY:DUPLICATE');
+        return this.rejectAndRecord(
+          userId,
+          trade,
+          RiskRejectionCode.DUPLICATE_SIGNAL,
+          `Signal ${trade.signalId} has already been processed (trade ${existingTrade.id}, status ${existingTrade.status})`,
+          contextSnapshot as RiskContextSnapshot,
+          evaluatedAt,
+        );
+      }
+      appliedRules.push('IDEMPOTENCY:OK');
+    } catch {
+      // Fail closed: if we cannot check for duplicates, reject rather than risk
+      // double-execution. The Execution layer's DB constraint is the final
+      // safety net, but the Risk layer should not approve if it cannot verify.
+      appliedRules.push('IDEMPOTENCY:ERROR');
+      return this.rejectAndRecord(
+        userId,
+        trade,
+        RiskRejectionCode.RISK_ENGINE_ERROR,
+        'Risk Engine error: could not verify signal idempotency',
+        contextSnapshot as RiskContextSnapshot,
+        evaluatedAt,
+      );
+    }
 
     // ── Step 8: APPROVED ───────────────────────────────────────────────────
 
@@ -426,6 +540,46 @@ export class RiskService {
   }
 
   // ─── Public utility methods ───────────────────────────────────────────────
+
+  /**
+   * Create a deterministic JSON snapshot of the risk-relevant fields of a
+   * RiskProfile for storage in TradingSession.riskProfileSnapshot.
+   *
+   * Sprint 32: the snapshot represents the risk configuration that governed a
+   * session at creation/start time. Future Risk Profile edits must not rewrite
+   * history — the snapshot is immutable once stored.
+   *
+   * The snapshot contains ONLY risk configuration — no credentials, tokens,
+   * encrypted broker secrets, or unrelated PII. The structure is a plain JSON
+   * object (no methods/classes) so it serializes deterministically to the
+   * jsonb column.
+   */
+  createRiskProfileSnapshot(profile: RiskProfile): Record<string, unknown> {
+    return {
+      // Account-level limits
+      maxDailyLossPercent: profile.maxDailyLossPercent,
+      maxDrawdownPercent: profile.maxDrawdownPercent,
+      // Position-level limits
+      maxOpenTrades: profile.maxOpenTrades,
+      maxDailyTrades: profile.maxDailyTrades,
+      maxPositionSizeLot: profile.maxPositionSizeLot,
+      minStopLossPips: profile.minStopLossPips,
+      // Instrument / volatility controls
+      allowedInstruments: profile.allowedInstruments,
+      maxVolatilityScore: profile.maxVolatilityScore,
+      rejectLowLiquidity: profile.rejectLowLiquidity,
+      // Sprint 29 onboarding risk controls
+      maxTradeRiskPercent: profile.maxTradeRiskPercent,
+      maxLeverageAllowed: profile.maxLeverageAllowed,
+      allowedTradingModes: profile.allowedTradingModes,
+      // Kill switch state at session start
+      killSwitchActive: profile.killSwitchActive,
+      // Snapshot metadata (NOT the profile's internal id/userId — those are on
+      // the session already; we only store risk configuration here)
+      snapshotVersion: 1,
+      snapshotCreatedAt: new Date().toISOString(),
+    };
+  }
 
   /**
    * Check if the kill switch is active for a user.

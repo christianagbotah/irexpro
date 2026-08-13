@@ -87,7 +87,11 @@ export class ExecutionService {
     const order = riskDecision.validatedOrder;
     const signalId = riskDecision.signalId;
 
-    // ── Step 2: Idempotency check ──────────────────────────────────────────
+    // ── Step 2: Idempotency check (atomic) ─────────────────────────────────
+    // Sprint 32: the previous findOne→save pattern was a TOCTOU race — two
+    // concurrent calls could both pass the null check. Now we attempt the
+    // INSERT directly; if the unique constraint on idempotency_key rejects it,
+    // we load and return the existing trade. This is atomic at the DB level.
     const idempotencyKey = this.generateIdempotencyKey(
       userId,
       order.instrument,
@@ -95,37 +99,63 @@ export class ExecutionService {
       signalId,
     );
 
-    const existing = await this.tradeRepo.findOne({ where: { idempotencyKey } });
-    if (existing) {
-      this.logger.log(
-        `Duplicate signal detected for key ${idempotencyKey} — returning existing trade ${existing.id}`,
-      );
-      return existing;
-    }
-
     // ── Step 3: Get broker connection ──────────────────────────────────────
     const connection = await this.brokerService.findActiveConnectionForUser(userId);
     if (!connection) {
       throw new ForbiddenException('No active broker connection available for trade execution');
     }
 
-    // ── Step 4: Create PENDING trade record ────────────────────────────────
-    const trade = await this.tradeRepo.save(
-      this.tradeRepo.create({
-        userId,
-        brokerConnectionId: connection.id,
-        signalId,
-        idempotencyKey,
-        instrument: order.instrument,
-        direction: order.direction as TradeDirection,
-        lotSize: order.lotSize,
-        requestedEntryPrice: order.entryPrice,
-        stopLoss: order.stopLoss,
-        takeProfit: order.takeProfit,
-        trailingStopPips: order.trailingStopPips ?? null,
-        status: TradeStatus.PENDING,
-      }),
-    );
+    // ── Step 4: Create PENDING trade record (atomic idempotency) ──────────
+    // Attempt the INSERT. If a trade with this idempotency_key already exists,
+    // the DB unique constraint rejects the INSERT and we return the existing
+    // trade. This closes the TOCTOU race: two concurrent calls cannot both
+    // create a trade for the same intent.
+    let trade: Trade;
+    try {
+      trade = await this.tradeRepo.save(
+        this.tradeRepo.create({
+          userId,
+          brokerConnectionId: connection.id,
+          signalId,
+          idempotencyKey,
+          instrument: order.instrument,
+          direction: order.direction as TradeDirection,
+          lotSize: order.lotSize,
+          requestedEntryPrice: order.entryPrice,
+          stopLoss: order.stopLoss,
+          takeProfit: order.takeProfit,
+          trailingStopPips: order.trailingStopPips ?? null,
+          status: TradeStatus.PENDING,
+        }),
+      );
+    } catch (err) {
+      // Unique constraint violation (PostgreSQL 23505) → duplicate intent
+      if (this.isUniqueConstraintViolation(err)) {
+        const existing = await this.tradeRepo.findOne({ where: { idempotencyKey } });
+        if (existing) {
+          this.logger.log(
+            `Duplicate signal suppressed for key ${idempotencyKey} — returning existing trade ${existing.id}`,
+          );
+          await this.auditService.log({
+            actorUserId: userId,
+            action: AuditAction.TRADE_DUPLICATE_SUPPRESSED,
+            resourceType: 'Trade',
+            resourceId: existing.id,
+            metadata: {
+              idempotencyKey,
+              signalId,
+              instrument: order.instrument,
+              direction: order.direction,
+              existingTradeId: existing.id,
+              existingTradeStatus: existing.status,
+            },
+            severity: AuditSeverity.WARNING,
+          });
+          return existing;
+        }
+      }
+      throw err;
+    }
 
     await this.auditService.log({
       actorUserId: userId,
@@ -368,6 +398,34 @@ export class ExecutionService {
   }
 
   /**
+   * Count of trades opened today (UTC day boundary) for a user.
+   * Used for Risk Engine Step 4b (max daily trades enforcement).
+   *
+   * Sprint 32: counts trades that were actually OPENED today (have an
+   * opened_at timestamp), excluding PENDING (not yet submitted to broker)
+   * and REJECTED (broker refused). This avoids double-counting retries and
+   * avoids counting risk-rejected attempts as executed trades.
+   *
+   * The trading-day boundary is UTC midnight — consistent with the existing
+   * getTodayRealisedLoss() day boundary.
+   */
+  async countTodayTrades(userId: string): Promise<number> {
+    const todayStart = new Date();
+    todayStart.setUTCHours(0, 0, 0, 0);
+
+    const result = await this.dataSource.query<{ count: string }[]>(
+      `SELECT COUNT(*) AS count
+       FROM trading.trades
+       WHERE user_id = $1
+         AND opened_at >= $2
+         AND status IN ('OPEN', 'CLOSED')`,
+      [userId, todayStart.toISOString()],
+    );
+
+    return parseInt(result[0]?.count ?? '0', 10);
+  }
+
+  /**
    * Sum of today's realised losses (negative P&L only) for daily loss limit check.
    * Returns a negative number (e.g., -250.00) or 0 if no losses today.
    * Used for Risk Engine Step 3a.
@@ -397,12 +455,26 @@ export class ExecutionService {
     return this.tradeRepo.findOne({ where: { id: tradeId } });
   }
 
+  /**
+   * Find a trade by its signalId for a given user.
+   *
+   * Sprint 32: used by the Risk Engine's idempotency check (Step 7) to detect
+   * duplicate signal processing. If a trade already exists for this signalId,
+   * the signal is a duplicate and the Risk Engine rejects with DUPLICATE_SIGNAL.
+   *
+   * Scoped by userId so a signalId from one user doesn't collide with another.
+   */
+  async findTradeBySignalId(signalId: string, userId: string): Promise<Trade | null> {
+    return this.tradeRepo.findOne({ where: { signalId, userId } });
+  }
+
   // ─── Session management ───────────────────────────────────────────────────
 
   async startSession(
     userId: string,
     brokerConnectionId: string,
     openingBalance: string,
+    riskProfileSnapshot?: Record<string, unknown> | null,
   ): Promise<TradingSession> {
     const existing = await this.sessionRepo.findOne({
       where: { userId, status: TradingSessionStatus.ACTIVE },
@@ -417,6 +489,10 @@ export class ExecutionService {
         openingBalance,
         peakEquity: openingBalance,
         startedAt: new Date(),
+        // Sprint 32: snapshot the risk profile at session start so future
+        // edits don't rewrite history. The snapshot is a deterministic JSON
+        // object of risk-relevant fields (no credentials/secrets/PII).
+        riskProfileSnapshot: riskProfileSnapshot ?? null,
       }),
     );
   }
@@ -448,6 +524,28 @@ export class ExecutionService {
       .createHash('sha256')
       .update(`${userId}:${instrument}:${direction}:${signalId}`)
       .digest('hex');
+  }
+
+  /**
+   * Detect a PostgreSQL unique-constraint violation (SQLSTATE 23505).
+   *
+   * Sprint 32: used by the atomic idempotency check. When two concurrent
+   * executeTrade() calls race to INSERT a trade with the same idempotency_key,
+   * the DB unique constraint rejects one of the INSERTs. This helper reliably
+   * detects that condition so we can return the existing trade instead of
+   * surfacing an unhandled QueryFailedError.
+   *
+   * TypeORM wraps the pg error in a QueryFailedError; the original pg error's
+   * `code` property is '23505'. We check both the `code` property and the error
+   * message for the SQLSTATE to be defensive across driver versions.
+   */
+  private isUniqueConstraintViolation(err: unknown): boolean {
+    if (!(err instanceof Error)) return false;
+    const code = (err as { code?: string }).code;
+    if (code === '23505') return true;
+    // Fallback: check the message for the SQLSTATE or the constraint name.
+    const msg = err.message ?? '';
+    return msg.includes('23505') || msg.includes('duplicate key value');
   }
 
   private async submitWithRetry(

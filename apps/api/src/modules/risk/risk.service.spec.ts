@@ -73,7 +73,9 @@ const mockAuditService = () => ({
 
 const mockExecutionService = () => ({
   countOpenTrades: jest.fn().mockResolvedValue(0),
+  countTodayTrades: jest.fn().mockResolvedValue(0),
   getTodayRealisedLoss: jest.fn().mockResolvedValue(0),
+  findTradeBySignalId: jest.fn().mockResolvedValue(null),
 });
 
 // ─── Test suite ───────────────────────────────────────────────────────────────

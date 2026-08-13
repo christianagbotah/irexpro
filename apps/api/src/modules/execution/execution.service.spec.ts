@@ -9,6 +9,7 @@ import { BrokerService } from '../broker/broker.service';
 import { BrokerAdapterRegistry } from '../broker/adapters/broker-adapter.registry';
 import { CredentialEncryptionService } from '../broker/services/credential-encryption.service';
 import { AuditService } from '../audit/audit.service';
+import { AuditSeverity } from '../audit/entities/audit-log.entity';
 import { RiskDecision, RiskRejectionCode } from '../risk/interfaces/risk.interface';
 import { BrokerConnectionStatus, BrokerMode } from '../broker/interfaces/broker-adapter.interface';
 import { DomainEventBus } from '../events/event-bus.service';
@@ -196,14 +197,36 @@ describe('ExecutionService', () => {
   // ─── Idempotency ──────────────────────────────────────────────────────────
 
   describe('Idempotency', () => {
-    it('returns existing trade if idempotency key already exists', async () => {
+    it('returns existing trade when unique constraint rejects duplicate INSERT', async () => {
+      // Sprint 32: the idempotency check is now atomic — the INSERT is
+      // attempted and if the DB rejects it with a unique-constraint
+      // violation (SQLSTATE 23505), we load and return the existing trade.
       const existingTrade = { id: 'trade-existing', status: TradeStatus.OPEN };
+
+      // Simulate the DB rejecting the INSERT with a 23505 unique violation.
+      const uniqueViolation = Object.assign(
+        new Error('duplicate key value violates unique constraint'),
+        {
+          code: '23505',
+        },
+      );
+      tradeRepo.save.mockRejectedValueOnce(uniqueViolation);
+
+      // The subsequent findOne (to load the existing trade) returns it.
       tradeRepo.findOne.mockResolvedValue(existingTrade);
 
       const result = await service.executeTrade('user-1', approvedDecision);
 
       expect(result).toEqual(existingTrade);
       expect(mockAdapter.placeOrder).not.toHaveBeenCalled();
+      // Audit the suppression
+      expect(auditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'TRADE_DUPLICATE_SUPPRESSED',
+          severity: AuditSeverity.WARNING,
+          metadata: expect.objectContaining({ existingTradeId: 'trade-existing' }),
+        }),
+      );
     });
   });
 

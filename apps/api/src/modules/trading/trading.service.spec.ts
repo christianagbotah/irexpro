@@ -98,6 +98,13 @@ describe('TradingService (Sprint 29 amendment — centralized readiness gate)', 
         allowedTradingModes: AllowedTradingMode.PAPER_ONLY,
         riskAcknowledgementAccepted: true,
       }),
+      // Sprint 32: snapshot helper — returns a plain JSON object
+      createRiskProfileSnapshot: jest.fn().mockImplementation((profile) => ({
+        maxDailyTrades: profile.maxDailyTrades ?? 10,
+        maxOpenTrades: profile.maxOpenTrades ?? 3,
+        snapshotVersion: 1,
+        snapshotCreatedAt: new Date().toISOString(),
+      })),
     };
 
     executionService = {
@@ -428,7 +435,17 @@ describe('TradingService (Sprint 29 amendment — centralized readiness gate)', 
       const session = await service.startTradingSession('user-1');
 
       expect(session.id).toBe('session-1');
-      expect(executionService.startSession).toHaveBeenCalledWith('user-1', 'conn-1', '10000.00');
+      // Sprint 32: startSession now receives a 4th arg — the risk profile snapshot.
+      expect(executionService.startSession).toHaveBeenCalledWith(
+        'user-1',
+        'conn-1',
+        '10000.00',
+        expect.objectContaining({
+          maxDailyTrades: expect.any(Number),
+          maxOpenTrades: expect.any(Number),
+          snapshotVersion: 1,
+        }),
+      );
       expect(auditService.log).toHaveBeenCalledWith(
         expect.objectContaining({
           actorUserId: 'user-1',
