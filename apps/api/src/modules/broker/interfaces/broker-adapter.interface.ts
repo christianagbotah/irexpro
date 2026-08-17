@@ -171,6 +171,8 @@ export interface RequiredMarginParams {
   lotSize: string;
   /** Direction may affect margin in some broker models. */
   direction: 'BUY' | 'SELL';
+  /** Opaque provider account reference; memory-only and never audited. */
+  connectionReference?: string;
 }
 
 export interface BrokerOrderRequest {
@@ -181,6 +183,8 @@ export interface BrokerOrderRequest {
   stopLoss: string;
   takeProfit: string;
   comment?: string;
+  /** Opaque provider account reference; memory-only and never audited. */
+  connectionReference?: string;
 }
 
 export interface BrokerOrderModification {

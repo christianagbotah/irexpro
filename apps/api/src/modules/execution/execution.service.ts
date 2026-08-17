@@ -2,7 +2,7 @@ import * as crypto from 'crypto';
 import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
-import { Trade, TradeCloseReason, TradeStatus } from './entities/trade.entity';
+import { Trade, TradeCloseReason, TradeDirection, TradeStatus } from './entities/trade.entity';
 import { TradingSession, TradingSessionStatus } from './entities/trading-session.entity';
 import { RiskDecision } from '../risk/interfaces/risk.interface';
 import { BrokerService } from '../broker/broker.service';
@@ -204,6 +204,7 @@ export class ExecutionService {
       const adapter = this.adapterRegistry.getAdapter(connection.brokerId);
       adapter.setMode(connection.accountType);
       await adapter.connect(credentials);
+      const connectionReference = credentials.accountId;
 
       // Zero credentials from memory immediately after connection
       (Object.keys(credentials) as (keyof typeof credentials)[]).forEach((k) => {
@@ -218,6 +219,7 @@ export class ExecutionService {
         takeProfit: order.takeProfit,
         idempotencyKey,
         comment: order.idempotencyKey,
+        connectionReference,
       };
 
       const result = await this.submitWithRetry(adapter, brokerRequest);
@@ -492,7 +494,7 @@ export class ExecutionService {
         [idempotencyKey],
       );
       if (existingRows.length > 0) {
-        const existing = existingRows[0] as Trade;
+        const existing = this.hydrateTradeRow(existingRows[0] as Record<string, unknown>);
         return { status: 'DUPLICATE_EXISTING' as const, trade: existing };
       }
 
@@ -529,33 +531,87 @@ export class ExecutionService {
       //    for same-signalId duplicates — if two concurrent transactions
       //    somehow both reach this point (impossible due to advisory lock),
       //    the DB rejects the second INSERT with SQLSTATE 23505.
-      const insertResult = await manager.query(
-        `INSERT INTO trading.trades
-          (id, user_id, broker_connection_id, signal_id, idempotency_key,
-           instrument, direction, lot_size, requested_entry_price,
-           stop_loss, take_profit, trailing_stop_pips, status, created_at, updated_at)
-         VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'PENDING', NOW(), NOW())
-         RETURNING *`,
-        [
-          userId,
-          connectionId,
-          signalId,
-          idempotencyKey,
-          order.instrument,
-          order.direction,
-          order.lotSize,
-          order.entryPrice,
-          order.stopLoss,
-          order.takeProfit,
-          order.trailingStopPips ?? null,
-        ],
-      );
+      let insertResult: Record<string, unknown>[];
+      try {
+        insertResult = await manager.query(
+          `INSERT INTO trading.trades
+            (id, user_id, broker_connection_id, signal_id, idempotency_key,
+             instrument, direction, lot_size, requested_entry_price,
+             stop_loss, take_profit, trailing_stop_pips, status, created_at, updated_at)
+           VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'PENDING', NOW(), NOW())
+           RETURNING *`,
+          [
+            userId,
+            connectionId,
+            signalId,
+            idempotencyKey,
+            order.instrument,
+            order.direction,
+            order.lotSize,
+            order.entryPrice,
+            order.stopLoss,
+            order.takeProfit,
+            order.trailingStopPips ?? null,
+          ],
+        );
+      } catch (err) {
+        if (this.isUniqueConstraintViolation(err)) {
+          const duplicateRows = await manager.query(
+            `SELECT * FROM trading.trades WHERE idempotency_key = $1 LIMIT 1`,
+            [idempotencyKey],
+          );
+          if (duplicateRows.length > 0) {
+            return {
+              status: 'DUPLICATE_EXISTING' as const,
+              trade: this.hydrateTradeRow(duplicateRows[0] as Record<string, unknown>),
+            };
+          }
+        }
+        throw err;
+      }
 
-      const trade = insertResult[0] as Trade;
+      const trade = this.hydrateTradeRow(insertResult[0]);
       return { status: 'RESERVED_NEW' as const, trade };
     });
 
     return result;
+  }
+
+  /** Convert a raw PostgreSQL snake_case row into the Trade entity shape. */
+  private hydrateTradeRow(row: Record<string, unknown>): Trade {
+    const trade = new Trade();
+    const target = trade as unknown as Record<string, unknown>;
+    const mappings: Array<[string, string]> = [
+      ['id', 'id'],
+      ['user_id', 'userId'],
+      ['broker_connection_id', 'brokerConnectionId'],
+      ['signal_id', 'signalId'],
+      ['idempotency_key', 'idempotencyKey'],
+      ['instrument', 'instrument'],
+      ['direction', 'direction'],
+      ['lot_size', 'lotSize'],
+      ['requested_entry_price', 'requestedEntryPrice'],
+      ['fill_price', 'fillPrice'],
+      ['stop_loss', 'stopLoss'],
+      ['take_profit', 'takeProfit'],
+      ['trailing_stop_pips', 'trailingStopPips'],
+      ['external_order_id', 'externalOrderId'],
+      ['status', 'status'],
+      ['exit_price', 'exitPrice'],
+      ['realised_pnl', 'realisedPnl'],
+      ['close_reason', 'closeReason'],
+      ['broker_rejection_reason', 'brokerRejectionReason'],
+      ['opened_at', 'openedAt'],
+      ['closed_at', 'closedAt'],
+      ['created_at', 'createdAt'],
+      ['updated_at', 'updatedAt'],
+    ];
+    for (const [dbKey, entityKey] of mappings) {
+      if (Object.prototype.hasOwnProperty.call(row, dbKey)) target[entityKey] = row[dbKey];
+    }
+    if (target.direction !== undefined) target.direction = target.direction as TradeDirection;
+    if (target.status !== undefined) target.status = target.status as TradeStatus;
+    return trade;
   }
 
   /**

@@ -196,35 +196,30 @@ export class MetaTraderAdapter implements IBrokerAdapter {
    * No local generic leverage formula is used.
    */
   async getRequiredMargin(params: RequiredMarginParams): Promise<string | null> {
-    try {
-      // Get the MetaAPI account ID from the current connection
-      const accountId = await this.getMetaApiAccountId();
-      if (!accountId) {
-        return null; // CAPABILITY_UNAVAILABLE
-      }
+    const accountId = params.connectionReference;
+    if (!accountId) return null;
 
-      // Map iRexPro order to MetaAPI MarginOrder
-      const openPrice = await this.getOpenPrice(params.instrument, params.direction);
-      if (openPrice === null) {
-        return null; // cannot determine open price
-      }
+    try {
+      const openPrice = await this.getOpenPrice(accountId, params.instrument, params.direction);
+      if (openPrice === null) return null;
+
+      const volume = parseFloat(params.lotSize);
+      if (!Number.isFinite(volume) || volume <= 0) return null;
 
       const order = {
         symbol: params.instrument,
         type: params.direction === 'BUY' ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL',
-        volume: parseFloat(params.lotSize),
+        volume,
         openPrice,
       };
 
-      // Use the native MetaAPI calculateMargin through MetaApiClientService
       const margin = await this.metaApiClient.calculateMargin(accountId, order);
-      // Validate: must be a non-null, finite, non-negative string
       if (margin === null || margin === undefined) return null;
       const parsed = parseFloat(margin);
       if (!Number.isFinite(parsed) || parsed < 0) return null;
-      return margin; // string or null
+      return margin;
     } catch {
-      return null; // any error → fail closed
+      return null;
     }
   }
 
@@ -302,7 +297,9 @@ export class MetaTraderAdapter implements IBrokerAdapter {
   // ─── Order management ─────────────────────────────────────────────────────
 
   async placeOrder(order: BrokerOrderRequest): Promise<BrokerOrderResult> {
-    const conn = await this.getActiveConnection();
+    const conn = order.connectionReference
+      ? await this.metaApiClient.getOrCreateConnection(order.connectionReference)
+      : await this.getActiveConnection();
     try {
       const lotSize = parseFloat(order.lotSize);
       const sl = parseFloat(order.stopLoss);
@@ -441,26 +438,27 @@ export class MetaTraderAdapter implements IBrokerAdapter {
     }
   }
 
-  /**
-   * Sprint 32 Gate 4: get the current MetaAPI account ID for native API calls.
-   */
-  private async getMetaApiAccountId(): Promise<string | null> {
-    return this.currentAccountId;
-  }
-
-  /**
-   * Sprint 32 Gate 4: get the open price for a proposed order.
-   * BUY uses the ask price; SELL uses the bid price.
-   */
-  private async getOpenPrice(instrument: string, direction: string): Promise<number | null> {
+  /** Resolve side-correct price using an explicit MetaAPI account reference. */
+  private async getOpenPrice(
+    accountId: string,
+    instrument: string,
+    direction: string,
+  ): Promise<number | null> {
+    const connection = await this.metaApiClient.getOrCreateConnection(accountId);
     try {
-      const price = await this.getCurrentPrice(instrument);
-      if (!price) return null;
-      const priceValue = direction === 'BUY' ? parseFloat(price.ask) : parseFloat(price.bid);
+      await connection.subscribeToMarketData(instrument);
+      const price = await connection.getSymbolPrice(instrument);
+      const priceValue = direction === 'BUY' ? Number(price?.ask) : Number(price?.bid);
       if (!Number.isFinite(priceValue) || priceValue <= 0) return null;
       return priceValue;
     } catch {
       return null;
+    } finally {
+      try {
+        await connection.unsubscribeFromMarketData(instrument);
+      } catch {
+        // Best-effort market-data cleanup; validation itself fails closed.
+      }
     }
   }
 

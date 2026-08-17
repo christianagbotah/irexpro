@@ -654,15 +654,36 @@ export class BrokerService {
 
     const adapter = this.adapterRegistry.getAdapter(connection.brokerId);
     adapter.setMode(connection.accountType);
-    // Note: this does NOT call adapter.connect() — the adapter should be
-    // already connected (the execution service connects before placing
-    // orders). For the Risk Engine pre-check, the adapter may need to
-    // connect. If the adapter throws because it's not connected, the catch
-    // returns null (fail-closed).
+
+    let credentials: DecryptedBrokerCredentials | null = null;
     try {
-      return await adapter.getRequiredMargin(params);
+      let connectionReference: string | undefined;
+      if (
+        connection.encryptedCredentials &&
+        connection.credentialIv &&
+        connection.credentialTag
+      ) {
+        credentials = this.encryptionService.decrypt({
+          ciphertext: connection.encryptedCredentials,
+          iv: connection.credentialIv,
+          tag: connection.credentialTag,
+          keyId: connection.encryptionKeyId ?? 'env-key-v1',
+        });
+        connectionReference = credentials.accountId;
+      }
+
+      return await adapter.getRequiredMargin({
+        ...params,
+        connectionReference,
+      });
     } catch {
       return null;
+    } finally {
+      if (credentials) {
+        Object.keys(credentials).forEach((key) => {
+          (credentials as unknown as Record<string, unknown>)[key] = null;
+        });
+      }
     }
   }
 

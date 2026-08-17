@@ -2,186 +2,74 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { Logger } from '@nestjs/common';
 import { MetaTraderAdapter } from './metatrader.adapter';
 import { MetaApiClientService } from '../services/metaapi-client.service';
-import { BrokerMode, RequiredMarginParams } from '../interfaces/broker-adapter.interface';
+import { BrokerMode, BrokerOrderRequest, RequiredMarginParams } from '../interfaces/broker-adapter.interface';
 
-/**
- * Sprint 32 Gate 4 — MetaTraderAdapter.getRequiredMargin tests.
- *
- * Tests the provider-native MetaAPI calculate-margin mapping:
- *   BUY → ORDER_TYPE_BUY
- *   SELL → ORDER_TYPE_SELL
- *   volume → validated lot size
- *   openPrice → current broker price (ask for BUY, bid for SELL)
- *
- * Tests fail-closed behavior for all error cases.
- */
-
-describe('MetaTraderAdapter — getRequiredMargin (Gate 4)', () => {
-  let adapter: MetaTraderAdapter;
-  let metaApiClient: {
-    calculateMargin: jest.Mock;
-    getOrCreateConnection: jest.Mock;
-  };
+describe('MetaTraderAdapter — account-scoped margin and order routing', () => {
+  let adapter: MetaTraderAdapter; let calculateMargin: jest.Mock; let getOrCreateConnection: jest.Mock;
+  let createMarketBuyOrder: jest.Mock;
+  const params = (direction: 'BUY' | 'SELL'): RequiredMarginParams => ({
+    instrument: 'EURUSD', lotSize: '0.10', direction, connectionReference: 'metaapi-account-A',
+  });
 
   beforeEach(async () => {
-    const mockConn = {
-      subscribeToMarketData: jest.fn().mockResolvedValue(undefined),
-      unsubscribeFromMarketData: jest.fn().mockResolvedValue(undefined),
-      getSymbolPrice: jest.fn().mockResolvedValue({ bid: 1.084, ask: 1.085 }),
-      calculateMargin: jest.fn(),
+    calculateMargin = jest.fn().mockResolvedValue('125.50');
+    createMarketBuyOrder = jest.fn().mockResolvedValue({ stringCode: 'TRADE_RETCODE_DONE', positionId: 'position-1' });
+    getOrCreateConnection = jest.fn().mockResolvedValue({
+      subscribeToMarketData: jest.fn(), unsubscribeFromMarketData: jest.fn(),
+      getSymbolPrice: jest.fn().mockResolvedValue({ bid: 1.084, ask: 1.085 }), createMarketBuyOrder,
+    });
+    const module: TestingModule = await Test.createTestingModule({ providers: [
+      MetaTraderAdapter, { provide: MetaApiClientService, useValue: { calculateMargin, getOrCreateConnection } },
+      { provide: Logger, useValue: { log: jest.fn(), warn: jest.fn(), error: jest.fn() } },
+    ] }).compile();
+    adapter = module.get(MetaTraderAdapter); adapter.setMode(BrokerMode.LIVE);
+  });
+
+  it('maps BUY margin using ask on explicit account', async () => {
+    await expect(adapter.getRequiredMargin(params('BUY'))).resolves.toBe('125.50');
+    expect(getOrCreateConnection).toHaveBeenCalledWith('metaapi-account-A');
+    expect(calculateMargin).toHaveBeenCalledWith('metaapi-account-A', expect.objectContaining({
+      type: 'ORDER_TYPE_BUY', volume: 0.1, openPrice: 1.085,
+    }));
+  });
+  it('maps SELL margin using bid on explicit account', async () => {
+    await expect(adapter.getRequiredMargin(params('SELL'))).resolves.toBe('125.50');
+    expect(calculateMargin).toHaveBeenCalledWith('metaapi-account-A', expect.objectContaining({ type: 'ORDER_TYPE_SELL', openPrice: 1.084 }));
+  });
+  it('ignores mutable currentAccountId for margin', async () => {
+    (adapter as unknown as { currentAccountId: string }).currentAccountId = 'other-account';
+    await adapter.getRequiredMargin(params('BUY'));
+    expect(getOrCreateConnection).toHaveBeenCalledWith('metaapi-account-A');
+  });
+  it('routes placeOrder using explicit account even when singleton state points elsewhere', async () => {
+    (adapter as unknown as { currentAccountId: string }).currentAccountId = 'other-account';
+    const order: BrokerOrderRequest = {
+      instrument: 'EURUSD', direction: 'BUY', lotSize: '0.10', stopLoss: '1.0700', takeProfit: '1.1000',
+      idempotencyKey: 'idem-1', connectionReference: 'metaapi-account-A',
     };
-
-    metaApiClient = {
-      calculateMargin: jest.fn(),
-      getOrCreateConnection: jest.fn().mockResolvedValue(mockConn),
-    };
-
-    // Store mockConn for per-test assertion access
-    (metaApiClient as unknown as { _mockConn: typeof mockConn })._mockConn = mockConn;
-
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        MetaTraderAdapter,
-        { provide: MetaApiClientService, useValue: metaApiClient },
-        { provide: Logger, useValue: { log: jest.fn(), warn: jest.fn(), error: jest.fn() } },
-      ],
-    }).compile();
-
-    adapter = module.get(MetaTraderAdapter);
-    adapter.setMode(BrokerMode.LIVE);
-    // Simulate a connected adapter
-    (adapter as unknown as { currentAccountId: string }).currentAccountId = 'test-account-id';
+    await expect(adapter.placeOrder(order)).resolves.toEqual(expect.objectContaining({ success: true, externalOrderId: 'position-1' }));
+    expect(getOrCreateConnection).toHaveBeenCalledWith('metaapi-account-A');
+    expect(createMarketBuyOrder).toHaveBeenCalledTimes(1);
   });
-
-  // mock conn is stored in the metaApiClient mock for per-test access
-
-  // ── Native order mapping ─────────────────────────────────────────────────
-
-  it('maps BUY → ORDER_TYPE_BUY with correct volume + openPrice (ask)', async () => {
-    metaApiClient.calculateMargin.mockResolvedValue('125.50');
-
-    const params: RequiredMarginParams = {
-      instrument: 'EURUSD',
-      lotSize: '0.10',
-      direction: 'BUY',
-    };
-
-    const result = await adapter.getRequiredMargin(params);
-
-    expect(result).toBe('125.50');
-    // Verify the MetaAPI calculateMargin was called with the correct mapping
-    expect(metaApiClient.calculateMargin).toHaveBeenCalledWith(
-      'test-account-id',
-      expect.objectContaining({
-        symbol: 'EURUSD',
-        type: 'ORDER_TYPE_BUY',
-        volume: 0.1,
-        openPrice: 1.085, // ask price for BUY
-      }),
-    );
+  it('fails closed when margin reference is missing', async () => {
+    await expect(adapter.getRequiredMargin({ instrument: 'EURUSD', lotSize: '0.10', direction: 'BUY' })).resolves.toBeNull();
+    expect(calculateMargin).not.toHaveBeenCalled();
   });
-
-  it('maps SELL → ORDER_TYPE_SELL with correct volume + openPrice (bid)', async () => {
-    metaApiClient.calculateMargin.mockResolvedValue('125.50');
-
-    const params: RequiredMarginParams = {
-      instrument: 'EURUSD',
-      lotSize: '0.10',
-      direction: 'SELL',
-    };
-
-    const result = await adapter.getRequiredMargin(params);
-
-    expect(result).toBe('125.50');
-    expect(metaApiClient.calculateMargin).toHaveBeenCalledWith(
-      'test-account-id',
-      expect.objectContaining({
-        symbol: 'EURUSD',
-        type: 'ORDER_TYPE_SELL',
-        volume: 0.1,
-        openPrice: 1.084, // bid price for SELL
-      }),
-    );
+  it('fails closed on invalid lot size', async () => {
+    await expect(adapter.getRequiredMargin({ ...params('BUY'), lotSize: 'bad' })).resolves.toBeNull();
+    expect(calculateMargin).not.toHaveBeenCalled();
   });
-
-  // ── Fail-closed cases ─────────────────────────────────────────────────────
-
-  it('returns null when MetaAPI calculateMargin returns null', async () => {
-    metaApiClient.calculateMargin.mockResolvedValue(null);
-
-    const result = await adapter.getRequiredMargin({
-      instrument: 'EURUSD',
-      lotSize: '0.10',
-      direction: 'BUY',
-    });
-
-    expect(result).toBeNull();
+  it('fails closed when native margin returns null', async () => {
+    calculateMargin.mockResolvedValue(null); await expect(adapter.getRequiredMargin(params('BUY'))).resolves.toBeNull();
   });
-
-  it('returns null when MetaAPI calculateMargin returns undefined', async () => {
-    metaApiClient.calculateMargin.mockResolvedValue(undefined);
-
-    const result = await adapter.getRequiredMargin({
-      instrument: 'EURUSD',
-      lotSize: '0.10',
-      direction: 'BUY',
-    });
-
-    expect(result).toBeNull();
+  it('fails closed when native margin returns malformed data', async () => {
+    calculateMargin.mockResolvedValue('Infinity'); await expect(adapter.getRequiredMargin(params('BUY'))).resolves.toBeNull();
   });
-
-  it('returns null when MetaAPI calculateMargin throws (provider error)', async () => {
-    metaApiClient.calculateMargin.mockRejectedValue(new Error('MetaAPI timeout'));
-
-    const result = await adapter.getRequiredMargin({
-      instrument: 'EURUSD',
-      lotSize: '0.10',
-      direction: 'BUY',
-    });
-
-    expect(result).toBeNull();
+  it('fails closed when native margin throws', async () => {
+    calculateMargin.mockRejectedValue(new Error('provider')); await expect(adapter.getRequiredMargin(params('BUY'))).resolves.toBeNull();
   });
-
-  it('returns null when no accountId is set (not connected)', async () => {
-    (adapter as unknown as { currentAccountId: string }).currentAccountId = '';
-
-    const result = await adapter.getRequiredMargin({
-      instrument: 'EURUSD',
-      lotSize: '0.10',
-      direction: 'BUY',
-    });
-
-    expect(result).toBeNull();
-  });
-
-  // ── Proof: no generic formula / no default contractSize ───────────────────
-
-  it('does NOT call getInstrumentList for margin calculation (no generic formula)', async () => {
-    metaApiClient.calculateMargin.mockResolvedValue('100.00');
-
-    const spy = jest.spyOn(adapter, 'getInstrumentList');
-
-    await adapter.getRequiredMargin({
-      instrument: 'EURUSD',
-      lotSize: '0.10',
-      direction: 'BUY',
-    });
-
-    // getInstrumentList should NOT be called — we use native calculateMargin
-    expect(spy).not.toHaveBeenCalled();
-    spy.mockRestore();
-  });
-
-  it('does NOT use a local leverage formula (calls MetaAPI native API)', async () => {
-    metaApiClient.calculateMargin.mockResolvedValue('250.00');
-
-    await adapter.getRequiredMargin({
-      instrument: 'GBPUSD',
-      lotSize: '0.50',
-      direction: 'BUY',
-    });
-
-    // The result comes from metaApiClient.calculateMargin — NOT a local formula
-    expect(metaApiClient.calculateMargin).toHaveBeenCalledTimes(1);
+  it('does not use getInstrumentList or local leverage formula', async () => {
+    const spy = jest.spyOn(adapter, 'getInstrumentList'); await adapter.getRequiredMargin(params('BUY'));
+    expect(spy).not.toHaveBeenCalled(); expect(calculateMargin).toHaveBeenCalledTimes(1);
   });
 });
