@@ -141,6 +141,54 @@ export class MetaApiClientService implements OnModuleDestroy {
   }
 
   /**
+   * Sprint 32 Gate 4: calculate required margin using MetaAPI's native
+   * calculate-margin capability.
+   *
+   * Uses the RPC connection's calculateMargin(order) method, which calls
+   * the official MetaAPI WebSocket calculateMargin request.
+   *
+   * Architecture: RiskService → BrokerService → MetaTraderAdapter →
+   * MetaApiClientService.calculateMargin() → MetaAPI native API.
+   *
+   * @param metaApiAccountId - the MetaAPI account ID (UUID)
+   * @param order - { symbol, type (ORDER_TYPE_BUY/SELL), volume, openPrice }
+   * @returns margin as a decimal-safe string, or null if unavailable
+   */
+  async calculateMargin(
+    metaApiAccountId: string,
+    order: {
+      symbol: string;
+      type: string;
+      volume: number;
+      openPrice: number;
+    },
+  ): Promise<string | null> {
+    this.assertAvailable();
+    try {
+      const connection = await this.getOrCreateConnection(metaApiAccountId);
+      // The SDK's calculateMargin returns { margin?: number }
+      const result = await connection.calculateMargin(order);
+
+      if (result?.margin === undefined || result?.margin === null) {
+        return null;
+      }
+
+      const margin = result.margin;
+      if (!Number.isFinite(margin) || margin < 0) {
+        return null;
+      }
+
+      // Return as decimal-safe string (no Float persisted)
+      return margin.toFixed(2);
+    } catch (err) {
+      this.logger.warn(
+        `MetaAPI calculateMargin failed for account ${metaApiAccountId}: ${(err as Error).message}`,
+      );
+      return null;
+    }
+  }
+
+  /**
    * Close and remove a connection from the pool.
    */
   async removeConnection(metaApiAccountId: string): Promise<void> {

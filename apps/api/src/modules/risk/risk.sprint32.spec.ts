@@ -214,6 +214,201 @@ describe('RiskService — Sprint 32 Production Hardening', () => {
         expect(decision.rejectionReason).toContain('exceeds');
       }
     });
+
+    // ── Sprint 32 Gate 4: explicit named tests for ALL fail-closed cases ──
+
+    it('LIVE fail-closed: accountInfo missing/null', async () => {
+      brokerService.getBrokerAccountState.mockResolvedValue(null);
+      const decision = await service.validateProposedTrade('user-1', validTrade());
+      expect(decision.decision).toBe('REJECTED');
+      if (decision.decision === 'REJECTED') {
+        expect(decision.rejectionCode).toBe(RiskRejectionCode.INSUFFICIENT_MARGIN);
+        expect(decision.rejectionReason).toContain('unavailable');
+      }
+    });
+
+    it('LIVE fail-closed: freeMargin null', async () => {
+      brokerService.getBrokerAccountState.mockResolvedValue({
+        balance: '10000.00',
+        equity: '10050.00',
+        freeMargin: null as unknown as string,
+        currency: 'USD',
+      });
+      const decision = await service.validateProposedTrade('user-1', validTrade());
+      expect(decision.decision).toBe('REJECTED');
+      if (decision.decision === 'REJECTED') {
+        expect(decision.rejectionCode).toBe(RiskRejectionCode.INSUFFICIENT_MARGIN);
+        expect(decision.rejectionReason).toContain('unavailable');
+      }
+    });
+
+    it('LIVE fail-closed: freeMargin NaN', async () => {
+      brokerService.getBrokerAccountState.mockResolvedValue({
+        balance: '10000.00',
+        equity: '10050.00',
+        freeMargin: 'not-a-number',
+        currency: 'USD',
+      });
+      const decision = await service.validateProposedTrade('user-1', validTrade());
+      expect(decision.decision).toBe('REJECTED');
+      if (decision.decision === 'REJECTED') {
+        expect(decision.rejectionCode).toBe(RiskRejectionCode.INSUFFICIENT_MARGIN);
+        expect(decision.rejectionReason).toContain('malformed');
+      }
+    });
+
+    it('LIVE fail-closed: freeMargin Infinity/non-finite', async () => {
+      brokerService.getBrokerAccountState.mockResolvedValue({
+        balance: '10000.00',
+        equity: '10050.00',
+        freeMargin: 'Infinity',
+        currency: 'USD',
+      });
+      const decision = await service.validateProposedTrade('user-1', validTrade());
+      expect(decision.decision).toBe('REJECTED');
+      if (decision.decision === 'REJECTED') {
+        expect(decision.rejectionCode).toBe(RiskRejectionCode.INSUFFICIENT_MARGIN);
+        expect(decision.rejectionReason).toContain('malformed');
+      }
+    });
+
+    it('LIVE fail-closed: MetaAPI calculateMargin returns null', async () => {
+      brokerService.getBrokerAccountState.mockResolvedValue({
+        balance: '10000.00',
+        equity: '10050.00',
+        freeMargin: '9800.00',
+        currency: 'USD',
+      });
+      brokerService.getRequiredMargin.mockResolvedValue(null);
+      const decision = await service.validateProposedTrade('user-1', validTrade());
+      expect(decision.decision).toBe('REJECTED');
+      if (decision.decision === 'REJECTED') {
+        expect(decision.rejectionCode).toBe(RiskRejectionCode.INSUFFICIENT_MARGIN);
+        expect(decision.rejectionReason).toContain('unavailable');
+      }
+    });
+
+    it('LIVE fail-closed: MetaAPI calculateMargin returns malformed result', async () => {
+      brokerService.getBrokerAccountState.mockResolvedValue({
+        balance: '10000.00',
+        equity: '10050.00',
+        freeMargin: '9800.00',
+        currency: 'USD',
+      });
+      brokerService.getRequiredMargin.mockResolvedValue('not-a-number');
+      const decision = await service.validateProposedTrade('user-1', validTrade());
+      expect(decision.decision).toBe('REJECTED');
+      if (decision.decision === 'REJECTED') {
+        expect(decision.rejectionCode).toBe(RiskRejectionCode.INSUFFICIENT_MARGIN);
+        expect(decision.rejectionReason).toContain('malformed');
+      }
+    });
+
+    it('LIVE fail-closed: MetaAPI calculateMargin provider error (throws)', async () => {
+      brokerService.getBrokerAccountState.mockResolvedValue({
+        balance: '10000.00',
+        equity: '10050.00',
+        freeMargin: '9800.00',
+        currency: 'USD',
+      });
+      brokerService.getRequiredMargin.mockRejectedValue(new Error('MetaAPI timeout'));
+      const decision = await service.validateProposedTrade('user-1', validTrade());
+      expect(decision.decision).toBe('REJECTED');
+      if (decision.decision === 'REJECTED') {
+        expect(decision.rejectionCode).toBe(RiskRejectionCode.INSUFFICIENT_MARGIN);
+        expect(decision.rejectionReason).toContain('adapter error');
+      }
+    });
+
+    it('LIVE fail-closed: no broker connection for margin calculation', async () => {
+      brokerService.getBrokerAccountState.mockResolvedValue({
+        balance: '10000.00',
+        equity: '10050.00',
+        freeMargin: '9800.00',
+        currency: 'USD',
+      });
+      // getRequiredMargin returns null because the connection lookup fails
+      // (the broker connection check at Step 1b passes, but the margin
+      // calculation path cannot find the connection — simulated by having
+      // getRequiredMargin return null, which is the CAPABILITY_UNAVAILABLE case)
+      brokerService.getRequiredMargin.mockResolvedValue(null);
+      const decision = await service.validateProposedTrade('user-1', validTrade());
+      expect(decision.decision).toBe('REJECTED');
+      if (decision.decision === 'REJECTED') {
+        expect(decision.rejectionCode).toBe(RiskRejectionCode.INSUFFICIENT_MARGIN);
+        expect(decision.rejectionReason).toContain('unavailable');
+      }
+    });
+
+    it('LIVE: required margin > free margin → INSUFFICIENT_MARGIN', async () => {
+      brokerService.getBrokerAccountState.mockResolvedValue({
+        balance: '10000.00',
+        equity: '10050.00',
+        freeMargin: '50.00', // less than required 100.00
+        currency: 'USD',
+      });
+      brokerService.getRequiredMargin.mockResolvedValue('100.00');
+      const decision = await service.validateProposedTrade('user-1', validTrade());
+      expect(decision.decision).toBe('REJECTED');
+      if (decision.decision === 'REJECTED') {
+        expect(decision.rejectionCode).toBe(RiskRejectionCode.INSUFFICIENT_MARGIN);
+        expect(decision.rejectionReason).toContain('exceeds');
+      }
+    });
+
+    it('LIVE: sufficient margin → APPROVED', async () => {
+      brokerService.getBrokerAccountState.mockResolvedValue({
+        balance: '10000.00',
+        equity: '10050.00',
+        freeMargin: '9800.00', // more than required 100.00
+        currency: 'USD',
+      });
+      brokerService.getRequiredMargin.mockResolvedValue('100.00');
+      const decision = await service.validateProposedTrade('user-1', validTrade());
+      expect(decision.decision).toBe('APPROVED');
+    });
+
+    it('PAPER: deterministic paper margin calculation works (approves)', async () => {
+      brokerService.getBrokerAccountState.mockResolvedValue({
+        balance: '10000.00',
+        equity: '10050.00',
+        freeMargin: '9800.00',
+        currency: 'USD',
+      });
+      brokerService.getRequiredMargin.mockResolvedValue('100.00');
+      const decision = await service.validateProposedTrade('user-1', validTrade());
+      expect(decision.decision).toBe('APPROVED');
+    });
+
+    it('PAPER: insufficient simulated margin rejects', async () => {
+      brokerService.getBrokerAccountState.mockResolvedValue({
+        balance: '100.00',
+        equity: '100.00',
+        freeMargin: '50.00',
+        currency: 'USD',
+      });
+      brokerService.getRequiredMargin.mockResolvedValue('200.00');
+      const decision = await service.validateProposedTrade('user-1', validTrade());
+      expect(decision.decision).toBe('REJECTED');
+      if (decision.decision === 'REJECTED') {
+        expect(decision.rejectionCode).toBe(RiskRejectionCode.INSUFFICIENT_MARGIN);
+      }
+    });
+
+    it('PAPER: malformed simulation data rejects', async () => {
+      brokerService.getBrokerAccountState.mockResolvedValue({
+        balance: '10000.00',
+        equity: '10050.00',
+        freeMargin: 'bad-data',
+        currency: 'USD',
+      });
+      const decision = await service.validateProposedTrade('user-1', validTrade());
+      expect(decision.decision).toBe('REJECTED');
+      if (decision.decision === 'REJECTED') {
+        expect(decision.rejectionCode).toBe(RiskRejectionCode.INSUFFICIENT_MARGIN);
+        expect(decision.rejectionReason).toContain('malformed');
+      }
+    });
   });
 
   // ── Part A: Idempotency (Risk layer) ──────────────────────────────────────

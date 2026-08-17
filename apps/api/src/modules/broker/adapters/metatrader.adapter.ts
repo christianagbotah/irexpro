@@ -173,28 +173,59 @@ export class MetaTraderAdapter implements IBrokerAdapter {
   }
 
   /**
-   * Sprint 32 Gate 3: calculate required margin for a proposed order.
+   * Sprint 32 Gate 4: calculate required margin using MetaAPI's native
+   * calculate-margin capability.
    *
-   * LIVE mode: MetaAPI does not expose a native required-margin calculation
-   * through the existing RPC connection. The broker's margin rules vary by
-   * instrument, account type, and margin mode — a generic formula using
-   * a default contractSize is NOT authoritative for LIVE.
-   * Therefore: return null (CAPABILITY_UNAVAILABLE) for LIVE.
-   * The Risk Engine fails closed when this returns null.
+   * Uses the RPC connection's calculateMargin(order) method through
+   * MetaApiClientService, which calls the official MetaAPI WebSocket
+   * calculateMargin request (POST /users/current/accounts/:accountId/calculate-margin).
    *
-   * PAPER mode: not applicable — PAPER uses the PaperBrokerAdapter which
-   * has deterministic simulated margin calculation.
+   * This is the PROVIDER-NATIVE margin calculation — not a generic formula.
+   * The broker's own margin rules (per instrument, account type, margin mode,
+   * leverage) are applied by the broker server.
+   *
+   * LIVE mode: uses the native MetaAPI calculation (authoritative).
+   * If the native calculation returns null/undefined/NaN/Infinity or throws,
+   * returns null → Risk Engine fails closed.
+   *
+   * PAPER/DEMO mode: also uses the native MetaAPI calculation (the demo
+   * account's margin rules apply). This is safe because the demo account
+   * uses the same instrument specifications as live.
+   *
+   * No default contractSize = 100000 fallback is used.
+   * No local generic leverage formula is used.
    */
-  async getRequiredMargin(_params: RequiredMarginParams): Promise<string | null> {
-    // LIVE: cannot safely calculate required margin without a provider-native
-    // calculation capability. Return null → Risk Engine fails closed.
-    if (this.mode === BrokerMode.LIVE) {
-      return null;
+  async getRequiredMargin(params: RequiredMarginParams): Promise<string | null> {
+    try {
+      // Get the MetaAPI account ID from the current connection
+      const accountId = await this.getMetaApiAccountId();
+      if (!accountId) {
+        return null; // CAPABILITY_UNAVAILABLE
+      }
+
+      // Map iRexPro order to MetaAPI MarginOrder
+      const openPrice = await this.getOpenPrice(params.instrument, params.direction);
+      if (openPrice === null) {
+        return null; // cannot determine open price
+      }
+
+      const order = {
+        symbol: params.instrument,
+        type: params.direction === 'BUY' ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL',
+        volume: parseFloat(params.lotSize),
+        openPrice,
+      };
+
+      // Use the native MetaAPI calculateMargin through MetaApiClientService
+      const margin = await this.metaApiClient.calculateMargin(accountId, order);
+      // Validate: must be a non-null, finite, non-negative string
+      if (margin === null || margin === undefined) return null;
+      const parsed = parseFloat(margin);
+      if (!Number.isFinite(parsed) || parsed < 0) return null;
+      return margin; // string or null
+    } catch {
+      return null; // any error → fail closed
     }
-    // DEMO/PAPER: delegate to the paper broker adapter's deterministic formula
-    // (DEMO mode uses the same paper-broker semantics for simulated margin).
-    // This is safe because PAPER/DEMO symbol specifications are controlled by us.
-    return null;
   }
 
   // ─── Market data ──────────────────────────────────────────────────────────
@@ -407,6 +438,29 @@ export class MetaTraderAdapter implements IBrokerAdapter {
       return await this.metaApiClient.getOrCreateConnection(this.currentAccountId);
     } catch (err) {
       throw this.mapError(err);
+    }
+  }
+
+  /**
+   * Sprint 32 Gate 4: get the current MetaAPI account ID for native API calls.
+   */
+  private async getMetaApiAccountId(): Promise<string | null> {
+    return this.currentAccountId;
+  }
+
+  /**
+   * Sprint 32 Gate 4: get the open price for a proposed order.
+   * BUY uses the ask price; SELL uses the bid price.
+   */
+  private async getOpenPrice(instrument: string, direction: string): Promise<number | null> {
+    try {
+      const price = await this.getCurrentPrice(instrument);
+      if (!price) return null;
+      const priceValue = direction === 'BUY' ? parseFloat(price.ask) : parseFloat(price.bid);
+      if (!Number.isFinite(priceValue) || priceValue <= 0) return null;
+      return priceValue;
+    } catch {
+      return null;
     }
   }
 
