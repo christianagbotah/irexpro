@@ -31,6 +31,8 @@ const approvedDecision: RiskDecision = {
   appliedRules: ['KILL_SWITCH:OK'],
   riskScore: 30,
   evaluatedAt: new Date(),
+  // Sprint 32 Gate 2: required for the advisory-lock daily-trade-slot reservation
+  maxDailyTrades: 10,
 };
 
 const rejectedDecision: RiskDecision = {
@@ -80,7 +82,7 @@ describe('ExecutionService', () => {
     getOrderStatus: jest.Mock;
   };
   let auditService: { log: jest.Mock };
-  let dataSource: { query: jest.Mock };
+  let dataSource: { query: jest.Mock; transaction: jest.Mock };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -119,7 +121,23 @@ describe('ExecutionService', () => {
     };
 
     auditService = { log: jest.fn().mockResolvedValue(undefined) };
-    dataSource = { query: jest.fn().mockResolvedValue([{ total: '0' }]) };
+    // Sprint 32 Gate 2: mock dataSource.transaction for reserveDailyTradeSlot
+    // (advisory lock). The mock manager supports query() for the lock + count.
+    const mockManager = {
+      query: jest.fn().mockImplementation((sql: string) => {
+        if (sql.includes('pg_advisory_xact_lock')) return Promise.resolve([]);
+        if (sql.includes('COUNT(*)')) return Promise.resolve([{ count: '0' }]);
+        return Promise.resolve([]);
+      }),
+    };
+    dataSource = {
+      query: jest.fn().mockResolvedValue([{ total: '0' }]),
+      transaction: jest
+        .fn()
+        .mockImplementation((cb: (manager: typeof mockManager) => Promise<unknown>) =>
+          cb(mockManager),
+        ),
+    };
 
     module = await Test.createTestingModule({
       providers: [

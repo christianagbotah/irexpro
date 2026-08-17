@@ -634,6 +634,38 @@ export class BrokerService {
     };
   }
 
+  /**
+   * Sprint 32 Gate 2: get required margin for a proposed order through the
+   * broker adapter abstraction. Delegates to the adapter's
+   * getRequiredMargin() which uses broker-specific margin rules.
+   *
+   * Returns null if the adapter cannot calculate the required margin
+   * (instrument not found, price unavailable, adapter error, etc.).
+   * The Risk Engine fails closed when this returns null for LIVE execution.
+   */
+  async getRequiredMargin(
+    connectionId: string,
+    params: { instrument: string; lotSize: string; direction: 'BUY' | 'SELL' },
+  ): Promise<string | null> {
+    const connection = await this.connectionRepo.findOne({
+      where: { id: connectionId },
+    });
+    if (!connection) return null;
+
+    const adapter = this.adapterRegistry.getAdapter(connection.brokerId);
+    adapter.setMode(connection.accountType);
+    // Note: this does NOT call adapter.connect() — the adapter should be
+    // already connected (the execution service connects before placing
+    // orders). For the Risk Engine pre-check, the adapter may need to
+    // connect. If the adapter throws because it's not connected, the catch
+    // returns null (fail-closed).
+    try {
+      return await adapter.getRequiredMargin(params);
+    } catch {
+      return null;
+    }
+  }
+
   private async upsertBrokerAccount(
     connectionId: string,
     currency?: string,

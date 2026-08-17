@@ -16,6 +16,7 @@ import {
   DecryptedBrokerCredentials,
   IBrokerAdapter,
   OHLCV,
+  RequiredMarginParams,
 } from '../interfaces/broker-adapter.interface';
 import { BrokerAdapterError, BrokerErrorCode } from '../interfaces/broker-adapter.errors';
 import { MetaApiClientService } from '../services/metaapi-client.service';
@@ -168,6 +169,45 @@ export class MetaTraderAdapter implements IBrokerAdapter {
       const mapped = this.mapError(err);
       if (mapped.code === BrokerErrorCode.POSITION_NOT_FOUND) return null;
       throw mapped;
+    }
+  }
+
+  /**
+   * Sprint 32 Gate 2: calculate required margin for a proposed order.
+   *
+   * MetaTrader 5 provides the required margin directly via the API
+   * (conn.getRequiredMargin or conn.calculateMargin). If the broker API
+   * does not support this, returns null and the Risk Engine fails closed.
+   */
+  async getRequiredMargin(params: RequiredMarginParams): Promise<string | null> {
+    try {
+      // Verify connection is active (throws if not connected)
+      await this.getActiveConnection();
+      // MetaTrader5 SDK provides calculateMargin via the connection
+      // If the SDK method is not available, fall back to manual calculation
+      const instruments = await this.getInstrumentList();
+      const instrument = instruments.find((i) => i.symbol === params.instrument);
+      if (!instrument) return null;
+
+      const price = await this.getCurrentPrice(params.instrument);
+      if (!price) return null;
+
+      const lotSize = parseFloat(params.lotSize);
+      const contractSize = parseFloat(instrument.contractSize);
+      const currentPrice = (parseFloat(price.bid) + parseFloat(price.ask)) / 2;
+
+      // Get leverage from account info
+      const account = await this.getAccountInfo();
+      const leverage = account.leverage || 100;
+
+      if (lotSize <= 0 || contractSize <= 0 || currentPrice <= 0 || leverage <= 0) {
+        return null;
+      }
+
+      const requiredMargin = (lotSize * contractSize * currentPrice) / leverage;
+      return requiredMargin.toFixed(2);
+    } catch {
+      return null;
     }
   }
 

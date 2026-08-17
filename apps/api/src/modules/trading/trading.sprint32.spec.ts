@@ -23,8 +23,8 @@ import { TradingSession, TradingSessionStatus } from '../execution/entities/trad
 
 describe('TradingService — Sprint 32 Snapshot Immutability', () => {
   let service: TradingService;
-  let executionService: any;
-  let riskService: any;
+  let executionService: Record<string, jest.Mock>;
+  let riskService: Record<string, jest.Mock>;
 
   beforeEach(async () => {
     const mockSession: TradingSession = {

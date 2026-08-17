@@ -31,6 +31,7 @@ const approvedDecision = (): RiskDecision => ({
   appliedRules: ['KILL_SWITCH:OK'],
   riskScore: 30,
   evaluatedAt: new Date(),
+  maxDailyTrades: 10,
 });
 
 const mockAdapter = () => ({
@@ -54,8 +55,8 @@ const mockEncryptionService = () => ({
 
 describe('ExecutionService — Sprint 32 Idempotency', () => {
   let service: ExecutionService;
-  let tradeRepo: any;
-  let sessionRepo: any;
+  let tradeRepo: Record<string, jest.Mock>;
+  let sessionRepo: Record<string, jest.Mock>;
   let mockAdapterInstance: ReturnType<typeof mockAdapter>;
   let auditService: { log: jest.Mock };
 
@@ -89,7 +90,27 @@ describe('ExecutionService — Sprint 32 Idempotency', () => {
         },
         { provide: CredentialEncryptionService, useValue: mockEncryptionService() },
         { provide: AuditService, useValue: auditService },
-        { provide: DataSource, useValue: { query: jest.fn().mockResolvedValue([{ total: '0' }]) } },
+        {
+          provide: DataSource,
+          useValue: {
+            query: jest.fn().mockResolvedValue([{ total: '0' }]),
+            // Sprint 32 Gate 2: mock transaction for reserveDailyTradeSlot
+            transaction: jest
+              .fn()
+              .mockImplementation(
+                async (cb: (manager: { query: jest.Mock }) => Promise<unknown>) => {
+                  const mockManager = {
+                    query: jest.fn().mockImplementation((sql: string) => {
+                      if (sql.includes('pg_advisory_xact_lock')) return Promise.resolve([]);
+                      if (sql.includes('COUNT(*)')) return Promise.resolve([{ count: '0' }]);
+                      return Promise.resolve([]);
+                    }),
+                  };
+                  return cb(mockManager);
+                },
+              ),
+          },
+        },
         { provide: DomainEventBus, useValue: { publish: jest.fn() } },
         { provide: Logger, useValue: { log: jest.fn(), warn: jest.fn(), error: jest.fn() } },
       ],
@@ -98,7 +119,7 @@ describe('ExecutionService — Sprint 32 Idempotency', () => {
     service = module.get(ExecutionService);
 
     // Mock brokerService.findActiveConnectionForUser
-    (service as any).brokerService = {
+    (service as unknown as { brokerService: Record<string, jest.Mock> }).brokerService = {
       findActiveConnectionForUser: jest.fn().mockResolvedValue({
         id: 'conn-1',
         brokerId: 'paper-broker',
@@ -182,14 +203,14 @@ describe('ExecutionService — Sprint 32 Idempotency', () => {
   // ── countTodayTrades (daily-limit helper) ──────────────────────────────────
 
   it('countTodayTrades returns the count of OPEN+CLOSED trades opened today', async () => {
-    const dataSource = (service as any).dataSource;
+    const dataSource = (service as unknown as { dataSource: { query: jest.Mock } }).dataSource;
     dataSource.query.mockResolvedValue([{ count: '5' }]);
     const result = await service.countTodayTrades('user-1');
     expect(result).toBe(5);
   });
 
   it('countTodayTrades returns 0 when no trades today', async () => {
-    const dataSource = (service as any).dataSource;
+    const dataSource = (service as unknown as { dataSource: { query: jest.Mock } }).dataSource;
     dataSource.query.mockResolvedValue([{ count: '0' }]);
     const result = await service.countTodayTrades('user-1');
     expect(result).toBe(0);

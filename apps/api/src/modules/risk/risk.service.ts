@@ -223,24 +223,25 @@ export class RiskService {
     }
 
     // 3c. Margin / account capacity check
-    // Sprint 32: the broker account entity exposes freeMargin (the funds
-    // available to open new positions). If freeMargin is zero or negative, the
-    // account cannot support ANY new position — reject fail-closed.
+    // Sprint 32 Gate 2: capability-aware margin validation through the broker
+    // abstraction. The Risk Engine does NOT contain broker-specific margin
+    // formulas — it delegates to BrokerService.getRequiredMargin() which uses
+    // the adapter's getRequiredMargin() (broker-specific rules).
     //
-    // A full margin calculation requires: lot_size × contract_size ×
-    // current_price / leverage. Contract-size lookup requires the broker
-    // adapter's getInstrumentList() per-instrument — deferred to a future
-    // sprint because it introduces a live-market-data dependency in the risk
-    // pipeline. This check is the safe floor: an account with no free margin
-    // cannot open any position, so we reject deterministically.
+    // For LIVE execution: compares requiredMargin vs available freeMargin.
+    // If requiredMargin > freeMargin → reject with INSUFFICIENT_MARGIN.
+    // If requiredMargin cannot be established (null) → fail closed.
+    // If account state is missing/malformed → fail closed.
     //
-    // Fail-closed behavior: if the account state was loaded but freeMargin is
-    // unavailable/malformed (NaN), reject rather than risk approving an
-    // over-leveraged trade. Paper/demo accounts with freeMargin='0' are not
-    // blocked here (0 is a valid balance for paper); only negative/NaN is.
-    if (brokerFreeMargin !== undefined) {
+    // For PAPER execution: the paper broker adapter provides deterministic
+    // simulated margin calculation. The same comparison applies.
+    //
+    // No arbitrary safety multipliers (e.g. 0.95) are used — the comparison
+    // is requiredMargin > freeMargin (strict greater-than). This is the
+    // documented policy: the account must have at least the required margin.
+    if (brokerFreeMargin !== undefined && brokerFreeMargin !== null) {
       const freeMargin = parseFloat(brokerFreeMargin);
-      if (Number.isNaN(freeMargin)) {
+      if (Number.isNaN(freeMargin) || !Number.isFinite(freeMargin)) {
         appliedRules.push('MARGIN_CHECK:ERROR');
         return this.rejectAndRecord(
           userId,
@@ -251,23 +252,91 @@ export class RiskService {
           evaluatedAt,
         );
       }
-      if (freeMargin < 0) {
+
+      // Get required margin through the broker abstraction
+      const activeConn = await this.brokerService.findActiveConnectionForUser(userId);
+      if (!activeConn) {
+        appliedRules.push('MARGIN_CHECK:NO_CONNECTION');
+        return this.rejectAndRecord(
+          userId,
+          trade,
+          RiskRejectionCode.INSUFFICIENT_MARGIN,
+          'No active broker connection — cannot calculate required margin',
+          contextSnapshot as RiskContextSnapshot,
+          evaluatedAt,
+        );
+      }
+
+      let requiredMargin: string | null = null;
+      try {
+        requiredMargin = await this.brokerService.getRequiredMargin(activeConn.id, {
+          instrument: trade.instrument,
+          lotSize: trade.requestedLotSize,
+          direction: trade.direction,
+        });
+      } catch {
+        // Adapter error — fail closed
+        appliedRules.push('MARGIN_CHECK:ADAPTER_ERROR');
+        return this.rejectAndRecord(
+          userId,
+          trade,
+          RiskRejectionCode.INSUFFICIENT_MARGIN,
+          'Broker adapter error — cannot calculate required margin (fail-closed)',
+          contextSnapshot as RiskContextSnapshot,
+          evaluatedAt,
+        );
+      }
+
+      if (requiredMargin === null) {
+        // Adapter cannot calculate required margin — fail closed for safety
+        appliedRules.push('MARGIN_CHECK:CAPABILITY_UNAVAILABLE');
+        return this.rejectAndRecord(
+          userId,
+          trade,
+          RiskRejectionCode.INSUFFICIENT_MARGIN,
+          'Broker cannot calculate required margin for this order — capacity verification unavailable (fail-closed)',
+          contextSnapshot as RiskContextSnapshot,
+          evaluatedAt,
+        );
+      }
+
+      const reqMargin = parseFloat(requiredMargin);
+      if (Number.isNaN(reqMargin) || !Number.isFinite(reqMargin)) {
+        appliedRules.push('MARGIN_CHECK:MALFORMED');
+        return this.rejectAndRecord(
+          userId,
+          trade,
+          RiskRejectionCode.INSUFFICIENT_MARGIN,
+          `Required margin is malformed ("${requiredMargin}") — cannot verify capacity (fail-closed)`,
+          contextSnapshot as RiskContextSnapshot,
+          evaluatedAt,
+        );
+      }
+
+      if (reqMargin > freeMargin) {
         appliedRules.push('MARGIN_CHECK');
         return this.rejectAndRecord(
           userId,
           trade,
           RiskRejectionCode.INSUFFICIENT_MARGIN,
-          `Account free margin (${freeMargin.toFixed(2)}) is negative — insufficient capacity for new positions`,
+          `Required margin (${reqMargin.toFixed(2)}) exceeds available free margin (${freeMargin.toFixed(2)})`,
           contextSnapshot as RiskContextSnapshot,
           evaluatedAt,
         );
       }
+
       appliedRules.push('MARGIN_CHECK:OK');
     } else {
-      // No account state available — cannot verify margin. Fail closed for
-      // safety (the daily-loss/drawdown checks above also depend on broker
-      // state; if it's unavailable, those were skipped too).
+      // No account state available — fail closed
       appliedRules.push('MARGIN_CHECK:UNAVAILABLE');
+      return this.rejectAndRecord(
+        userId,
+        trade,
+        RiskRejectionCode.INSUFFICIENT_MARGIN,
+        'Broker account state unavailable — cannot verify margin capacity (fail-closed)',
+        contextSnapshot as RiskContextSnapshot,
+        evaluatedAt,
+      );
     }
 
     // ── Step 4: Position-level checks ──────────────────────────────────────
@@ -522,6 +591,9 @@ export class RiskService {
       appliedRules,
       riskScore: this.computeRiskScore(trade, profile),
       evaluatedAt,
+      // Sprint 32 Gate 2: pass maxDailyTrades to ExecutionService for the
+      // final atomic advisory-lock daily-trade-slot reservation.
+      maxDailyTrades: profile.maxDailyTrades,
     };
 
     this.logger.log(

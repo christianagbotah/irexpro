@@ -70,6 +70,7 @@ const mockBrokerService = () => ({
     freeMargin: '9800.00',
     currency: 'USD',
   }),
+  getRequiredMargin: jest.fn().mockResolvedValue('100.00'),
 });
 
 const mockAuditService = () => ({
@@ -81,6 +82,7 @@ const mockExecutionService = () => ({
   countTodayTrades: jest.fn().mockResolvedValue(0),
   getTodayRealisedLoss: jest.fn().mockResolvedValue(0),
   findTradeBySignalId: jest.fn().mockResolvedValue(null),
+  reserveDailyTradeSlot: jest.fn().mockResolvedValue({ allowed: true, currentCount: 0 }),
 });
 
 // ─── Test suite ───────────────────────────────────────────────────────────────
@@ -152,13 +154,14 @@ describe('RiskService — Sprint 32 Production Hardening', () => {
   // ── Part D: Margin / account capacity ─────────────────────────────────────
 
   describe('Step 3c — Margin / account capacity', () => {
-    it('approves when freeMargin is positive', async () => {
+    it('approves when required margin is within available freeMargin', async () => {
       brokerService.getBrokerAccountState.mockResolvedValue({
         balance: '10000.00',
         equity: '10050.00',
         freeMargin: '9800.00',
         currency: 'USD',
       });
+      // Mock required margin is 100.00 (from mockBrokerService default)
       const decision = await service.validateProposedTrade('user-1', validTrade());
       expect(decision.decision).toBe('APPROVED');
     });
@@ -174,7 +177,9 @@ describe('RiskService — Sprint 32 Production Hardening', () => {
       expect(decision.decision).toBe('REJECTED');
       if (decision.decision === 'REJECTED') {
         expect(decision.rejectionCode).toBe(RiskRejectionCode.INSUFFICIENT_MARGIN);
-        expect(decision.rejectionReason).toContain('negative');
+        // Sprint 32 Gate 2: the new capability-aware check compares required
+        // margin vs free margin. Required margin (100.00) > free margin (-200.00).
+        expect(decision.rejectionReason).toContain('exceeds');
       }
     });
 
@@ -193,7 +198,7 @@ describe('RiskService — Sprint 32 Production Hardening', () => {
       }
     });
 
-    it('does not block when freeMargin is zero (paper account)', async () => {
+    it('rejects with INSUFFICIENT_MARGIN when freeMargin is zero and order requires margin', async () => {
       brokerService.getBrokerAccountState.mockResolvedValue({
         balance: '0',
         equity: '0',
@@ -201,10 +206,12 @@ describe('RiskService — Sprint 32 Production Hardening', () => {
         currency: 'USD',
       });
       const decision = await service.validateProposedTrade('user-1', validTrade());
-      // freeMargin=0 is valid for paper; only negative/NaN is blocked.
-      // The decision should NOT be a margin rejection.
+      // Sprint 32 Gate 2: with zero free margin, any required margin > 0
+      // exceeds the available capacity → reject.
+      expect(decision.decision).toBe('REJECTED');
       if (decision.decision === 'REJECTED') {
-        expect(decision.rejectionCode).not.toBe(RiskRejectionCode.INSUFFICIENT_MARGIN);
+        expect(decision.rejectionCode).toBe(RiskRejectionCode.INSUFFICIENT_MARGIN);
+        expect(decision.rejectionReason).toContain('exceeds');
       }
     });
   });
