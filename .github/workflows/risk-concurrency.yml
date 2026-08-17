@@ -1,0 +1,80 @@
+name: Risk Execution Concurrency
+
+on:
+  push:
+    branches:
+      - sprint-32-risk-engine-production-hardening
+    paths:
+      - 'apps/api/**'
+      - '.github/workflows/risk-concurrency.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'apps/api/**'
+      - '.github/workflows/risk-concurrency.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: risk-concurrency-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+  PNPM_VERSION: '10.34.5'
+
+jobs:
+  real-postgres-concurrency:
+    name: Real PostgreSQL 16 Execution Concurrency
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16-bookworm
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci_disposable_password
+          POSTGRES_DB: irexpro_risk_concurrency
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d irexpro_risk_concurrency"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4.4.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run real PostgreSQL concurrency suite
+        working-directory: apps/api
+        env:
+          NODE_ENV: test
+          DB_HOST: localhost
+          DB_PORT: '5432'
+          DB_USER: postgres
+          DB_PASSWORD: ci_disposable_password
+          DB_NAME: irexpro_risk_concurrency
+          JWT_SECRET: test_jwt_secret_minimum_32_characters_long
+          COOKIE_SECRET: test_cookie_secret_min_16
+        run: pnpm exec jest --config ./test/jest-pg.json --runInBand
+
+      - name: Verify patch whitespace
+        run: git diff --check origin/main...HEAD
