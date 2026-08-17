@@ -85,7 +85,7 @@ export function AuthLayout({ title, subtitle, children }: AuthLayoutProps) {
           <h1 className="auth-layout__headline">Platform Administration Portal</h1>
           <p className="auth-layout__subheadline">
             Manage users, subscriptions, payments, broker connections, and platform
-            audit activity. Admin access requires ADMIN or SUPER_ADMIN role.
+            audit activity. Admin access requires the Admin or Super Admin role.
           </p>
           <ul className="auth-layout__features">
             <li>User management & KYC oversight</li>
