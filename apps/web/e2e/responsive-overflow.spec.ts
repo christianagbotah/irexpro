@@ -19,8 +19,8 @@ import {
  *     /payments/callback
  *   - The landing page: /
  *
- * Each route is loaded at every project viewport (360, 390, 768, 1024, 1440)
- * and asserted to have `document.documentElement.scrollWidth <= clientWidth`.
+ * Each route is loaded at every project viewport and asserted to have
+ * `document.documentElement.scrollWidth <= clientWidth`.
  *
  * Auth routes are NOT intercepted — they render their default unauthenticated
  * state (the AuthLayout split-screen). The payment callback routes render a
@@ -44,7 +44,12 @@ test.describe('Responsive — no horizontal overflow on auth & payment routes', 
 
   test('landing page (/) has no horizontal overflow', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByRole('heading', { level: 1, name: /irexpro/i })).toBeVisible();
+    await expect(
+      page.getByRole('heading', {
+        level: 1,
+        name: /AI-driven forex trading with mandatory risk validation/i,
+      }),
+    ).toBeVisible();
     await assertNoHorizontalOverflow(page);
     assertNoConsoleErrors(page);
   });
