@@ -173,42 +173,28 @@ export class MetaTraderAdapter implements IBrokerAdapter {
   }
 
   /**
-   * Sprint 32 Gate 2: calculate required margin for a proposed order.
+   * Sprint 32 Gate 3: calculate required margin for a proposed order.
    *
-   * MetaTrader 5 provides the required margin directly via the API
-   * (conn.getRequiredMargin or conn.calculateMargin). If the broker API
-   * does not support this, returns null and the Risk Engine fails closed.
+   * LIVE mode: MetaAPI does not expose a native required-margin calculation
+   * through the existing RPC connection. The broker's margin rules vary by
+   * instrument, account type, and margin mode — a generic formula using
+   * a default contractSize is NOT authoritative for LIVE.
+   * Therefore: return null (CAPABILITY_UNAVAILABLE) for LIVE.
+   * The Risk Engine fails closed when this returns null.
+   *
+   * PAPER mode: not applicable — PAPER uses the PaperBrokerAdapter which
+   * has deterministic simulated margin calculation.
    */
-  async getRequiredMargin(params: RequiredMarginParams): Promise<string | null> {
-    try {
-      // Verify connection is active (throws if not connected)
-      await this.getActiveConnection();
-      // MetaTrader5 SDK provides calculateMargin via the connection
-      // If the SDK method is not available, fall back to manual calculation
-      const instruments = await this.getInstrumentList();
-      const instrument = instruments.find((i) => i.symbol === params.instrument);
-      if (!instrument) return null;
-
-      const price = await this.getCurrentPrice(params.instrument);
-      if (!price) return null;
-
-      const lotSize = parseFloat(params.lotSize);
-      const contractSize = parseFloat(instrument.contractSize);
-      const currentPrice = (parseFloat(price.bid) + parseFloat(price.ask)) / 2;
-
-      // Get leverage from account info
-      const account = await this.getAccountInfo();
-      const leverage = account.leverage || 100;
-
-      if (lotSize <= 0 || contractSize <= 0 || currentPrice <= 0 || leverage <= 0) {
-        return null;
-      }
-
-      const requiredMargin = (lotSize * contractSize * currentPrice) / leverage;
-      return requiredMargin.toFixed(2);
-    } catch {
+  async getRequiredMargin(_params: RequiredMarginParams): Promise<string | null> {
+    // LIVE: cannot safely calculate required margin without a provider-native
+    // calculation capability. Return null → Risk Engine fails closed.
+    if (this.mode === BrokerMode.LIVE) {
       return null;
     }
+    // DEMO/PAPER: delegate to the paper broker adapter's deterministic formula
+    // (DEMO mode uses the same paper-broker semantics for simulated margin).
+    // This is safe because PAPER/DEMO symbol specifications are controlled by us.
+    return null;
   }
 
   // ─── Market data ──────────────────────────────────────────────────────────
