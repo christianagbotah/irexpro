@@ -181,7 +181,9 @@ export class MetaApiClientService implements OnModuleDestroy {
       // Return as decimal-safe string (no Float persisted)
       return margin.toFixed(2);
     } catch {
-      this.logger.warn('MetaAPI calculateMargin request failed; margin validation will fail closed');
+      this.logger.warn(
+        'MetaAPI calculateMargin request failed; margin validation will fail closed',
+      );
       return null;
     }
   }

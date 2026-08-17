@@ -658,11 +658,7 @@ export class BrokerService {
     let credentials: DecryptedBrokerCredentials | null = null;
     try {
       let connectionReference: string | undefined;
-      if (
-        connection.encryptedCredentials &&
-        connection.credentialIv &&
-        connection.credentialTag
-      ) {
+      if (connection.encryptedCredentials && connection.credentialIv && connection.credentialTag) {
         credentials = this.encryptionService.decrypt({
           ciphertext: connection.encryptedCredentials,
           iv: connection.credentialIv,

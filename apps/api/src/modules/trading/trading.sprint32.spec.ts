@@ -156,7 +156,7 @@ describe('TradingService — Sprint 32 Snapshot Immutability', () => {
   it('snapshot reflects the risk profile AT session start time (not after edits)', async () => {
     // Start session with the original profile (maxDailyTrades=10)
     await service.startTradingSession('user-1');
-   const snapshotArg = executionService.startSession.mock.calls[0][3];
+    const snapshotArg = executionService.startSession.mock.calls[0][3];
     expect(snapshotArg.maxDailyTrades).toBe(10);
 
     // Simulate the user editing their risk profile AFTER the session started
