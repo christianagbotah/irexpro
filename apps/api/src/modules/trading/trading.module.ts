@@ -2,7 +2,6 @@ import { forwardRef, Module } from '@nestjs/common';
 import { TradingService } from './trading.service';
 import { TradingController } from './trading.controller';
 import { BrokerModule } from '../broker/broker.module';
-import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 import { RiskModule } from '../risk/risk.module';
 import { ExecutionModule } from '../execution/execution.module';
 import { AuditModule } from '../audit/audit.module';
@@ -18,8 +17,12 @@ import { AiEngineClientModule } from '../ai-engine-client/ai-engine-client.modul
  *
  * Sprint 29 amendment: imports UsersModule to access OnboardingService for
  * the centralized canStartTrading gate (profile + risk acknowledgement +
- * broker + kill switch). This gate is enforced INSIDE TradingService so it
- * cannot be bypassed by any caller.
+ * broker + kill switch + active-user status). This gate is enforced INSIDE
+ * TradingService so it cannot be bypassed by any caller.
+ *
+ * Access to trading is free. Subscription state is not an application-access
+ * or trading-session prerequisite; monetization is handled separately from
+ * realised performance rather than by this module.
  *
  * EventsModule is global and does not need to be imported here.
  *
@@ -28,7 +31,6 @@ import { AiEngineClientModule } from '../ai-engine-client/ai-engine-client.modul
 @Module({
   imports: [
     BrokerModule,
-    SubscriptionsModule,
     RiskModule,
     UsersModule,
     forwardRef(() => ExecutionModule),
