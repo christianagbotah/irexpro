@@ -231,7 +231,9 @@ describe('StrategyOrchestratorService', () => {
     });
 
     it('returns EXECUTION_FAILED when ExecutionService throws', async () => {
-      (executionService.executeTrade as jest.Mock).mockRejectedValue(new Error('Broker unavailable'));
+      (executionService.executeTrade as jest.Mock).mockRejectedValue(
+        new Error('Broker unavailable'),
+      );
       const result = await service.processSignal(validCandidate());
       expect(result.outcome).toBe('EXECUTION_FAILED');
     });
