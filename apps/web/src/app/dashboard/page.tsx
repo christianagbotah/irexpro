@@ -262,7 +262,7 @@ function OnboardingCard({ status }: { status: OnboardingStatus }) {
                     className="text-sm"
                     style={{ textDecoration: 'underline', display: 'inline-flex', alignItems: 'center', gap: 'var(--space-1)' }}
                   >
-                    → Complete {step.replace(/_/g, ' ').toLowerCase()}
+                    → Complete {formatEnumLabel(step)}
                   </Link>
                 ))}
               </div>

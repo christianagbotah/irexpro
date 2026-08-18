@@ -24,6 +24,9 @@ export interface RiskApprovalResult {
   appliedRules: string[];
   riskScore: number;
   evaluatedAt: Date;
+  /** Sprint 32 Gate 2: passed to ExecutionService for the final atomic
+   * advisory-lock daily-trade-slot reservation. */
+  maxDailyTrades: number;
 }
 
 export interface RiskRejectionResult {
@@ -123,6 +126,7 @@ export interface RiskContextSnapshot {
   brokerBalance?: string;
   brokerEquity?: string;
   openTradesCount?: number;
+  dailyTradesCount?: number;
   dailyRealisedPnl?: string;
   proposedLotSize: string;
   proposedInstrument: string;

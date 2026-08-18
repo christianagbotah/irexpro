@@ -15,16 +15,17 @@ import { AllowedTradingMode } from '../risk/entities/risk-profile.entity';
 import { BrokerConnectionStatus } from '../broker/interfaces/broker-adapter.interface';
 
 /**
- * TradingService tests — Sprint 29 amendment.
+ * TradingService tests — Sprint 29 amendment + free-access regression.
  *
  * Verifies the centralized canStartTrading() gate is enforced INSIDE
  * startTradingSession() and cannot be bypassed. Also verifies:
+ *   - subscription state is NOT an access/trading prerequisite
  *   - structured 403 TRADING_NOT_READY error with missingSteps
  *   - requested mode enforcement against riskProfile.allowedTradingModes
  *   - broker health freshness check (stale → reject)
  *   - live trading requires explicit broker enablement
  *   - no session row created on rejected requests
- *   - positive test: session starts only when ALL conditions pass
+ *   - positive test: session starts only when required safety conditions pass
  */
 const mockSession = (overrides: Partial<TradingSession> = {}): TradingSession =>
   ({
@@ -42,7 +43,6 @@ const mockSession = (overrides: Partial<TradingSession> = {}): TradingSession =>
     ...overrides,
   }) as TradingSession;
 
-/** Build a healthy broker connection with fresh health check. */
 function buildHealthyConnection(overrides: Record<string, unknown> = {}) {
   return {
     id: 'conn-1',
@@ -50,7 +50,7 @@ function buildHealthyConnection(overrides: Record<string, unknown> = {}) {
     brokerId: 'paper-broker',
     brokerName: 'Paper Trading Broker',
     status: BrokerConnectionStatus.CONNECTED,
-    lastHealthCheckAt: new Date(), // fresh
+    lastHealthCheckAt: new Date(),
     consecutiveFailureCount: 0,
     liveTradingEnabled: false,
     demoValidated: true,
@@ -61,7 +61,6 @@ function buildHealthyConnection(overrides: Record<string, unknown> = {}) {
 describe('TradingService (Sprint 29 amendment — centralized readiness gate)', () => {
   let module: TestingModule;
   let service: TradingService;
-  // Use Record<string, jest.Mock> so mockResolvedValue is always available
   let brokerService: Record<string, jest.Mock>;
   let subscriptionsService: Record<string, jest.Mock>;
   let riskService: Record<string, jest.Mock>;
@@ -86,6 +85,8 @@ describe('TradingService (Sprint 29 amendment — centralized readiness gate)', 
       }),
     };
 
+    // Deliberately retained as an unused external capability so the regression
+    // test can prove TradingService never consults subscription state.
     subscriptionsService = {
       canUserStartAiAutoTrading: jest.fn().mockResolvedValue(true),
     };
@@ -98,6 +99,12 @@ describe('TradingService (Sprint 29 amendment — centralized readiness gate)', 
         allowedTradingModes: AllowedTradingMode.PAPER_ONLY,
         riskAcknowledgementAccepted: true,
       }),
+      createRiskProfileSnapshot: jest.fn().mockImplementation((profile) => ({
+        maxDailyTrades: profile.maxDailyTrades ?? 10,
+        maxOpenTrades: profile.maxOpenTrades ?? 3,
+        snapshotVersion: 1,
+        snapshotCreatedAt: new Date().toISOString(),
+      })),
     };
 
     executionService = {
@@ -115,7 +122,6 @@ describe('TradingService (Sprint 29 amendment — centralized readiness gate)', 
       notifySessionStopped: jest.fn().mockResolvedValue(undefined),
     };
 
-    // Default: onboarding allows trading
     onboardingService = {
       canStartTrading: jest.fn().mockResolvedValue({ allowed: true, missingSteps: [] }),
       getOnboardingStatus: jest.fn(),
@@ -125,6 +131,7 @@ describe('TradingService (Sprint 29 amendment — centralized readiness gate)', 
       providers: [
         TradingService,
         { provide: BrokerService, useValue: brokerService },
+        // Compatibility-only provider: TradingService must not inject or call it.
         { provide: SubscriptionsService, useValue: subscriptionsService },
         { provide: RiskService, useValue: riskService },
         { provide: ExecutionService, useValue: executionService },
@@ -142,12 +149,9 @@ describe('TradingService (Sprint 29 amendment — centralized readiness gate)', 
     await module.close();
   });
 
-  // ── Centralized readiness gate ────────────────────────────────────────────
-
   describe('startTradingSession — centralized canStartTrading gate', () => {
     it('should call OnboardingService.canStartTrading() as the FIRST gate', async () => {
       await service.startTradingSession('user-1');
-
       expect(onboardingService.canStartTrading).toHaveBeenCalledWith('user-1');
     });
 
@@ -156,7 +160,6 @@ describe('TradingService (Sprint 29 amendment — centralized readiness gate)', 
         allowed: false,
         missingSteps: ['PROFILE', 'RISK_PROFILE', 'BROKER_CONNECTION'],
       });
-
       await expect(service.startTradingSession('user-1')).rejects.toThrow(TradingNotReadyException);
     });
 
@@ -165,7 +168,6 @@ describe('TradingService (Sprint 29 amendment — centralized readiness gate)', 
         allowed: false,
         missingSteps: ['RISK_PROFILE'],
       });
-
       await expect(service.startTradingSession('user-1')).rejects.toThrow(TradingNotReadyException);
     });
 
@@ -174,7 +176,6 @@ describe('TradingService (Sprint 29 amendment — centralized readiness gate)', 
         allowed: false,
         missingSteps: ['RISK_PROFILE'],
       });
-
       await expect(service.startTradingSession('user-1')).rejects.toThrow(TradingNotReadyException);
     });
 
@@ -183,26 +184,16 @@ describe('TradingService (Sprint 29 amendment — centralized readiness gate)', 
         allowed: false,
         missingSteps: ['BROKER_CONNECTION'],
       });
-
       await expect(service.startTradingSession('user-1')).rejects.toThrow(TradingNotReadyException);
     });
 
     it('should throw TradingNotReadyException when kill switch is active', async () => {
-      // canStartTrading returns false (kill switch active means allowed=false)
-      onboardingService.canStartTrading.mockResolvedValue({
-        allowed: false,
-        missingSteps: [],
-      });
-
+      onboardingService.canStartTrading.mockResolvedValue({ allowed: false, missingSteps: [] });
       await expect(service.startTradingSession('user-1')).rejects.toThrow(TradingNotReadyException);
     });
 
     it('should throw TradingNotReadyException when user is SUSPENDED', async () => {
-      onboardingService.canStartTrading.mockResolvedValue({
-        allowed: false,
-        missingSteps: [],
-      });
-
+      onboardingService.canStartTrading.mockResolvedValue({ allowed: false, missingSteps: [] });
       await expect(service.startTradingSession('user-1')).rejects.toThrow(TradingNotReadyException);
     });
 
@@ -235,7 +226,6 @@ describe('TradingService (Sprint 29 amendment — centralized readiness gate)', 
         allowed: false,
         missingSteps: ['PROFILE'],
       });
-
       await expect(service.startTradingSession('user-1')).rejects.toThrow();
       expect(executionService.startSession).not.toHaveBeenCalled();
     });
@@ -245,41 +235,37 @@ describe('TradingService (Sprint 29 amendment — centralized readiness gate)', 
         allowed: false,
         missingSteps: ['PROFILE'],
       });
-
       await expect(service.startTradingSession('user-1')).rejects.toThrow();
       expect(aiEngineClient.notifySessionStarted).not.toHaveBeenCalled();
     });
   });
 
-  // ── Subscription gate ─────────────────────────────────────────────────────
-
-  describe('startTradingSession — subscription gate', () => {
-    it('should reject when subscription is inactive', async () => {
+  describe('startTradingSession — free access regression', () => {
+    it('should not require or consult an active subscription', async () => {
       subscriptionsService.canUserStartAiAutoTrading.mockResolvedValue(false);
 
-      await expect(service.startTradingSession('user-1')).rejects.toThrow(ForbiddenException);
-      expect(executionService.startSession).not.toHaveBeenCalled();
+      const session = await service.startTradingSession('user-1');
+
+      expect(session.id).toBe('session-1');
+      expect(subscriptionsService.canUserStartAiAutoTrading).not.toHaveBeenCalled();
+      expect(executionService.startSession).toHaveBeenCalled();
     });
   });
-
-  // ── Broker health freshness ───────────────────────────────────────────────
 
   describe('startTradingSession — broker health freshness', () => {
     it('should reject when broker has no health check on record', async () => {
       brokerService.findActiveConnectionForUser.mockResolvedValue(
         buildHealthyConnection({ lastHealthCheckAt: null }),
       );
-
       await expect(service.startTradingSession('user-1')).rejects.toThrow(ForbiddenException);
       expect(executionService.startSession).not.toHaveBeenCalled();
     });
 
     it('should reject when broker health check is stale (> 5 minutes)', async () => {
-      const stale = new Date(Date.now() - 10 * 60 * 1000); // 10 min ago
+      const stale = new Date(Date.now() - 10 * 60 * 1000);
       brokerService.findActiveConnectionForUser.mockResolvedValue(
         buildHealthyConnection({ lastHealthCheckAt: stale }),
       );
-
       await expect(service.startTradingSession('user-1')).rejects.toThrow(ForbiddenException);
     });
 
@@ -287,22 +273,18 @@ describe('TradingService (Sprint 29 amendment — centralized readiness gate)', 
       brokerService.findActiveConnectionForUser.mockResolvedValue(
         buildHealthyConnection({ consecutiveFailureCount: 3 }),
       );
-
       await expect(service.startTradingSession('user-1')).rejects.toThrow(ForbiddenException);
     });
 
     it('should accept when broker health check is fresh (< 5 minutes)', async () => {
-      const fresh = new Date(Date.now() - 60 * 1000); // 1 min ago
+      const fresh = new Date(Date.now() - 60 * 1000);
       brokerService.findActiveConnectionForUser.mockResolvedValue(
         buildHealthyConnection({ lastHealthCheckAt: fresh }),
       );
-
       const session = await service.startTradingSession('user-1');
       expect(session.id).toBe('session-1');
     });
   });
-
-  // ── Requested trading mode enforcement ────────────────────────────────────
 
   describe('startTradingSession — requested mode enforcement', () => {
     it('should always allow PAPER_ONLY mode', async () => {
@@ -312,7 +294,6 @@ describe('TradingService (Sprint 29 amendment — centralized readiness gate)', 
         allowedTradingModes: AllowedTradingMode.PAPER_ONLY,
         riskAcknowledgementAccepted: true,
       } as never);
-
       const session = await service.startTradingSession(
         'user-1',
         undefined,
@@ -328,7 +309,6 @@ describe('TradingService (Sprint 29 amendment — centralized readiness gate)', 
         allowedTradingModes: AllowedTradingMode.PAPER_ONLY,
         riskAcknowledgementAccepted: true,
       } as never);
-
       await expect(
         service.startTradingSession('user-1', undefined, AllowedTradingMode.SEMI_AUTO),
       ).rejects.toThrow(ForbiddenException);
@@ -342,7 +322,6 @@ describe('TradingService (Sprint 29 amendment — centralized readiness gate)', 
         allowedTradingModes: AllowedTradingMode.SEMI_AUTO,
         riskAcknowledgementAccepted: true,
       } as never);
-
       const session = await service.startTradingSession(
         'user-1',
         undefined,
@@ -358,7 +337,6 @@ describe('TradingService (Sprint 29 amendment — centralized readiness gate)', 
         allowedTradingModes: AllowedTradingMode.SEMI_AUTO,
         riskAcknowledgementAccepted: true,
       } as never);
-
       await expect(
         service.startTradingSession('user-1', undefined, AllowedTradingMode.FULL_AUTO),
       ).rejects.toThrow(ForbiddenException);
@@ -371,11 +349,9 @@ describe('TradingService (Sprint 29 amendment — centralized readiness gate)', 
         allowedTradingModes: AllowedTradingMode.FULL_AUTO,
         riskAcknowledgementAccepted: true,
       } as never);
-      // liveTradingEnabled is false in buildHealthyConnection
       brokerService.findActiveConnectionForUser.mockResolvedValue(
         buildHealthyConnection({ liveTradingEnabled: false }),
       );
-
       await expect(
         service.startTradingSession('user-1', undefined, AllowedTradingMode.FULL_AUTO),
       ).rejects.toThrow(ForbiddenException);
@@ -392,7 +368,6 @@ describe('TradingService (Sprint 29 amendment — centralized readiness gate)', 
       brokerService.findActiveConnectionForUser.mockResolvedValue(
         buildHealthyConnection({ liveTradingEnabled: true }),
       );
-
       const session = await service.startTradingSession(
         'user-1',
         undefined,
@@ -408,27 +383,27 @@ describe('TradingService (Sprint 29 amendment — centralized readiness gate)', 
         allowedTradingModes: AllowedTradingMode.PAPER_ONLY,
         riskAcknowledgementAccepted: true,
       } as never);
-
       const session = await service.startTradingSession('user-1');
       expect(session.id).toBe('session-1');
     });
   });
 
-  // ── Positive test: all conditions met ─────────────────────────────────────
-
   describe('startTradingSession — positive test (all conditions met)', () => {
-    it('should create a session only when ALL required conditions are satisfied', async () => {
-      // All gates pass:
-      // - canStartTrading = true (onboardingService default)
-      // - subscription = true (subscriptionsService default)
-      // - broker healthy (buildHealthyConnection default, fresh health check)
-      // - risk profile allows PAPER_ONLY (riskService default)
-      // - requestedMode = PAPER_ONLY (default)
-
+    it('should create a session only when all required safety conditions are satisfied', async () => {
       const session = await service.startTradingSession('user-1');
 
       expect(session.id).toBe('session-1');
-      expect(executionService.startSession).toHaveBeenCalledWith('user-1', 'conn-1', '10000.00');
+      expect(executionService.startSession).toHaveBeenCalledWith(
+        'user-1',
+        'conn-1',
+        '10000.00',
+        expect.objectContaining({
+          maxDailyTrades: expect.any(Number),
+          maxOpenTrades: expect.any(Number),
+          snapshotVersion: 1,
+        }),
+      );
+      expect(subscriptionsService.canUserStartAiAutoTrading).not.toHaveBeenCalled();
       expect(auditService.log).toHaveBeenCalledWith(
         expect.objectContaining({
           actorUserId: 'user-1',
@@ -446,8 +421,6 @@ describe('TradingService (Sprint 29 amendment — centralized readiness gate)', 
       );
     });
   });
-
-  // ── stopTradingSession ────────────────────────────────────────────────────
 
   describe('stopTradingSession()', () => {
     it('stops the active session', async () => {
@@ -478,8 +451,6 @@ describe('TradingService (Sprint 29 amendment — centralized readiness gate)', 
       );
     });
   });
-
-  // ── getActiveSession / getSessionById ─────────────────────────────────────
 
   describe('getActiveSession() + getSessionById()', () => {
     it('returns the active session', async () => {

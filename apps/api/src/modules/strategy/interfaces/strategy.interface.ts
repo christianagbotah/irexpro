@@ -6,8 +6,11 @@
  * This NestJS service validates and routes them — it does NOT generate signals.
  *
  * Pipeline:
- *   AiSignalCandidate → StrategyOrchestrator → RiskEngine → ExecutionEngine → Broker
+ *   AiSignalCandidate → StrategyOrchestrator → BrokerConnectionGate → RiskEngine
+ *   → ExecutionEngine → Broker
  *   (never: AiSignalCandidate → Broker directly)
+ *
+ * Subscription/payment state is not part of the trading-access pipeline.
  *
  * See: docs/architecture/10-ai-trading-architecture.md
  */
@@ -70,14 +73,11 @@ export interface AiSignalCandidate {
   metadata?: Record<string, unknown>;
 }
 
-/**
- * StrategyResult — outcome of processing an AiSignalCandidate.
- */
+/** StrategyResult — outcome of processing an AiSignalCandidate. */
 export type StrategyOutcome =
   | 'SIGNAL_INVALID'
   | 'LOW_CONFIDENCE'
   | 'SESSION_INACTIVE'
-  | 'NO_SUBSCRIPTION'
   | 'NO_BROKER_CONNECTION'
   | 'RISK_REJECTED'
   | 'RISK_SUSPENDED'

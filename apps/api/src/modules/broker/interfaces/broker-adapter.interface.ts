@@ -48,6 +48,20 @@ export interface IBrokerAdapter {
   getOpenPositions(): Promise<BrokerPosition[]>;
   getPositionById(externalOrderId: string): Promise<BrokerPosition | null>;
 
+  /**
+   * Calculate the required margin for a proposed order.
+   *
+   * Sprint 32 Gate 2: returns the margin that would be consumed if the order
+   * were placed, based on the broker's instrument-specific margin rules,
+   * contract size, current price, and leverage. Returns null if the adapter
+   * cannot safely calculate the required margin (e.g., instrument not found,
+   * price unavailable, or the broker does not support margin calculation).
+   *
+   * The Risk Engine uses this to compare requiredMargin vs available freeMargin
+   * for LIVE execution. If this returns null, the Risk Engine fails closed.
+   */
+  getRequiredMargin(params: RequiredMarginParams): Promise<string | null>;
+
   // ─── Market data ──────────────────────────────────────────────────────────
 
   getInstrumentList(): Promise<BrokerInstrument[]>;
@@ -151,6 +165,16 @@ export interface BrokerBalance {
 
 // ─── Order types ──────────────────────────────────────────────────────────────
 
+/** Parameters for calculating required margin for a proposed order. */
+export interface RequiredMarginParams {
+  instrument: string;
+  lotSize: string;
+  /** Direction may affect margin in some broker models. */
+  direction: 'BUY' | 'SELL';
+  /** Opaque provider account reference; memory-only and never audited. */
+  connectionReference?: string;
+}
+
 export interface BrokerOrderRequest {
   idempotencyKey: string;
   instrument: string;
@@ -159,6 +183,8 @@ export interface BrokerOrderRequest {
   stopLoss: string;
   takeProfit: string;
   comment?: string;
+  /** Opaque provider account reference; memory-only and never audited. */
+  connectionReference?: string;
 }
 
 export interface BrokerOrderModification {

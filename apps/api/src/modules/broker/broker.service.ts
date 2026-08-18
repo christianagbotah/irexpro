@@ -634,6 +634,55 @@ export class BrokerService {
     };
   }
 
+  /**
+   * Sprint 32 Gate 2: get required margin for a proposed order through the
+   * broker adapter abstraction. Delegates to the adapter's
+   * getRequiredMargin() which uses broker-specific margin rules.
+   *
+   * Returns null if the adapter cannot calculate the required margin
+   * (instrument not found, price unavailable, adapter error, etc.).
+   * The Risk Engine fails closed when this returns null for LIVE execution.
+   */
+  async getRequiredMargin(
+    connectionId: string,
+    params: { instrument: string; lotSize: string; direction: 'BUY' | 'SELL' },
+  ): Promise<string | null> {
+    const connection = await this.connectionRepo.findOne({
+      where: { id: connectionId },
+    });
+    if (!connection) return null;
+
+    const adapter = this.adapterRegistry.getAdapter(connection.brokerId);
+    adapter.setMode(connection.accountType);
+
+    let credentials: DecryptedBrokerCredentials | null = null;
+    try {
+      let connectionReference: string | undefined;
+      if (connection.encryptedCredentials && connection.credentialIv && connection.credentialTag) {
+        credentials = this.encryptionService.decrypt({
+          ciphertext: connection.encryptedCredentials,
+          iv: connection.credentialIv,
+          tag: connection.credentialTag,
+          keyId: connection.encryptionKeyId ?? 'env-key-v1',
+        });
+        connectionReference = credentials.accountId;
+      }
+
+      return await adapter.getRequiredMargin({
+        ...params,
+        connectionReference,
+      });
+    } catch {
+      return null;
+    } finally {
+      if (credentials) {
+        Object.keys(credentials).forEach((key) => {
+          (credentials as unknown as Record<string, unknown>)[key] = null;
+        });
+      }
+    }
+  }
+
   private async upsertBrokerAccount(
     connectionId: string,
     currency?: string,

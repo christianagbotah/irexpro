@@ -4,7 +4,6 @@ import { StrategyOrchestratorService } from './strategy-orchestrator.service';
 import { RiskService } from '../risk/risk.service';
 import { ExecutionService } from '../execution/execution.service';
 import { BrokerService } from '../broker/broker.service';
-import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { AuditService } from '../audit/audit.service';
 import { DomainEventBus } from '../events/event-bus.service';
 import { TradingSession, TradingSessionStatus } from '../execution/entities/trading-session.entity';
@@ -60,7 +59,6 @@ describe('StrategyOrchestratorService', () => {
   let riskService: jest.Mocked<Partial<RiskService>>;
   let executionService: jest.Mocked<Partial<ExecutionService>>;
   let brokerService: jest.Mocked<Partial<BrokerService>>;
-  let subscriptionsService: jest.Mocked<Partial<SubscriptionsService>>;
   let auditService: jest.Mocked<Partial<AuditService>>;
   let eventBus: jest.Mocked<Partial<DomainEventBus>>;
 
@@ -84,10 +82,6 @@ describe('StrategyOrchestratorService', () => {
       hasActiveConnection: jest.fn().mockResolvedValue(true),
     };
 
-    subscriptionsService = {
-      canUserStartAiAutoTrading: jest.fn().mockResolvedValue(true),
-    };
-
     auditService = {
       log: jest.fn().mockResolvedValue(undefined),
     };
@@ -103,7 +97,6 @@ describe('StrategyOrchestratorService', () => {
         { provide: RiskService, useValue: riskService },
         { provide: ExecutionService, useValue: executionService },
         { provide: BrokerService, useValue: brokerService },
-        { provide: SubscriptionsService, useValue: subscriptionsService },
         { provide: AuditService, useValue: auditService },
         { provide: DomainEventBus, useValue: eventBus },
       ],
@@ -116,8 +109,6 @@ describe('StrategyOrchestratorService', () => {
     jest.restoreAllMocks();
     await module.close();
   });
-
-  // ─── Gate 1: Signal structure validation ─────────────────────────────────────
 
   describe('Gate 1: Signal structure validation', () => {
     it('rejects malformed signal missing instrument', async () => {
@@ -137,8 +128,6 @@ describe('StrategyOrchestratorService', () => {
     });
   });
 
-  // ─── Gate 2: Confidence threshold ────────────────────────────────────────────
-
   describe('Gate 2: Confidence threshold', () => {
     it('rejects low confidence signal (below 0.6)', async () => {
       const result = await service.processSignal(validCandidate({ confidenceScore: 0.5 }));
@@ -151,8 +140,6 @@ describe('StrategyOrchestratorService', () => {
       expect(result.outcome).toBe('EXECUTION_SUCCEEDED');
     });
   });
-
-  // ─── Gate 3: Session active check ────────────────────────────────────────────
 
   describe('Gate 3: Trading session active', () => {
     it('rejects when no active session', async () => {
@@ -171,20 +158,16 @@ describe('StrategyOrchestratorService', () => {
     });
   });
 
-  // ─── Gate 4: Subscription gate ───────────────────────────────────────────────
-
-  describe('Gate 4: Subscription gate', () => {
-    it('rejects user without active subscription', async () => {
-      (subscriptionsService.canUserStartAiAutoTrading as jest.Mock).mockResolvedValue(false);
+  describe('Free-access regression', () => {
+    it('routes an eligible user without consulting any subscription service', async () => {
       const result = await service.processSignal(validCandidate());
-      expect(result.outcome).toBe('NO_SUBSCRIPTION');
-      expect(riskService.validateProposedTrade).not.toHaveBeenCalled();
+      expect(result.outcome).toBe('EXECUTION_SUCCEEDED');
+      expect(riskService.validateProposedTrade).toHaveBeenCalled();
+      expect(executionService.executeTrade).toHaveBeenCalled();
     });
   });
 
-  // ─── Gate 5: Broker connection gate ──────────────────────────────────────────
-
-  describe('Gate 5: Broker connection gate', () => {
+  describe('Gate 4: Broker connection gate', () => {
     it('rejects user without active broker connection', async () => {
       (brokerService.hasActiveConnection as jest.Mock).mockResolvedValue(false);
       const result = await service.processSignal(validCandidate());
@@ -193,9 +176,7 @@ describe('StrategyOrchestratorService', () => {
     });
   });
 
-  // ─── Gate 6: Risk Engine gate ─────────────────────────────────────────────────
-
-  describe('Gate 6: Risk Engine gate', () => {
+  describe('Gate 5: Risk Engine gate', () => {
     it('sends valid signal to RiskService', async () => {
       await service.processSignal(validCandidate());
       expect(riskService.validateProposedTrade).toHaveBeenCalledWith(
@@ -239,9 +220,7 @@ describe('StrategyOrchestratorService', () => {
     });
   });
 
-  // ─── Gate 7: Execution gate ───────────────────────────────────────────────────
-
-  describe('Gate 7: Execution', () => {
+  describe('Gate 6: Execution', () => {
     it('calls ExecutionService only when RiskService approves', async () => {
       const result = await service.processSignal(validCandidate());
       expect(result.outcome).toBe('EXECUTION_SUCCEEDED');
@@ -265,11 +244,8 @@ describe('StrategyOrchestratorService', () => {
     });
   });
 
-  // ─── Safety regression: no direct AI→Broker path ─────────────────────────────
-
   describe('Safety regression', () => {
     it('never calls ExecutionService without a prior RiskService approval', async () => {
-      // Set up risk to reject
       (riskService.validateProposedTrade as jest.Mock).mockResolvedValue({
         decision: 'REJECTED',
         signalId: 'sig-001',
@@ -279,8 +255,6 @@ describe('StrategyOrchestratorService', () => {
       });
 
       await service.processSignal(validCandidate());
-
-      // ExecutionService must NOT be called
       expect(executionService.executeTrade).not.toHaveBeenCalled();
     });
 

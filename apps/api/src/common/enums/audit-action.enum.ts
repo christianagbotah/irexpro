@@ -67,6 +67,8 @@ export enum AuditAction {
   TRADE_CLOSED = 'TRADE_CLOSED',
   TRADE_REJECTED = 'TRADE_REJECTED',
   TRADE_RECONCILED = 'TRADE_RECONCILED',
+  // Sprint 32: idempotency — a duplicate trade intent was suppressed
+  TRADE_DUPLICATE_SUPPRESSED = 'TRADE_DUPLICATE_SUPPRESSED',
 
   // AI trading session
   AI_TRADING_ENABLED = 'AI_TRADING_ENABLED',

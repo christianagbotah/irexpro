@@ -65,6 +65,8 @@ const mockBrokerService = () => ({
     freeMargin: '9800.00',
     currency: 'USD',
   }),
+  // Sprint 32 Gate 2: mock required margin calculation
+  getRequiredMargin: jest.fn().mockResolvedValue('100.00'),
 });
 
 const mockAuditService = () => ({
@@ -73,7 +75,11 @@ const mockAuditService = () => ({
 
 const mockExecutionService = () => ({
   countOpenTrades: jest.fn().mockResolvedValue(0),
+  countTodayTrades: jest.fn().mockResolvedValue(0),
   getTodayRealisedLoss: jest.fn().mockResolvedValue(0),
+  findTradeBySignalId: jest.fn().mockResolvedValue(null),
+  // Sprint 32 Gate 2: mock advisory-lock daily-trade-slot reservation
+  reserveDailyTradeSlot: jest.fn().mockResolvedValue({ allowed: true, currentCount: 0 }),
 });
 
 // ─── Test suite ───────────────────────────────────────────────────────────────

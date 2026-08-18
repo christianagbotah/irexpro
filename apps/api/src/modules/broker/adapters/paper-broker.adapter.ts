@@ -16,6 +16,7 @@ import {
   DecryptedBrokerCredentials,
   IBrokerAdapter,
   OHLCV,
+  RequiredMarginParams,
 } from '../interfaces/broker-adapter.interface';
 
 /**
@@ -120,6 +121,42 @@ export class PaperBrokerAdapter implements IBrokerAdapter {
 
   async getOpenPositions(): Promise<BrokerPosition[]> {
     return [];
+  }
+
+  /**
+   * Sprint 32 Gate 2: calculate required margin for a proposed order.
+   *
+   * Paper broker uses a deterministic formula:
+   *   requiredMargin = (lotSize × contractSize × currentPrice) / leverage
+   *
+   * For paper trading, we look up the instrument from the instrument list
+   * to get contractSize, and use getCurrentPrice for the current price.
+   * Returns null if the instrument is not found or the price is unavailable.
+   */
+  async getRequiredMargin(params: RequiredMarginParams): Promise<string | null> {
+    try {
+      const instruments = await this.getInstrumentList();
+      const instrument = instruments.find((i) => i.symbol === params.instrument);
+      if (!instrument) return null;
+
+      const price = await this.getCurrentPrice(params.instrument);
+      if (!price) return null;
+
+      const lotSize = parseFloat(params.lotSize);
+      const contractSize = parseFloat(instrument.contractSize);
+      // Use the mid-price (average of bid/ask) for margin calculation
+      const currentPrice = (parseFloat(price.bid) + parseFloat(price.ask)) / 2;
+      const leverage = 100; // paper broker default leverage
+
+      if (lotSize <= 0 || contractSize <= 0 || currentPrice <= 0 || leverage <= 0) {
+        return null;
+      }
+
+      const requiredMargin = (lotSize * contractSize * currentPrice) / leverage;
+      return requiredMargin.toFixed(2);
+    } catch {
+      return null;
+    }
   }
 
   async getPositionById(_externalOrderId: string): Promise<BrokerPosition | null> {

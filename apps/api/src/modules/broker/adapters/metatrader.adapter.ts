@@ -16,6 +16,7 @@ import {
   DecryptedBrokerCredentials,
   IBrokerAdapter,
   OHLCV,
+  RequiredMarginParams,
 } from '../interfaces/broker-adapter.interface';
 import { BrokerAdapterError, BrokerErrorCode } from '../interfaces/broker-adapter.errors';
 import { MetaApiClientService } from '../services/metaapi-client.service';
@@ -171,6 +172,57 @@ export class MetaTraderAdapter implements IBrokerAdapter {
     }
   }
 
+  /**
+   * Sprint 32 Gate 4: calculate required margin using MetaAPI's native
+   * calculate-margin capability.
+   *
+   * Uses the RPC connection's calculateMargin(order) method through
+   * MetaApiClientService, which calls the official MetaAPI WebSocket
+   * calculateMargin request (POST /users/current/accounts/:accountId/calculate-margin).
+   *
+   * This is the PROVIDER-NATIVE margin calculation — not a generic formula.
+   * The broker's own margin rules (per instrument, account type, margin mode,
+   * leverage) are applied by the broker server.
+   *
+   * LIVE mode: uses the native MetaAPI calculation (authoritative).
+   * If the native calculation returns null/undefined/NaN/Infinity or throws,
+   * returns null → Risk Engine fails closed.
+   *
+   * PAPER/DEMO mode: also uses the native MetaAPI calculation (the demo
+   * account's margin rules apply). This is safe because the demo account
+   * uses the same instrument specifications as live.
+   *
+   * No default contractSize = 100000 fallback is used.
+   * No local generic leverage formula is used.
+   */
+  async getRequiredMargin(params: RequiredMarginParams): Promise<string | null> {
+    const accountId = params.connectionReference;
+    if (!accountId) return null;
+
+    try {
+      const openPrice = await this.getOpenPrice(accountId, params.instrument, params.direction);
+      if (openPrice === null) return null;
+
+      const volume = parseFloat(params.lotSize);
+      if (!Number.isFinite(volume) || volume <= 0) return null;
+
+      const order = {
+        symbol: params.instrument,
+        type: params.direction === 'BUY' ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL',
+        volume,
+        openPrice,
+      };
+
+      const margin = await this.metaApiClient.calculateMargin(accountId, order);
+      if (margin === null || margin === undefined) return null;
+      const parsed = parseFloat(margin);
+      if (!Number.isFinite(parsed) || parsed < 0) return null;
+      return margin;
+    } catch {
+      return null;
+    }
+  }
+
   // ─── Market data ──────────────────────────────────────────────────────────
 
   async getInstrumentList(): Promise<BrokerInstrument[]> {
@@ -245,7 +297,9 @@ export class MetaTraderAdapter implements IBrokerAdapter {
   // ─── Order management ─────────────────────────────────────────────────────
 
   async placeOrder(order: BrokerOrderRequest): Promise<BrokerOrderResult> {
-    const conn = await this.getActiveConnection();
+    const conn = order.connectionReference
+      ? await this.metaApiClient.getOrCreateConnection(order.connectionReference)
+      : await this.getActiveConnection();
     try {
       const lotSize = parseFloat(order.lotSize);
       const sl = parseFloat(order.stopLoss);
@@ -381,6 +435,30 @@ export class MetaTraderAdapter implements IBrokerAdapter {
       return await this.metaApiClient.getOrCreateConnection(this.currentAccountId);
     } catch (err) {
       throw this.mapError(err);
+    }
+  }
+
+  /** Resolve side-correct price using an explicit MetaAPI account reference. */
+  private async getOpenPrice(
+    accountId: string,
+    instrument: string,
+    direction: string,
+  ): Promise<number | null> {
+    const connection = await this.metaApiClient.getOrCreateConnection(accountId);
+    try {
+      await connection.subscribeToMarketData(instrument);
+      const price = await connection.getSymbolPrice(instrument);
+      const priceValue = direction === 'BUY' ? Number(price?.ask) : Number(price?.bid);
+      if (!Number.isFinite(priceValue) || priceValue <= 0) return null;
+      return priceValue;
+    } catch {
+      return null;
+    } finally {
+      try {
+        await connection.unsubscribeFromMarketData(instrument);
+      } catch {
+        // Best-effort market-data cleanup; validation itself fails closed.
+      }
     }
   }
 
