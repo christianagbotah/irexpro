@@ -2,7 +2,6 @@ import { forwardRef, Inject, Injectable, Logger } from '@nestjs/common';
 import { RiskService } from '../risk/risk.service';
 import { ExecutionService } from '../execution/execution.service';
 import { BrokerService } from '../broker/broker.service';
-import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { AuditService } from '../audit/audit.service';
 import { DomainEventBus } from '../events/event-bus.service';
 import { DomainEventType } from '../events/enums/domain-event-type.enum';
@@ -29,11 +28,14 @@ const CONFIDENCE_THRESHOLD = 0.6;
  *     → validate structure
  *     → confidence threshold
  *     → session active check
- *     → subscription gate
  *     → broker connection gate
  *     → RiskService.validateProposedTrade()  ← MANDATORY
  *     → ExecutionService.executeTrade()       ← only on APPROVED
  * ═══════════════════════════════════════════════════════════════════════
+ *
+ * Subscription/payment state is intentionally NOT part of this pipeline.
+ * Users may trade without a paid plan; monetization is handled separately
+ * from realised performance.
  *
  * There is NO direct path from signal to broker adapter.
  * The Risk Engine is always invoked before ExecutionService.
@@ -49,7 +51,6 @@ export class StrategyOrchestratorService {
     @Inject(forwardRef(() => ExecutionService))
     private readonly executionService: ExecutionService,
     private readonly brokerService: BrokerService,
-    private readonly subscriptionsService: SubscriptionsService,
     private readonly auditService: AuditService,
     private readonly eventBus: DomainEventBus,
   ) {}
@@ -104,23 +105,7 @@ export class StrategyOrchestratorService {
       return { outcome: 'SESSION_INACTIVE', signalId, reason };
     }
 
-    // ── Gate 4: Active subscription (allowsAiAutoTrading) ─────────────────────
-    try {
-      const allowed = await this.subscriptionsService.canUserStartAiAutoTrading(userId);
-      if (!allowed) {
-        const reason = 'No active subscription with AI Auto Trading';
-        this.logger.warn(`Signal ${signalId} rejected: ${reason}`);
-        this.publishIgnored(candidate, reason);
-        return { outcome: 'NO_SUBSCRIPTION', signalId, reason };
-      }
-    } catch (err) {
-      const reason = 'Failed to verify subscription';
-      this.logger.error(`Signal ${signalId}: subscription check error`, (err as Error).message);
-      this.publishIgnored(candidate, reason);
-      return { outcome: 'NO_SUBSCRIPTION', signalId, reason };
-    }
-
-    // ── Gate 5: Broker connection active ──────────────────────────────────────
+    // ── Gate 4: Broker connection active ──────────────────────────────────────
     try {
       const hasBroker = await this.brokerService.hasActiveConnection(userId);
       if (!hasBroker) {
@@ -150,7 +135,7 @@ export class StrategyOrchestratorService {
       volatilityScore: candidate.volatilityScore,
     };
 
-    // ── Gate 6: Risk Engine ────────────────────────────────────────────────────
+    // ── Gate 5: Risk Engine ────────────────────────────────────────────────────
     let riskDecision;
     try {
       riskDecision = await this.riskService.validateProposedTrade(userId, proposedTrade);
@@ -194,7 +179,7 @@ export class StrategyOrchestratorService {
       };
     }
 
-    // ── Gate 7: Execution ──────────────────────────────────────────────────────
+    // ── Gate 6: Execution ──────────────────────────────────────────────────────
     try {
       const trade = await this.executionService.executeTrade(userId, riskDecision);
       this.logger.log(`Signal ${signalId} executed: tradeId=${trade.id} status=${trade.status}`);
