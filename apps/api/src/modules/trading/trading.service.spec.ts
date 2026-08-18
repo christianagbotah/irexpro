@@ -222,13 +222,19 @@ describe('TradingService (Sprint 29 amendment — centralized readiness gate)', 
     });
 
     it('should NOT create a session row when readiness gate fails', async () => {
-      onboardingService.canStartTrading.mockResolvedValue({ allowed: false, missingSteps: ['PROFILE'] });
+      onboardingService.canStartTrading.mockResolvedValue({
+        allowed: false,
+        missingSteps: ['PROFILE'],
+      });
       await expect(service.startTradingSession('user-1')).rejects.toThrow();
       expect(executionService.startSession).not.toHaveBeenCalled();
     });
 
     it('should NOT notify AI engine when readiness gate fails', async () => {
-      onboardingService.canStartTrading.mockResolvedValue({ allowed: false, missingSteps: ['PROFILE'] });
+      onboardingService.canStartTrading.mockResolvedValue({
+        allowed: false,
+        missingSteps: ['PROFILE'],
+      });
       await expect(service.startTradingSession('user-1')).rejects.toThrow();
       expect(aiEngineClient.notifySessionStarted).not.toHaveBeenCalled();
     });
