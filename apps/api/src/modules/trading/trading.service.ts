@@ -7,7 +7,6 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { BrokerService } from '../broker/broker.service';
-import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { RiskService } from '../risk/risk.service';
 import { ExecutionService } from '../execution/execution.service';
 import { AuditService } from '../audit/audit.service';
@@ -27,20 +26,24 @@ import { BrokerConnectionStatus } from '../broker/interfaces/broker-adapter.inte
  * TradingService — Trading session lifecycle management.
  *
  * Sprint 29 amendment: the centralized OnboardingService.canStartTrading()
- * gate is now enforced as the FIRST check in startTradingSession(). This
- * cannot be bypassed — it runs inside the service, not just the controller.
+ * gate is enforced as the FIRST check in startTradingSession(). This cannot
+ * be bypassed — it runs inside the service, not just the controller.
  *
  * Mandatory gates before starting a session (ALL must pass):
  *   1. OnboardingService.canStartTrading() — profile complete + risk
  *      acknowledgement accepted + broker CONNECTED + kill switch NOT active
  *      + user ACTIVE. Returns structured 403 TRADING_NOT_READY + missingSteps.
- *   2. Active subscription with allowsAiAutoTrading
- *   3. Broker connection is CONNECTED AND healthy (fresh health check)
- *   4. Requested trading mode is permitted by riskProfile.allowedTradingModes
- *   5. Live trading (if requested) requires explicit broker enablement
+ *   2. Broker connection is CONNECTED AND healthy (fresh health check)
+ *   3. Requested trading mode is permitted by riskProfile.allowedTradingModes
+ *   4. Live trading (if requested) requires explicit broker enablement
+ *
+ * Subscription/payment state is intentionally NOT an access or trading gate.
+ * Users may access the application and start trading without a paid plan.
+ * Monetization is handled separately from realised performance.
  *
  * CRITICAL: Signal routing is NOT managed here.
- * Signals flow through: AI Signal Engine → Strategy Orchestrator → Risk Engine → Execution Engine
+ * Signals flow through: AI Signal Engine → Strategy Orchestrator → Broker Connection Gate
+ * → Risk Engine → Execution Engine → Broker Adapter.
  * The risk gate remains between AI signals and broker execution — AI never
  * directly executes broker orders.
  *
@@ -56,7 +59,6 @@ export class TradingService {
 
   constructor(
     private readonly brokerService: BrokerService,
-    private readonly subscriptionsService: SubscriptionsService,
     private readonly riskService: RiskService,
     private readonly onboardingService: OnboardingService,
     @Inject(forwardRef(() => ExecutionService))
@@ -90,23 +92,15 @@ export class TradingService {
       throw new TradingNotReadyException(readiness.missingSteps);
     }
 
-    // ── Gate 2: Subscription check ────────────────────────────────────────────
-    const canTrade = await this.subscriptionsService.canUserStartAiAutoTrading(userId);
-    if (!canTrade) {
-      throw new ForbiddenException(
-        'You do not have an active subscription that allows AI Auto Trading.',
-      );
-    }
-
-    // ── Gate 3: Resolve + verify broker connection health ─────────────────────
+    // ── Gate 2: Resolve + verify broker connection health ────────────────────
     const connection = await this.resolveConnection(userId, brokerConnectionId);
     this.assertBrokerConnectionHealthy(connection);
 
-    // ── Gate 4: Requested trading mode must be permitted by risk profile ──────
+    // ── Gate 3: Requested trading mode must be permitted by risk profile ─────
     const riskProfile = await this.riskService.getOrCreateProfile(userId);
     this.assertRequestedModeAllowed(requestedMode, riskProfile.allowedTradingModes);
 
-    // ── Gate 5: Live trading requires explicit broker enablement ──────────────
+    // ── Gate 4: Live trading requires explicit broker enablement ─────────────
     // FULL_AUTO does NOT automatically enable live broker execution. The user
     // must separately enable live trading on the broker connection (a distinct
     // explicit action with its own audit trail).
@@ -117,7 +111,7 @@ export class TradingService {
       );
     }
 
-    // ── Start session via ExecutionService ────────────────────────────────────
+    // ── Start session via ExecutionService ───────────────────────────────────
     const brokerState = await this.brokerService.getBrokerAccountState(connection.id);
     const openingBalance = brokerState?.balance ?? '0';
 
@@ -186,9 +180,7 @@ export class TradingService {
     return session;
   }
 
-  /**
-   * Stop the user's active trading session.
-   */
+  /** Stop the user's active trading session. */
   async stopTradingSession(userId: string, sessionId: string): Promise<void> {
     const session = await this.executionService.getActiveSession(userId);
 
@@ -240,10 +232,6 @@ export class TradingService {
 
   // ─── Internal helpers ──────────────────────────────────────────────────────
 
-  /**
-   * Resolve the broker connection. If a specific ID is requested, load it and
-   * verify ownership + CONNECTED status. Otherwise find the active connection.
-   */
   private async resolveConnection(userId: string, requestedId?: string): Promise<BrokerConnection> {
     if (requestedId) {
       const conn = await this.brokerService.findConnectionById(requestedId, userId);
@@ -265,14 +253,6 @@ export class TradingService {
     return connection;
   }
 
-  /**
-   * Assert the broker connection is healthy. A CONNECTED status alone is not
-   * enough — the health check must be fresh (within BROKER_HEALTH_MAX_STALENESS_MS).
-   *
-   * Sprint 29 amendment: do not treat an old CONNECTED database status as
-   * permanently healthy. If the last health check is stale or missing, reject
-   * the start request and ask the user to test/reconnect.
-   */
   private assertBrokerConnectionHealthy(connection: BrokerConnection): void {
     if (connection.consecutiveFailureCount >= 3) {
       throw new ForbiddenException(
@@ -296,23 +276,12 @@ export class TradingService {
     }
   }
 
-  /**
-   * Assert the requested trading mode is permitted by the user's risk profile.
-   *
-   * Rules:
-   *   - PAPER_ONLY is always allowed (safest default).
-   *   - SEMI_AUTO requires allowedTradingModes >= SEMI_AUTO.
-   *   - FULL_AUTO requires allowedTradingModes == FULL_AUTO.
-   *
-   * FULL_AUTO does NOT automatically enable live broker execution — that
-   * remains a separate explicit control (Gate 5).
-   */
   private assertRequestedModeAllowed(
     requested: AllowedTradingMode,
     allowed: AllowedTradingMode,
   ): void {
     if (requested === AllowedTradingMode.PAPER_ONLY) {
-      return; // always allowed
+      return;
     }
 
     if (requested === AllowedTradingMode.SEMI_AUTO) {
@@ -335,7 +304,6 @@ export class TradingService {
       return;
     }
 
-    // Unknown mode — fail closed
     throw new ForbiddenException(`Unsupported trading mode: ${requested}`);
   }
 }
