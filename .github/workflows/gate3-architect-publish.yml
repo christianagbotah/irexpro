@@ -1,0 +1,179 @@
+name: Gate 3 Architect Verification and Publish
+
+on:
+  push:
+    branches:
+      - architect/gate3-publish-staging
+    paths:
+      - '.gate3/final-tree.tar.gz.b64'
+      - '.github/workflows/gate3-architect-publish.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  NODE_VERSION: '22'
+  PNPM_VERSION: '10.34.5'
+  BASE_SHA: 'b205b54f39b80901fdd1be7d2221cd0be7b53abf'
+  TARGET_BRANCH: 'feat/subscription-retirement-performance-fee-only'
+  ARCHIVE_SHA256: 'ad8a5d70772efb39166c450d04916ef4137db36fba9abe5bbf868ff581db2d9c'
+
+jobs:
+  verify-and-publish:
+    name: Verify Gate 3 on PostgreSQL 16 and publish exact tree
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    services:
+      postgres:
+        image: postgres:16-bookworm
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci_disposable_password
+          POSTGRES_DB: irexpro_risk_concurrency
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d irexpro_risk_concurrency"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout staging package
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Decode and verify architect package
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d .gate3/final-tree.tar.gz.b64 > /tmp/final-tree.tar.gz
+          echo "${ARCHIVE_SHA256}  /tmp/final-tree.tar.gz" | sha256sum -c -
+          tar -tzf /tmp/final-tree.tar.gz > /tmp/gate3-paths.txt
+          test "$(wc -l < /tmp/gate3-paths.txt | tr -d ' ')" = "37"
+          if grep -Eq '(^/|(^|/)\.\.(/|$))' /tmp/gate3-paths.txt; then
+            echo 'Unsafe archive path detected'
+            exit 1
+          fi
+
+      - name: Reconstruct corrected Gate 3 tree from authoritative base
+        shell: bash
+        run: |
+          set -euo pipefail
+          git reset --hard "${BASE_SHA}"
+          tar -xzf /tmp/final-tree.tar.gz
+          rm -f 'apps/admin/src/app/admin/(protected)/subscriptions/page.tsx'
+          test ! -e 'apps/admin/src/app/admin/(protected)/subscriptions/page.tsx'
+          test ! -e '.gate3/final-tree.tar.gz.b64'
+          test ! -e '.github/workflows/gate3-architect-publish.yml'
+
+      - name: Guard retired subscription UI and workspace integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -nE '/admin/(subscriptions|performance-fees)' \
+            apps/admin/src/components/admin-nav.tsx \
+            apps/admin/src/components/mobile-bottom-nav.tsx; then
+            echo 'Retired subscription/performance-fee admin navigation reappeared'
+            exit 1
+          fi
+          git diff --exit-code "${BASE_SHA}" -- pnpm-workspace.yaml
+          grep -q "@IsEmpty" apps/api/src/modules/performance-fees/dto/create-policy.dto.ts
+          if grep -q "findApplicablePolicy" apps/api/src/modules/performance-fees/services/performance-fee.service.ts; then
+            echo 'Deprecated plan-specific policy lookup still present'
+            exit 1
+          fi
+          grep -q "pg_advisory_xact_lock" apps/api/src/modules/broker-reconciliation/services/broker-trade-reconciliation.service.ts
+          grep -q "Promise.allSettled" apps/api/src/modules/broker-reconciliation/broker-trade-reconciliation.pg-integration.spec.ts
+          test "$(grep -c "ROLLBACK" apps/api/src/modules/broker-reconciliation/broker-trade-reconciliation.pg-integration.spec.ts || true)" -ge 2
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4.4.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: API unit and regression tests
+        run: pnpm --filter @irexpro/api test
+
+      - name: API build
+        run: pnpm --filter @irexpro/api build
+
+      - name: API lint
+        run: pnpm --filter @irexpro/api lint
+
+      - name: Shared types checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --filter @irexpro/types typecheck
+          pnpm --filter @irexpro/types test
+
+      - name: API client typecheck
+        run: pnpm --filter @irexpro/api-client typecheck
+
+      - name: Web quality gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --filter @irexpro/web lint
+          pnpm --filter @irexpro/web build
+
+      - name: Admin quality gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --filter @irexpro/admin lint
+          pnpm --filter @irexpro/admin build
+
+      - name: Real PostgreSQL 16 concurrency and rollback suite
+        working-directory: apps/api
+        env:
+          NODE_ENV: test
+          DB_HOST: localhost
+          DB_PORT: '5432'
+          DB_USER: postgres
+          DB_PASSWORD: ci_disposable_password
+          DB_NAME: irexpro_risk_concurrency
+          JWT_SECRET: test_jwt_secret_minimum_32_characters_long
+          COOKIE_SECRET: test_cookie_secret_min_16
+        run: pnpm exec jest --config ./test/jest-pg.json --runInBand
+
+      - name: Verify exact publication scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          while IFS= read -r path; do
+            git add -- "$path"
+          done < /tmp/gate3-paths.txt
+          git rm -- 'apps/admin/src/app/admin/(protected)/subscriptions/page.tsx'
+          sort /tmp/gate3-paths.txt > /tmp/expected-paths.txt
+          echo 'apps/admin/src/app/admin/(protected)/subscriptions/page.tsx' >> /tmp/expected-paths.txt
+          sort -o /tmp/expected-paths.txt /tmp/expected-paths.txt
+          git diff --cached --name-only | sort > /tmp/actual-paths.txt
+          diff -u /tmp/expected-paths.txt /tmp/actual-paths.txt
+          test "$(wc -l < /tmp/actual-paths.txt | tr -d ' ')" = "38"
+          git diff --cached --check
+
+      - name: Publish verified Gate 3 branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'iRexPro Architect Gate'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(subscription-retirement): Gate 3 architect-verified financial integrity'
+          FINAL_SHA="$(git rev-parse HEAD)"
+          echo "Verified final SHA: ${FINAL_SHA}"
+          git push origin "HEAD:refs/heads/${TARGET_BRANCH}"
