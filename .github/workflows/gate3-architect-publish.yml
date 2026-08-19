@@ -5,7 +5,7 @@ on:
     branches:
       - architect/gate3-publish-staging
     paths:
-      - '.gate3/final-tree.tar.gz.b64'
+      - '.gate3/chunks/*.b64'
       - '.github/workflows/gate3-architect-publish.yml'
   workflow_dispatch:
 
@@ -70,7 +70,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          base64 -d .gate3/final-tree.tar.gz.b64 > /tmp/final-tree.tar.gz
+          test "$(find .gate3/chunks -maxdepth 1 -type f -name 'part-*.b64' | wc -l | tr -d ' ')" = '6'
+          cat .gate3/chunks/part-*.b64 > /tmp/final-tree.tar.gz.b64
+          test "$(wc -c < /tmp/final-tree.tar.gz.b64 | tr -d ' ')" = '108000'
+          base64 -d /tmp/final-tree.tar.gz.b64 > /tmp/final-tree.tar.gz
           echo "${ARCHIVE_SHA256}  /tmp/final-tree.tar.gz" | sha256sum -c -
           tar -tzf /tmp/final-tree.tar.gz > /tmp/gate3-paths.txt
           test "$(wc -l < /tmp/gate3-paths.txt | tr -d ' ')" = '37'
@@ -87,7 +90,7 @@ jobs:
           tar -xzf /tmp/final-tree.tar.gz
           rm -f 'apps/admin/src/app/admin/(protected)/subscriptions/page.tsx'
           test ! -e 'apps/admin/src/app/admin/(protected)/subscriptions/page.tsx'
-          test ! -e '.gate3/final-tree.tar.gz.b64'
+          test ! -e '.gate3'
           test ! -e '.github/workflows/gate3-architect-publish.yml'
 
       - name: Guard retired subscription UI and workspace integrity
