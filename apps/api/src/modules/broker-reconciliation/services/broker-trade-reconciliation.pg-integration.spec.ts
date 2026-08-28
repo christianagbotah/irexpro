@@ -257,7 +257,7 @@ describe('BrokerTradeReconciliationService — real PostgreSQL atomicity (GATE-3
           // Wrap the real EntityManager to intercept ledgerRepo.save
           const origGetRepo = realTx.getRepository.bind(realTx);
           const wrappedTx = {
-            getRepository: (entity: unknown) => {
+            getRepository: (entity: any) => {
               const repo = origGetRepo(entity);
               if (entity === PerformanceFeeLedgerEntry) {
                 return {
@@ -305,7 +305,7 @@ describe('BrokerTradeReconciliationService — real PostgreSQL atomicity (GATE-3
       return origTransaction(async (realTx: any) => {
         const origGetRepo = realTx.getRepository.bind(realTx);
         const wrappedTx = {
-          getRepository: (entity: unknown) => {
+          getRepository: (entity: any) => {
             const repo = origGetRepo(entity);
             if (entity === BrokerReconciledTrade) {
               return {
