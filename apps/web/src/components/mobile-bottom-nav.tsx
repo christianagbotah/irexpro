@@ -167,11 +167,7 @@ export default function MobileBottomNav({ onLogout }: MobileBottomNavProps) {
       </nav>
 
       {moreOpen && (
-        <div
-          className="mobile-sheet-overlay"
-          onClick={closeSheet}
-          aria-hidden="true"
-        >
+        <div className="mobile-sheet-overlay" onClick={closeSheet}>
           <div
             id="mobile-more-sheet"
             ref={sheetRef}
