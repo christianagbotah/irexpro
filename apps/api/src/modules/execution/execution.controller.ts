@@ -22,9 +22,7 @@ export class ExecutionController {
   @Get('positions/open')
   @ApiOperation({ summary: 'List current open positions for the authenticated user' })
   @ApiResponse({ status: 200, type: TradeExecutionResponseDto, isArray: true })
-  async listOpenPositions(
-    @CurrentUserId() userId: string,
-  ): Promise<TradeExecutionResponseDto[]> {
+  async listOpenPositions(@CurrentUserId() userId: string): Promise<TradeExecutionResponseDto[]> {
     const trades = await this.executionReadService.listOpenPositions(userId);
     return trades.map(toTradeExecutionResponse);
   }
