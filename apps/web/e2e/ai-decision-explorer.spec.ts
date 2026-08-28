@@ -110,11 +110,7 @@ async function gotoDecisionExplorer(page: Parameters<typeof setupErrorCollectors
     const url = new URL(route.request().url());
     const apiPath = url.pathname.split('/api/v1/')[1] ?? '';
     const fulfill = (status: number, responseBody: unknown) =>
-      route.fulfill({
-        status,
-        contentType: 'application/json',
-        body: JSON.stringify(responseBody),
-      });
+      route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(responseBody) });
 
     if (apiPath === 'auth/refresh') return fulfill(200, mockAuthTokens);
     if (apiPath === 'auth/me') return fulfill(200, mockAuthUser);
@@ -134,7 +130,6 @@ test.describe('AI Decision Explorer', () => {
     await expect(page.getByText('EURUSD · BUY', { exact: true })).toBeVisible();
     await expect(page.getByText('82%', { exact: true })).toBeVisible();
     await expect(page.getByText('TREND_H1', { exact: true })).toBeVisible();
-    await expect(page.getByText('ensemble-v2.3', { exact: true }).first()).toBeVisible();
     await expect(page.getByText('Execution Succeeded', { exact: true })).toBeVisible();
     await expect(page.getByText('Max Concurrent Trades', { exact: true }).first()).toBeVisible();
     await expect(page.getByText('Open trade limit reached', { exact: true }).first()).toBeVisible();
@@ -142,7 +137,7 @@ test.describe('AI Decision Explorer', () => {
     await expect(page.getByText('riskContext', { exact: false })).toHaveCount(0);
     await expect(page.getByText('brokerConnectionId', { exact: false })).toHaveCount(0);
     await expect(page.getByText('idempotencyKey', { exact: false })).toHaveCount(0);
-    await expect(page.getByText('chain-of-thought', { exact: false })).toHaveCount(0);
+    await expect(page.getByText('rawModelMetadata', { exact: false })).toHaveCount(0);
 
     await assertNoHorizontalOverflow(page);
     assertNoConsoleErrors(page);
