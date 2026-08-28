@@ -120,9 +120,7 @@ export class TradingController {
   @Get('active')
   @ApiOperation({ summary: 'Get the current active trading session' })
   @ApiResponse({ status: 200, type: TradingSessionResponseDto })
-  async getActive(
-    @CurrentUserId() userId: string,
-  ): Promise<TradingSessionResponseDto | null> {
+  async getActive(@CurrentUserId() userId: string): Promise<TradingSessionResponseDto | null> {
     const session = await this.tradingService.getActiveSession(userId);
     return session ? toTradingSessionResponse(session) : null;
   }
