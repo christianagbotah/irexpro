@@ -17,6 +17,10 @@
     "./portfolio": {
       "types": "./src/portfolio.ts",
       "default": "./src/portfolio.ts"
+    },
+    "./risk-intelligence": {
+      "types": "./src/risk-intelligence.ts",
+      "default": "./src/risk-intelligence.ts"
     }
   },
   "scripts": {
