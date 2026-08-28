@@ -1,0 +1,38 @@
+name: Sprint 37 Fast Full Web
+
+on:
+  push:
+    branches:
+      - architect/sprint37-fast-full-web
+
+jobs:
+  full-web:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      NEXT_PUBLIC_API_BASE_URL: 'http://localhost:3999/api/v1'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4.4.0
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build web
+        working-directory: apps/web
+        run: pnpm exec next build
+      - name: Install Chromium
+        working-directory: apps/web
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Run complete Web Playwright suite across all configured viewports
+        working-directory: apps/web
+        run: pnpm exec playwright test --workers=4
+        env:
+          CI: 'true'
+      - name: Capture standard screenshot evidence
+        run: pnpm --filter @irexpro/web test:e2e:evidence
+        env:
+          CI: 'true'
