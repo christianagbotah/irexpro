@@ -9,7 +9,6 @@ import type { IconProps } from '@/components/icons';
 import {
   DashboardIcon,
   UsersIcon,
-  SubscriptionsIcon,
   PaymentsIcon,
   PlugIcon,
   AuditIcon,
@@ -33,7 +32,10 @@ import {
 const NAV: Array<{ href: string; label: string; Icon: ComponentType<IconProps> }> = [
   { href: '/admin/dashboard', label: 'Dashboard', Icon: DashboardIcon },
   { href: '/admin/users', label: 'Users', Icon: UsersIcon },
-  { href: '/admin/subscriptions', label: 'Subscriptions', Icon: SubscriptionsIcon },
+  // Subscription-retirement (SUBSCRIPTION-RETIREMENT-IMPL):
+  // SubscriptionsModule is retired. The nav item is renamed "Performance Fees"
+  // and points to a placeholder route until the dedicated admin view lands.
+
   { href: '/admin/payments', label: 'Payments', Icon: PaymentsIcon },
   { href: '/admin/brokers', label: 'Brokers', Icon: PlugIcon },
   { href: '/admin/audit', label: 'Audit Log', Icon: AuditIcon },

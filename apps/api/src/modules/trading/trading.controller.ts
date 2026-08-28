@@ -26,9 +26,17 @@ import { CurrentUserId } from '../../common/decorators/current-user.decorator';
  *
  * All session actions require:
  *   - Valid JWT (global guard)
- *   - Active subscription with allowsAiAutoTrading (enforced in TradingService)
+ *   - Completed onboarding (profile + risk + broker connected — enforced in
+ *     TradingService via OnboardingService.canStartTrading)
  *   - Active broker connection (enforced in TradingService)
  *   - Kill switch not active (enforced in TradingService)
+ *
+ * Subscription-retirement (SUBSCRIPTION-RETIREMENT-IMPL):
+ *   Trading is NO LONGER gated on a paid subscription. iRexPro operates on a
+ *   performance-fee-only model — users may start trading (paper or live) after
+ *   completing onboarding, and a performance fee is assessed only when their
+ *   trading generates qualifying realised profit above the high-water mark.
+ *   The legacy "active subscription with allowsAiAutoTrading" gate is gone.
  */
 @ApiTags('Trading')
 @Controller('trading/sessions')
@@ -40,8 +48,13 @@ export class TradingController {
   /**
    * Start a trading session.
    *
-   * Enforces: subscription gate, broker gate, kill switch gate.
+   * Enforces: onboarding gate, broker gate, kill switch gate.
    * Demo mode is the broker default until explicitly changed.
+   *
+   * Subscription-retirement (SUBSCRIPTION-RETIREMENT-IMPL):
+   *   No subscription is required to start trading — the only gates are
+   *   onboarding completion, broker connection, and kill switch state.
+   *   Monetization is handled separately via the performance-fee flow.
    *
    * POST /api/v1/trading/sessions/start
    */
@@ -50,10 +63,10 @@ export class TradingController {
     summary: 'Start a new AI trading session',
     description:
       'Requires onboarding complete (profile + risk acknowledgement + broker connected), ' +
-      'active subscription, healthy broker connection, and kill switch inactive. ' +
-      'Returns the created TradingSession. PAPER_ONLY mode is the default. ' +
-      'FULL_AUTO does NOT automatically enable live broker execution — live trading ' +
-      'requires a separate explicit enablement on the broker connection.',
+      'healthy broker connection, and kill switch inactive. No subscription is required ' +
+      '(performance-fee-only model). Returns the created TradingSession. PAPER_ONLY mode ' +
+      'is the default. FULL_AUTO does NOT automatically enable live broker execution — ' +
+      'live trading requires a separate explicit enablement on the broker connection.',
   })
   async startSession(
     @CurrentUserId() userId: string,

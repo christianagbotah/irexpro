@@ -65,12 +65,6 @@ test.describe('Sprint 31 closure — Admin evidence', () => {
     await page.screenshot({ path: evidencePath(v.width, v.height, 'admin-payments'), fullPage: false });
   });
 
-  test('admin Subscriptions @ 390', async ({ page }) => {
-    const v = page.viewportSize()!;
-    await gotoAsAdmin(page, '/admin/subscriptions', { heading: /^subscriptions$/i });
-    await page.screenshot({ path: evidencePath(v.width, v.height, 'admin-subscriptions'), fullPage: false });
-  });
-
   test('admin Audit @ 390', async ({ page }) => {
     const v = page.viewportSize()!;
     await gotoAsAdmin(page, '/admin/audit', { heading: /^audit log$/i });

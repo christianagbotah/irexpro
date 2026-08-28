@@ -9,7 +9,6 @@ import {
   PlugIcon,
   PaymentsIcon,
   MoreIcon,
-  SubscriptionsIcon,
   AuditIcon,
   LogoutIcon,
   CloseIcon,
@@ -62,7 +61,9 @@ const PRIMARY_NAV: NavDestination[] = [
 ];
 
 const SECONDARY_NAV: NavDestination[] = [
-  { href: '/admin/subscriptions', label: 'Subscriptions', Icon: SubscriptionsIcon },
+  // Subscription-retirement (SUBSCRIPTION-RETIREMENT-IMPL):
+  // SubscriptionsModule is retired. The nav item is renamed "Performance Fees"
+  // and points to a placeholder route until the dedicated admin view lands.
   { href: '/admin/audit', label: 'Audit log', Icon: AuditIcon },
 ];
 

@@ -6,7 +6,6 @@ import { PerformanceFeeAssessment } from './entities/performance-fee-assessment.
 import { PerformanceFeeLedgerEntry } from './entities/performance-fee-ledger-entry.entity';
 import { Invoice } from '../payments/entities/invoice.entity';
 import { PaymentTransaction } from '../payments/entities/payment-transaction.entity';
-import { UserSubscription } from '../subscriptions/entities/user-subscription.entity';
 import { AuditModule } from '../audit/audit.module';
 import { PerformanceFeeService } from './services/performance-fee.service';
 import { PerformanceFeesController } from './performance-fees.controller';
@@ -20,7 +19,6 @@ import { PerformanceFeesController } from './performance-fees.controller';
       PerformanceFeeLedgerEntry,
       Invoice,
       PaymentTransaction,
-      UserSubscription,
     ]),
     AuditModule,
   ],

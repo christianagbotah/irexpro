@@ -13,24 +13,19 @@ import { PerformanceFeeAssessment } from '../performance-fees/entities/performan
 import { PerformanceFeeLedgerEntry } from '../performance-fees/entities/performance-fee-ledger-entry.entity';
 import { TradingAccountPerformance } from '../performance-fees/entities/trading-account-performance.entity';
 import { User } from '../users/entities/user.entity';
-import { SubscriptionPlan } from '../subscriptions/entities/subscription-plan.entity';
-import { PlanPricing } from '../subscriptions/entities/plan-pricing.entity';
-import { UserSubscription } from '../subscriptions/entities/user-subscription.entity';
 import { AuditLog } from '../audit/entities/audit-log.entity';
-import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 
 /**
- * PaymentsModule <-> SubscriptionsModule circular-module-dependency test.
+ * PaymentsModule resolution smoke test (post subscription-retirement).
  *
- * WebhookProcessorService (in PaymentsModule) injects SubscriptionsService (in
- * SubscriptionsModule), and SubscriptionsService injects PaymentRoutingService
- * (in PaymentsModule). This is a genuine bidirectional MODULE dependency, resolved
- * via forwardRef() on both @Module({ imports: [...] }) declarations and on the
- * WebhookProcessorService constructor parameter.
- *
- * This test boots the REAL module graph (no service-level mocking of the module
- * wiring itself) to prove Nest's DI container can actually resolve it — only the
- * TypeORM repository tokens are stubbed out to avoid requiring a live database.
+ * Subscription-retirement (SUBSCRIPTION-RETIREMENT-IMPL):
+ *   The bidirectional dependency between PaymentsModule and SubscriptionsModule
+ *   has been removed — PaymentsModule no longer imports SubscriptionsModule
+ *   and WebhookProcessorService no longer injects SubscriptionsService. This
+ *   test boots the REAL PaymentsModule graph (no service-level mocking of the
+ *   module wiring itself) to prove Nest's DI container can resolve every
+ *   provider — only the TypeORM repository tokens are stubbed out to avoid
+ *   requiring a live database.
  */
 function mockRepo() {
   return {
@@ -44,7 +39,7 @@ function mockRepo() {
 }
 
 describe('PaymentsModule (module-graph resolution)', () => {
-  it('compiles the real module graph and resolves cross-module providers', async () => {
+  it('compiles the real module graph and resolves all internal providers', async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [PaymentsModule],
     })
@@ -64,12 +59,6 @@ describe('PaymentsModule (module-graph resolution)', () => {
       .useValue(mockRepo())
       .overrideProvider(getRepositoryToken(User))
       .useValue(mockRepo())
-      .overrideProvider(getRepositoryToken(SubscriptionPlan))
-      .useValue(mockRepo())
-      .overrideProvider(getRepositoryToken(PlanPricing))
-      .useValue(mockRepo())
-      .overrideProvider(getRepositoryToken(UserSubscription))
-      .useValue(mockRepo())
       .overrideProvider(getRepositoryToken(AuditLog))
       .useValue(mockRepo())
       .compile();
@@ -79,17 +68,12 @@ describe('PaymentsModule (module-graph resolution)', () => {
     expect(moduleRef.get(PaymentRoutingService)).toBeDefined();
     expect(moduleRef.get(PerformanceFeePaymentService)).toBeDefined();
 
-    // WebhookProcessorService resolves — proving its SubscriptionsService
-    // dependency (from the forward-referenced SubscriptionsModule) was satisfied.
+    // WebhookProcessorService resolves without a SubscriptionsService
+    // dependency (subscription-retirement — the former forwardRef cycle is
+    // gone).
     const webhookProcessor = moduleRef.get(WebhookProcessorService);
     expect(webhookProcessor).toBeDefined();
     expect(webhookProcessor).toBeInstanceOf(WebhookProcessorService);
-
-    // SubscriptionsService itself is reachable through the resolved graph,
-    // confirming the bidirectional module import actually resolved both ways.
-    const subscriptionsService = moduleRef.get(SubscriptionsService);
-    expect(subscriptionsService).toBeDefined();
-    expect(subscriptionsService).toBeInstanceOf(SubscriptionsService);
 
     await moduleRef.close();
   });

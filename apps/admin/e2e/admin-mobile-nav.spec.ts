@@ -13,7 +13,7 @@ import {
  *   - Mobile bottom nav visible only on small viewports (≤ 700px)
  *   - Desktop sidebar hidden on mobile, visible on desktop
  *   - Primary destinations: Dashboard, Users, Brokers, Payments, More
- *   - More sheet: Subscriptions, Audit log, Log out
+ *   - More sheet: Audit log, Log out
  *   - Sheet: role="dialog", aria-modal, focus trap, body scroll lock
  *   - Active route via aria-current="page"
  *   - No horizontal overflow; touch targets ≥ 44px
@@ -140,7 +140,7 @@ test.describe('Admin mobile bottom navigation', () => {
     await expect(moreButton).toHaveAttribute('aria-expanded', 'true');
   });
 
-  test('More sheet contains Subscriptions, Audit, Log out', async ({ page }) => {
+  test('More sheet contains Audit, Log out', async ({ page }) => {
     const viewport = page.viewportSize();
     if (!viewport || viewport.width > 700) {
       test.skip();
@@ -153,12 +153,11 @@ test.describe('Admin mobile bottom navigation', () => {
 
     const items = sheet.locator('.mobile-sheet__item');
     const count = await items.count();
-    expect(count, 'Expected 2 secondary destinations + logout').toBeGreaterThanOrEqual(3);
+    expect(count, 'Expected 1 secondary destination + logout').toBeGreaterThanOrEqual(2);
 
     const labels = (await items.allTextContents()).map((s) => s.trim().toLowerCase());
     const joined = labels.join(' | ');
-    expect(joined, `Expected secondary destinations, got: ${joined}`).toContain('subscriptions');
-    expect(joined).toContain('audit');
+    expect(joined, `Expected secondary destinations, got: ${joined}`).toContain('audit');
     expect(joined).toContain('log out');
   });
 

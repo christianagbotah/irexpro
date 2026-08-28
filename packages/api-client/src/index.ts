@@ -4,7 +4,6 @@ import {
   AuthUser,
   BrokerConnectionView,
   BrokerTestResult,
-  CheckoutResult,
   CreateBrokerConnectionRequest,
   ForgotPasswordRequest,
   ForgotPasswordResponse,
@@ -20,11 +19,9 @@ import {
   ResetPasswordRequest,
   ResetPasswordResponse,
   RiskProfile,
-  SubscriptionPlan,
   SupportedBroker,
   UpdateMyProfileRequest,
   UpdateRiskProfileRequest,
-  UserSubscription,
 } from '@irexpro/types';
 
 /**
@@ -106,17 +103,8 @@ export interface ApiClient {
   /** POST /broker/connections/:id/disconnect → disconnect. */
   disconnectBroker(connectionId: string): Promise<void>;
 
-  // Subscriptions / plans
-  listPlans(): Promise<SubscriptionPlan[]>;
-  mySubscription(): Promise<UserSubscription | null>;
-
   // Payments
   listProviders(): Promise<PaymentProviderInfo[]>;
-  initiateSubscriptionCheckout(
-    planId: string,
-    currency: string,
-    provider?: string,
-  ): Promise<CheckoutResult>;
   getInvoice(invoiceId: string): Promise<Invoice>;
   getTransactionStatus(transactionId: string): Promise<PaymentTransaction>;
 
@@ -302,25 +290,8 @@ export function createApiClient(options: CreateApiClientOptions): ApiClient {
         method: 'POST',
       }),
 
-    listPlans: () => request<SubscriptionPlan[]>('/subscriptions/plans'),
-
-    mySubscription: async () => {
-      try {
-        return await request<UserSubscription>('/subscriptions/me');
-      } catch (err) {
-        if (err instanceof ApiClientError && err.statusCode === 404) return null;
-        throw err;
-      }
-    },
-
     listProviders: () =>
       request<PaymentProviderInfo[]>('/payments/providers'),
-
-    initiateSubscriptionCheckout: (planId, currency, provider) =>
-      request<CheckoutResult>('/subscriptions/checkout', {
-        method: 'POST',
-        body: JSON.stringify({ planId, currency, provider }),
-      }),
 
     getInvoice: (invoiceId) =>
       request<Invoice>(`/payments/invoices/${invoiceId}`),

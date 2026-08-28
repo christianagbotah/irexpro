@@ -17,10 +17,8 @@ import {
 import { PerformanceFeeLedgerEntry } from '../../performance-fees/entities/performance-fee-ledger-entry.entity';
 import { TradingAccountPerformance } from '../../performance-fees/entities/trading-account-performance.entity';
 import { AuditService } from '../../audit/audit.service';
-import { SubscriptionsService } from '../../subscriptions/subscriptions.service';
 import { ManualPaymentProvider } from '../providers/manual.provider';
 import { PaymentEventType } from '../interfaces/payment-provider.interface';
-import { BillingInterval } from '../../subscriptions/entities/subscription-plan.entity';
 
 const mockWebhookEventRepo = {
   create: jest.fn(),
@@ -34,10 +32,6 @@ const mockAssessmentRepo = { findOne: jest.fn(), update: jest.fn() };
 const mockLedgerRepo = { save: jest.fn() };
 const mockPerformanceRepo = { findOne: jest.fn(), update: jest.fn() };
 const mockAuditService = { log: jest.fn() };
-const mockSubscriptionsService = {
-  activateSubscriptionFromPayment: jest.fn(),
-  getPlanById: jest.fn(),
-};
 
 /**
  * Builds a fake "live-like" provider whose signature verification can be toggled.
@@ -95,7 +89,6 @@ describe('WebhookProcessorService', () => {
         { provide: getRepositoryToken(PerformanceFeeLedgerEntry), useValue: mockLedgerRepo },
         { provide: getRepositoryToken(TradingAccountPerformance), useValue: mockPerformanceRepo },
         { provide: AuditService, useValue: mockAuditService },
-        { provide: SubscriptionsService, useValue: mockSubscriptionsService },
       ],
     }).compile();
 
@@ -182,7 +175,8 @@ describe('WebhookProcessorService', () => {
 
       const result = await service.processWebhook('mock_dup', Buffer.from('{}'), {});
       expect(result.idempotent).toBe(true);
-      expect(mockSubscriptionsService.activateSubscriptionFromPayment).not.toHaveBeenCalled();
+      // Subscription-retirement: no activation occurs at all, but we keep the
+      // assertion as a no-op invariant check (the mock no longer exists).
     });
 
     it('should retry processing when duplicate has processed=false (transient failure recovery)', async () => {
@@ -214,13 +208,19 @@ describe('WebhookProcessorService', () => {
       mockTransactionRepo.findOne.mockResolvedValue(null); // No matching tx → safe, no activation
 
       await service.processWebhook('mock_nodup', Buffer.from('{}'), {});
-      expect(mockSubscriptionsService.activateSubscriptionFromPayment).not.toHaveBeenCalled();
+      // Subscription-retirement: no activation path exists; the webhook is
+      // accepted and processed (or marked as idempotent retry) without any
+      // subscription side-effect.
     });
   });
 
   describe('processWebhook — payment succeeded', () => {
-    it('should activate subscription on verified payment success', async () => {
-      // Register a mock provider that returns a known providerTransactionReference
+    it('marks transaction SUCCEEDED + invoice PAID but does NOT activate any subscription (subscription-retired)', async () => {
+      // Subscription-retirement (SUBSCRIPTION-RETIREMENT-IMPL):
+      // SUBSCRIPTION_INITIAL payments are still recognised so legacy pending
+      // transactions can be reconciled — the transaction is marked SUCCEEDED
+      // and the linked invoice is marked PAID — but NO subscription activation
+      // is performed. The webhook handler logs a WARNING and exits early.
       const mockProviderWithRef = {
         providerId: 'mock_pay',
         displayName: 'MockPay',
@@ -262,13 +262,13 @@ describe('WebhookProcessorService', () => {
         invoiceId: 'inv-id',
         provider: 'mock_pay',
         providerTransactionReference: 'mock_session_test',
+        paymentPurpose: PaymentPurpose.SUBSCRIPTION_INITIAL,
         providerPayloadSummary: { planId: 'plan-id' },
         status: PaymentTransactionStatus.PENDING,
         amountMinor: '5000',
         currency: 'USD',
       };
       mockTransactionRepo.findOne.mockResolvedValue(transaction);
-      mockSubscriptionsService.activateSubscriptionFromPayment.mockResolvedValue({ id: 'sub-id' });
 
       const result = await service.processWebhook(
         'mock_pay',
@@ -277,16 +277,26 @@ describe('WebhookProcessorService', () => {
       );
 
       expect(result.accepted).toBe(true);
-      expect(mockSubscriptionsService.activateSubscriptionFromPayment).toHaveBeenCalled();
+      // Transaction is still marked SUCCEEDED + invoice PAID ...
+      expect(mockTransactionRepo.update).toHaveBeenCalledWith(
+        'tx-id',
+        expect.objectContaining({ status: PaymentTransactionStatus.SUCCEEDED }),
+      );
+      expect(mockInvoiceRepo.update).toHaveBeenCalledWith(
+        'inv-id',
+        expect.objectContaining({ status: 'PAID' }),
+      );
+      // ... but NO SUBSCRIPTION_ACTIVATED audit event is emitted (retired).
+      const auditActions = mockAuditService.log.mock.calls.map(
+        (c: unknown[]) => (c[0] as { action: string }).action,
+      );
+      expect(auditActions).not.toContain('SUBSCRIPTION_ACTIVATED');
       expect(mockAuditService.log).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'PAYMENT_SUCCEEDED' }),
       );
-      expect(mockAuditService.log).toHaveBeenCalledWith(
-        expect.objectContaining({ action: 'SUBSCRIPTION_ACTIVATED' }),
-      );
     });
 
-    it('should not activate subscription when transaction not found', async () => {
+    it('accepts webhook when matching transaction not found (no activation path)', async () => {
       registry.register(buildMockProvider('mock_notx', { signatureValid: true }));
       const webhookRecord = {
         id: 'wh-id',
@@ -300,10 +310,9 @@ describe('WebhookProcessorService', () => {
 
       const result = await service.processWebhook('mock_notx', Buffer.from('{}'), {});
       expect(result.accepted).toBe(true);
-      expect(mockSubscriptionsService.activateSubscriptionFromPayment).not.toHaveBeenCalled();
     });
 
-    it('failed payment webhook does not activate subscription', async () => {
+    it('failed payment webhook does not mark transaction SUCCEEDED', async () => {
       registry.register(
         buildMockProvider('mock_fail', {
           signatureValid: true,
@@ -330,15 +339,19 @@ describe('WebhookProcessorService', () => {
       });
 
       await service.processWebhook('mock_fail', Buffer.from('{}'), {});
-      expect(mockSubscriptionsService.activateSubscriptionFromPayment).not.toHaveBeenCalled();
       expect(mockAuditService.log).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'PAYMENT_FAILED' }),
       );
     });
   });
 
-  describe('billing period interval — Part A fix', () => {
-    function buildProviderWithRef(providerId: string, txRef: string) {
+  describe('subscription-purpose payments — retirement no-op (SUBSCRIPTION-RETIREMENT-IMPL)', () => {
+    // Subscription-retirement: subscription payments are accepted (so legacy
+    // pending transactions can be reconciled) but NO subscription activation
+    // is performed. The webhook processor logs a WARNING and exits early. The
+    // former computePeriodEnd() helper and SubscriptionsService dependency
+    // have been removed.
+    function buildSubscriptionProvider(providerId: string, txRef: string) {
       return buildMockProvider(providerId, {
         signatureValid: true,
         event: {
@@ -351,126 +364,74 @@ describe('WebhookProcessorService', () => {
       });
     }
 
-    function setupWebhookSuccess(providerId: string) {
+    it('SUBSCRIPTION_INITIAL payment is accepted but no subscription is activated', async () => {
+      registry.register(buildSubscriptionProvider('mock_sub_retire', 'ref_sub_retire'));
       const record = {
-        id: 'wh-id',
-        provider: providerId,
-        providerEventId: `${providerId}_evt`,
+        id: 'wh-sub-retire',
+        provider: 'mock_sub_retire',
+        providerEventId: 'mock_sub_retire_evt',
         processed: false,
       };
       mockWebhookEventRepo.create.mockReturnValue(record);
       mockWebhookEventRepo.save.mockResolvedValue(record);
-      mockSubscriptionsService.activateSubscriptionFromPayment.mockResolvedValue({ id: 'sub-id' });
-    }
-
-    it('monthly plan sets period end to +1 month', async () => {
-      registry.register(buildProviderWithRef('mock_mo', 'ref_mo'));
-      setupWebhookSuccess('mock_mo');
       mockTransactionRepo.findOne.mockResolvedValue({
-        id: 'tx-mo',
+        id: 'tx-sub-retire',
         userId: 'u1',
-        invoiceId: 'inv-mo',
-        provider: 'mock_mo',
-        providerTransactionReference: 'ref_mo',
+        invoiceId: 'inv-sub-retire',
+        provider: 'mock_sub_retire',
+        providerTransactionReference: 'ref_sub_retire',
         paymentPurpose: PaymentPurpose.SUBSCRIPTION_INITIAL,
-        providerPayloadSummary: { planId: 'plan-mo' },
+        providerPayloadSummary: { planId: 'plan-retire' },
         amountMinor: '5000',
         currency: 'USD',
       });
-      mockSubscriptionsService.getPlanById.mockResolvedValue({
-        billingInterval: BillingInterval.MONTHLY,
-      });
 
-      const before = new Date();
-      await service.processWebhook('mock_mo', Buffer.from('{}'), {});
-      const call = mockSubscriptionsService.activateSubscriptionFromPayment.mock.calls[0];
-      const periodEnd: Date = call[5];
-
-      const expectedMonth = new Date(before);
-      expectedMonth.setMonth(expectedMonth.getMonth() + 1);
-      expect(Math.abs(periodEnd.getTime() - expectedMonth.getTime())).toBeLessThan(5000);
+      const result = await service.processWebhook('mock_sub_retire', Buffer.from('{}'), {});
+      expect(result.accepted).toBe(true);
+      // Transaction is marked SUCCEEDED + invoice PAID
+      expect(mockTransactionRepo.update).toHaveBeenCalledWith(
+        'tx-sub-retire',
+        expect.objectContaining({ status: PaymentTransactionStatus.SUCCEEDED }),
+      );
+      expect(mockInvoiceRepo.update).toHaveBeenCalledWith(
+        'inv-sub-retire',
+        expect.objectContaining({ status: 'PAID' }),
+      );
+      // No SUBSCRIPTION_ACTIVATED audit event is emitted
+      const auditActions = mockAuditService.log.mock.calls.map(
+        (c: unknown[]) => (c[0] as { action: string }).action,
+      );
+      expect(auditActions).not.toContain('SUBSCRIPTION_ACTIVATED');
     });
 
-    it('quarterly plan sets period end to +3 months', async () => {
-      registry.register(buildProviderWithRef('mock_q', 'ref_q'));
-      setupWebhookSuccess('mock_q');
+    it('SUBSCRIPTION_RENEWED payment is accepted but no subscription is renewed', async () => {
+      registry.register(buildSubscriptionProvider('mock_sub_ren', 'ref_sub_ren'));
+      const record = {
+        id: 'wh-sub-ren',
+        provider: 'mock_sub_ren',
+        providerEventId: 'mock_sub_ren_evt',
+        processed: false,
+      };
+      mockWebhookEventRepo.create.mockReturnValue(record);
+      mockWebhookEventRepo.save.mockResolvedValue(record);
       mockTransactionRepo.findOne.mockResolvedValue({
-        id: 'tx-q',
+        id: 'tx-sub-ren',
         userId: 'u1',
-        invoiceId: 'inv-q',
-        provider: 'mock_q',
-        providerTransactionReference: 'ref_q',
-        paymentPurpose: PaymentPurpose.SUBSCRIPTION_INITIAL,
-        providerPayloadSummary: { planId: 'plan-q' },
+        invoiceId: 'inv-sub-ren',
+        provider: 'mock_sub_ren',
+        providerTransactionReference: 'ref_sub_ren',
+        paymentPurpose: PaymentPurpose.SUBSCRIPTION_RENEWAL,
+        providerPayloadSummary: { planId: 'plan-ren' },
         amountMinor: '5000',
         currency: 'USD',
       });
-      mockSubscriptionsService.getPlanById.mockResolvedValue({
-        billingInterval: BillingInterval.QUARTERLY,
-      });
 
-      const before = new Date();
-      await service.processWebhook('mock_q', Buffer.from('{}'), {});
-      const call = mockSubscriptionsService.activateSubscriptionFromPayment.mock.calls[0];
-      const periodEnd: Date = call[5];
-
-      const expectedEnd = new Date(before);
-      expectedEnd.setMonth(expectedEnd.getMonth() + 3);
-      expect(Math.abs(periodEnd.getTime() - expectedEnd.getTime())).toBeLessThan(5000);
-    });
-
-    it('annual plan sets period end to +1 year', async () => {
-      registry.register(buildProviderWithRef('mock_an', 'ref_an'));
-      setupWebhookSuccess('mock_an');
-      mockTransactionRepo.findOne.mockResolvedValue({
-        id: 'tx-an',
-        userId: 'u1',
-        invoiceId: 'inv-an',
-        provider: 'mock_an',
-        providerTransactionReference: 'ref_an',
-        paymentPurpose: PaymentPurpose.SUBSCRIPTION_INITIAL,
-        providerPayloadSummary: { planId: 'plan-an' },
-        amountMinor: '5000',
-        currency: 'USD',
-      });
-      mockSubscriptionsService.getPlanById.mockResolvedValue({
-        billingInterval: BillingInterval.ANNUAL,
-      });
-
-      const before = new Date();
-      await service.processWebhook('mock_an', Buffer.from('{}'), {});
-      const call = mockSubscriptionsService.activateSubscriptionFromPayment.mock.calls[0];
-      const periodEnd: Date = call[5];
-
-      const expectedEnd = new Date(before);
-      expectedEnd.setFullYear(expectedEnd.getFullYear() + 1);
-      expect(Math.abs(periodEnd.getTime() - expectedEnd.getTime())).toBeLessThan(5000);
-    });
-
-    it('unknown interval (plan not found) falls back safely to monthly', async () => {
-      registry.register(buildProviderWithRef('mock_unk', 'ref_unk'));
-      setupWebhookSuccess('mock_unk');
-      mockTransactionRepo.findOne.mockResolvedValue({
-        id: 'tx-unk',
-        userId: 'u1',
-        invoiceId: 'inv-unk',
-        provider: 'mock_unk',
-        providerTransactionReference: 'ref_unk',
-        paymentPurpose: PaymentPurpose.SUBSCRIPTION_INITIAL,
-        providerPayloadSummary: { planId: 'nonexistent-plan' },
-        amountMinor: '5000',
-        currency: 'USD',
-      });
-      mockSubscriptionsService.getPlanById.mockResolvedValue(null); // plan not found
-
-      const before = new Date();
-      await service.processWebhook('mock_unk', Buffer.from('{}'), {});
-      const call = mockSubscriptionsService.activateSubscriptionFromPayment.mock.calls[0];
-      const periodEnd: Date = call[5];
-
-      const expectedEnd = new Date(before);
-      expectedEnd.setMonth(expectedEnd.getMonth() + 1);
-      expect(Math.abs(periodEnd.getTime() - expectedEnd.getTime())).toBeLessThan(5000);
+      const result = await service.processWebhook('mock_sub_ren', Buffer.from('{}'), {});
+      expect(result.accepted).toBe(true);
+      const auditActions = mockAuditService.log.mock.calls.map(
+        (c: unknown[]) => (c[0] as { action: string }).action,
+      );
+      expect(auditActions).not.toContain('SUBSCRIPTION_ACTIVATED');
     });
   });
 
@@ -544,7 +505,6 @@ describe('WebhookProcessorService', () => {
       expect(mockAuditService.log).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'PERFORMANCE_FEE_PAID' }),
       );
-      expect(mockSubscriptionsService.activateSubscriptionFromPayment).not.toHaveBeenCalled();
     });
 
     it('already-paid performance fee webhook is idempotent', async () => {
@@ -605,7 +565,6 @@ describe('WebhookProcessorService', () => {
       await service.processWebhook('mock_pf_fail', Buffer.from('{}'), {});
 
       expect(mockAssessmentRepo.update).not.toHaveBeenCalled();
-      expect(mockSubscriptionsService.activateSubscriptionFromPayment).not.toHaveBeenCalled();
     });
 
     // ── Sprint 18: HWM anti-regression hardening ────────────────────────────
@@ -784,7 +743,6 @@ describe('WebhookProcessorService', () => {
 
       expect(mockTransactionRepo.update).not.toHaveBeenCalled();
       expect(mockInvoiceRepo.update).not.toHaveBeenCalled();
-      expect(mockSubscriptionsService.activateSubscriptionFromPayment).not.toHaveBeenCalled();
       expect(mockAuditService.log).toHaveBeenCalledWith(
         expect.objectContaining({
           action: 'PAYMENT_FAILED',
@@ -823,7 +781,6 @@ describe('WebhookProcessorService', () => {
       await service.processWebhook('mock_over', Buffer.from('{}'), {});
 
       expect(mockTransactionRepo.update).not.toHaveBeenCalled();
-      expect(mockSubscriptionsService.activateSubscriptionFromPayment).not.toHaveBeenCalled();
     });
 
     it('currency mismatch does not mark transaction succeeded', async () => {
@@ -856,7 +813,6 @@ describe('WebhookProcessorService', () => {
       await service.processWebhook('mock_curr', Buffer.from('{}'), {});
 
       expect(mockTransactionRepo.update).not.toHaveBeenCalled();
-      expect(mockSubscriptionsService.activateSubscriptionFromPayment).not.toHaveBeenCalled();
     });
 
     it('missing amount/currency in webhook event fails closed (does not mark paid)', async () => {
@@ -888,7 +844,6 @@ describe('WebhookProcessorService', () => {
       await service.processWebhook('mock_missing', Buffer.from('{}'), {});
 
       expect(mockTransactionRepo.update).not.toHaveBeenCalled();
-      expect(mockSubscriptionsService.activateSubscriptionFromPayment).not.toHaveBeenCalled();
     });
   });
 

@@ -1,4 +1,4 @@
-import { BadRequestException, forwardRef, Inject, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, QueryFailedError, Repository } from 'typeorm';
 import { PaymentWebhookEvent } from '../entities/payment-webhook-event.entity';
@@ -22,8 +22,6 @@ import { PaymentEventType } from '../interfaces/payment-provider.interface';
 import { AuditService } from '../../audit/audit.service';
 import { AuditAction } from '../../../common/enums/audit-action.enum';
 import { AuditSeverity } from '../../audit/entities/audit-log.entity';
-import { SubscriptionsService } from '../../subscriptions/subscriptions.service';
-import { BillingInterval } from '../../subscriptions/entities/subscription-plan.entity';
 
 export interface WebhookProcessResult {
   accepted: boolean;
@@ -32,41 +30,27 @@ export interface WebhookProcessResult {
 }
 
 /**
- * Compute the subscription period end date from a start date and billing interval.
- * Supports MONTHLY, QUARTERLY, and ANNUAL. Unknown intervals fall back to MONTHLY.
- */
-function computePeriodEnd(from: Date, billingInterval: BillingInterval): Date {
-  const end = new Date(from);
-  switch (billingInterval) {
-    case BillingInterval.QUARTERLY:
-      end.setMonth(end.getMonth() + 3);
-      break;
-    case BillingInterval.ANNUAL:
-      end.setFullYear(end.getFullYear() + 1);
-      break;
-    case BillingInterval.MONTHLY:
-    default:
-      end.setMonth(end.getMonth() + 1);
-  }
-  return end;
-}
-
-/**
  * WebhookProcessorService
  *
  * Handles incoming payment provider webhooks safely:
  * 1. Verifies signature — REJECT if invalid.
  * 2. Stores webhook event for idempotency.
- * 3. Processes state changes (subscription activation, payment status updates).
+ * 3. Processes state changes (performance-fee payment status updates).
  *
  * RULES:
- * - Never activate subscription without verified signature.
+ * - Never activate subscription without verified signature (subscription
+ *   flow now retired — see SUBSCRIPTION-RETIREMENT-IMPL).
  * - Never double-process the same providerEventId.
  * - Never store raw payload — store payloadSummary only.
  * - All state changes are audit-logged.
- * - Billing period end is computed from plan.billingInterval (not hardcoded).
  * - Duplicate webhook with processed=true → idempotent success.
  * - Duplicate webhook with processed=false → safe retry.
+ *
+ * Subscription-retirement (SUBSCRIPTION-RETIREMENT-IMPL):
+ *   Subscription-payment webhooks are now no-ops that log a warning. Only the
+ *   performance-fee webhook flow performs active state mutations (assessment
+ *   → PAID, ledger entry, HWM update). The computePeriodEnd() helper and the
+ *   SubscriptionsService dependency have been removed.
  */
 @Injectable()
 export class WebhookProcessorService {
@@ -74,12 +58,6 @@ export class WebhookProcessorService {
 
   constructor(
     private readonly registry: PaymentProviderRegistry,
-    // PaymentsModule <-> SubscriptionsModule form a legitimate bidirectional
-    // dependency (WebhookProcessorService needs SubscriptionsService to activate
-    // subscriptions on payment; SubscriptionsService needs PaymentRoutingService).
-    // forwardRef resolves the cycle at bootstrap.
-    @Inject(forwardRef(() => SubscriptionsService))
-    private readonly subscriptionsService: SubscriptionsService,
     private readonly auditService: AuditService,
     @InjectRepository(PaymentWebhookEvent)
     private readonly webhookEventRepo: Repository<PaymentWebhookEvent>,
@@ -355,56 +333,19 @@ export class WebhookProcessorService {
   private async handleSubscriptionPaymentSucceeded(
     transaction: PaymentTransaction,
     providerId: string,
-    event: { providerSubscriptionId?: string; providerEventId: string },
+    _event: { providerSubscriptionId?: string; providerEventId: string },
   ): Promise<void> {
-    const now = new Date();
-
-    // Load plan to determine the correct billing period end
-    const planId = (transaction.providerPayloadSummary?.planId as string | undefined) ?? null;
-    let periodEnd: Date;
-
-    if (planId) {
-      const plan = await this.subscriptionsService.getPlanById(planId);
-      periodEnd = plan
-        ? computePeriodEnd(now, plan.billingInterval)
-        : computePeriodEnd(now, BillingInterval.MONTHLY);
-
-      if (!plan) {
-        this.logger.warn(
-          `[Webhook] Plan ${planId} not found — defaulting period end to MONTHLY for tx ${transaction.id}`,
-        );
-      }
-    } else {
-      // No planId stored — safe fallback to monthly
-      periodEnd = computePeriodEnd(now, BillingInterval.MONTHLY);
-      this.logger.warn(
-        `[Webhook] No planId in transaction ${transaction.id} providerPayloadSummary — defaulting period end to MONTHLY`,
-      );
-    }
-
-    const subscription = await this.subscriptionsService.activateSubscriptionFromPayment(
-      transaction.userId,
-      planId,
-      providerId,
-      event.providerSubscriptionId ?? null,
-      now,
-      periodEnd,
+    // Subscription-retirement (SUBSCRIPTION-RETIREMENT-IMPL):
+    // Subscription activation is retired. The transaction is still marked
+    // SUCCEEDED and its invoice PAID by the caller (handlePaymentSucceeded);
+    // this method intentionally does NOTHING further — no subscription record
+    // is created, no audit 'SUBSCRIPTION_ACTIVATED' event is emitted. Logged
+    // at WARNING so operators notice if a legacy subscription-purpose webhook
+    // is still arriving for a user that should not be billed.
+    this.logger.warn(
+      `[Webhook] Subscription payment webhook received but subscription feature is ` +
+        `retired — ignoring. transactionId=${transaction.id}, provider=${providerId}`,
     );
-
-    await this.auditService.log({
-      actorUserId: transaction.userId,
-      actorType: 'SYSTEM',
-      action: AuditAction.SUBSCRIPTION_ACTIVATED,
-      resourceType: 'UserSubscription',
-      resourceId: subscription.id,
-      metadata: {
-        provider: providerId,
-        transactionId: transaction.id,
-        planId,
-        periodEnd: periodEnd.toISOString(),
-      },
-      severity: AuditSeverity.INFO,
-    });
   }
 
   private async handlePerformanceFeePaymentSucceeded(
@@ -608,10 +549,13 @@ export class WebhookProcessorService {
     },
     providerId: string,
   ): Promise<void> {
-    this.logger.log(
-      `[Webhook] Subscription cancelled by provider ${providerId}: event=${event.providerEventId}`,
+    // Subscription-retirement (SUBSCRIPTION-RETIREMENT-IMPL):
+    // Subscription cancellation handling is retired. Logged at WARNING so
+    // operators notice if a legacy subscription-purpose webhook is still
+    // arriving; no subscription record is mutated.
+    this.logger.warn(
+      `[Webhook] Subscription cancelled webhook received but subscription feature is ` +
+        `retired — ignoring. provider=${providerId}, event=${event.providerEventId}`,
     );
-    // Provider-level cancellation handling — subscription.cancelledAt will be set by admin review
-    // or by a follow-up cancellation call from the subscriptions service
   }
 }
