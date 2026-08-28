@@ -1,0 +1,121 @@
+name: Gate 3 Candidate Bootstrap
+
+on:
+  push:
+    branches:
+      - architect/gate3-candidate-bootstrap-20260828
+    paths:
+      - '.gate3-package/**'
+      - '.github/workflows/gate3-candidate-bootstrap.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  reconstruct-and-test:
+    name: Reconstruct and test reviewed Gate 3 candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout bootstrap package
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Verify and reconstruct exact reviewed source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find .gate3-package -maxdepth 1 -type f -name 'part-*.b64' | wc -l | tr -d ' ')" = '6'
+          cat .gate3-package/part-*.b64 | base64 -d > /tmp/g3tree.tar.xz
+          echo 'ccb12321bda3ed21895b192284d2efe86fac4454078193de0d8ecb6addc1bb0d  /tmp/g3tree.tar.xz' | sha256sum -c -
+          tar -tJf /tmp/g3tree.tar.xz > /tmp/gate3-paths.txt
+          if grep -Eq '(^/|(^|/)\.\.(/|$))' /tmp/gate3-paths.txt; then
+            echo 'Unsafe archive path detected'
+            exit 1
+          fi
+          git reset --hard b205b54f39b80901fdd1be7d2221cd0be7b53abf
+          tar -xJf /tmp/g3tree.tar.xz -C .
+          git checkout b205b54f39b80901fdd1be7d2221cd0be7b53abf -- .github/workflows/risk-concurrency.yml
+          rm -f 'apps/admin/src/app/admin/(protected)/subscriptions/page.tsx'
+          rm -rf .gate3-package
+          rm -f .github/workflows/gate3-candidate-bootstrap.yml
+          test ! -e 'apps/admin/src/app/admin/(protected)/subscriptions/page.tsx'
+          if grep -nE '/admin/(subscriptions|performance-fees)' apps/admin/src/components/admin-nav.tsx apps/admin/src/components/mobile-bottom-nav.tsx; then
+            echo 'Retired admin navigation reappeared'
+            exit 1
+          fi
+          grep -q '@IsEmpty' apps/api/src/modules/performance-fees/dto/create-policy.dto.ts
+          grep -q 'pg_advisory_xact_lock' apps/api/src/modules/performance-fees/services/performance-fee.service.ts
+          grep -q 'pg_advisory_xact_lock' apps/api/src/modules/broker-reconciliation/services/broker-trade-reconciliation.service.ts
+          test -f apps/api/src/modules/performance-fees/performance-fee-policy.pg-integration.spec.ts
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4.4.0
+        with:
+          version: 10.34.5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: API unit and regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --filter @irexpro/api test 2>&1 | tee /tmp/api-tests.log
+          passed="$(grep -Eo 'Tests:[[:space:]]+[0-9]+ passed' /tmp/api-tests.log | tail -1 | grep -Eo '[0-9]+' || true)"
+          if [[ -n "${passed}" ]] && (( passed < 1230 )); then
+            echo "API regression floor violated: ${passed} < 1230"
+            exit 1
+          fi
+
+      - name: API build and lint
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --filter @irexpro/api build
+          pnpm --filter @irexpro/api lint
+
+      - name: Shared package checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --filter @irexpro/types typecheck
+          pnpm --filter @irexpro/types test
+          pnpm --filter @irexpro/api-client typecheck
+
+      - name: Web quality gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --filter @irexpro/web lint
+          pnpm --filter @irexpro/web build
+
+      - name: Admin quality gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --filter @irexpro/admin lint
+          pnpm --filter @irexpro/admin build
+
+      - name: Verify and publish clean candidate branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          git add -A
+          git diff --cached --check
+          test ! -e .gate3-package
+          test ! -e .github/workflows/gate3-candidate-bootstrap.yml
+          git config user.name 'iRexPro Architect Gate'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(subscription-retirement): architect-verified Gate 3 candidate'
+          echo "Candidate SHA: $(git rev-parse HEAD)"
+          git push origin HEAD:refs/heads/architect/gate3-candidate-clean-20260828
