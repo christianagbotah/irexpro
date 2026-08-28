@@ -12,11 +12,16 @@ import {
   LoadingSpinner,
 } from '@/components/ui';
 import { formatEnumLabel } from '@irexpro/types';
+import type { TradeExecutionView } from '@irexpro/types/execution';
 import {
   loadTraderTerminalStatus,
   type TraderTerminalStatus,
   type TradingSessionStatusView,
 } from '@/lib/trader-terminal-status';
+import {
+  loadTraderExecutionSnapshot,
+  type TraderExecutionSnapshot,
+} from '@/lib/trader-execution';
 
 function sessionBadgeVariant(
   status: TradingSessionStatusView,
@@ -36,6 +41,15 @@ function brokerBadgeVariant(
   return 'info';
 }
 
+function executionBadgeVariant(
+  status: TradeExecutionView['status'],
+): 'success' | 'warning' | 'error' | 'info' {
+  if (status === 'OPEN' || status === 'CLOSED') return 'success';
+  if (status === 'PENDING' || status === 'RECONCILIATION_PENDING') return 'warning';
+  if (status === 'REJECTED' || status === 'CANCELLED') return 'error';
+  return 'info';
+}
+
 function formatTimestamp(value: string | null | undefined): string {
   if (!value) return 'Not available';
   const date = new Date(value);
@@ -46,11 +60,89 @@ function formatTimestamp(value: string | null | undefined): string {
   }).format(date);
 }
 
+function ExecutionRecord({ trade }: { trade: TradeExecutionView }) {
+  return (
+    <article
+      style={{
+        border: '1px solid var(--border-subtle)',
+        borderRadius: 'var(--radius-lg)',
+        padding: 'var(--space-4)',
+        display: 'grid',
+        gap: 'var(--space-3)',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 'var(--space-3)',
+          flexWrap: 'wrap',
+        }}
+      >
+        <div>
+          <strong>{trade.instrument}</strong>
+          <span className="muted text-sm" style={{ marginLeft: 'var(--space-2)' }}>
+            {trade.direction} · {trade.lotSize} lot
+          </span>
+        </div>
+        <Badge variant={executionBadgeVariant(trade.status)}>
+          {formatEnumLabel(trade.status)}
+        </Badge>
+      </div>
+
+      <dl
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(135px, 1fr))',
+          gap: 'var(--space-3)',
+        }}
+      >
+        <div>
+          <dt className="text-sm muted">Requested entry</dt>
+          <dd>{trade.requestedEntryPrice}</dd>
+        </div>
+        <div>
+          <dt className="text-sm muted">Fill</dt>
+          <dd>{trade.fillPrice ?? 'Pending'}</dd>
+        </div>
+        <div>
+          <dt className="text-sm muted">Stop loss</dt>
+          <dd>{trade.stopLoss}</dd>
+        </div>
+        <div>
+          <dt className="text-sm muted">Take profit</dt>
+          <dd>{trade.takeProfit}</dd>
+        </div>
+        {trade.exitPrice && (
+          <div>
+            <dt className="text-sm muted">Exit</dt>
+            <dd>{trade.exitPrice}</dd>
+          </div>
+        )}
+        {trade.closeReason && (
+          <div>
+            <dt className="text-sm muted">Close reason</dt>
+            <dd>{formatEnumLabel(trade.closeReason)}</dd>
+          </div>
+        )}
+        <div>
+          <dt className="text-sm muted">Opened</dt>
+          <dd>{formatTimestamp(trade.openedAt)}</dd>
+        </div>
+      </dl>
+    </article>
+  );
+}
+
 export default function TradingWorkspacePage() {
   const { user, logout, restoring } = useAuth();
   const [terminal, setTerminal] = useState<TraderTerminalStatus | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [statusError, setStatusError] = useState<string | null>(null);
+  const [execution, setExecution] = useState<TraderExecutionSnapshot | null>(null);
+  const [loadingExecution, setLoadingExecution] = useState(true);
+  const [executionError, setExecutionError] = useState<string | null>(null);
 
   const refreshStatus = useCallback(async () => {
     setLoadingStatus(true);
@@ -69,10 +161,31 @@ export default function TradingWorkspacePage() {
     }
   }, []);
 
+  const refreshExecution = useCallback(async () => {
+    setLoadingExecution(true);
+    setExecutionError(null);
+    try {
+      setExecution(await loadTraderExecutionSnapshot());
+    } catch {
+      // Fail closed: stale positions must not survive a failed refresh because
+      // their lifecycle may have changed at the broker or execution service.
+      setExecution(null);
+      setExecutionError(
+        'Unable to load the authoritative execution snapshot. Stale position data has been cleared.',
+      );
+    } finally {
+      setLoadingExecution(false);
+    }
+  }, []);
+
+  const refreshWorkspace = useCallback(async () => {
+    await Promise.all([refreshStatus(), refreshExecution()]);
+  }, [refreshStatus, refreshExecution]);
+
   useEffect(() => {
     if (!user) return;
-    void refreshStatus();
-  }, [user, refreshStatus]);
+    void refreshWorkspace();
+  }, [user, refreshWorkspace]);
 
   if (restoring) {
     return (
@@ -97,6 +210,7 @@ export default function TradingWorkspacePage() {
 
   const session = terminal?.session ?? null;
   const broker = terminal?.sessionBroker ?? terminal?.primaryBroker ?? null;
+  const workspaceLoading = loadingStatus || loadingExecution;
 
   return (
     <DashboardShell
@@ -116,24 +230,25 @@ export default function TradingWorkspacePage() {
               Trading Workspace
             </h1>
             <p className="terminal-foundation__description">
-              Live operational readiness from the Risk Engine, trading-session service,
-              and sanitized broker connection contract. Financial performance and AI
-              metrics remain hidden until their authoritative contracts are connected.
+              Live operational readiness plus frontend-safe execution lifecycle state.
+              Financial performance and AI metrics remain hidden until their
+              authoritative currency-aware contracts are connected.
             </p>
           </div>
           <Button
             type="button"
             variant="secondary"
             size="sm"
-            loading={loadingStatus}
-            disabled={loadingStatus}
-            onClick={() => void refreshStatus()}
+            loading={workspaceLoading}
+            disabled={workspaceLoading}
+            onClick={() => void refreshWorkspace()}
           >
-            {loadingStatus ? 'Refreshing…' : 'Refresh status'}
+            {workspaceLoading ? 'Refreshing…' : 'Refresh workspace'}
           </Button>
         </section>
 
         {statusError && <Alert variant="error">{statusError}</Alert>}
+        {executionError && <Alert variant="error">{executionError}</Alert>}
 
         {loadingStatus && !terminal ? (
           <Card title="Loading operational status" className="mt-4">
@@ -322,18 +437,72 @@ export default function TradingWorkspacePage() {
                 )}
               </Card>
             </section>
-
-            <aside className="terminal-foundation__policy" aria-label="Trading data integrity policy">
-              <strong>Authoritative data only</strong>
-              <p>
-                This view composes existing Risk Engine, trading-session, and broker
-                connection APIs. It does not calculate or fabricate balances, P&amp;L,
-                positions, AI confidence, market regime, chart candles, or execution
-                quality in the browser.
-              </p>
-            </aside>
           </>
         ) : null}
+
+        <section aria-labelledby="execution-state-title" style={{ marginTop: 'var(--space-6)' }}>
+          <div style={{ marginBottom: 'var(--space-4)' }}>
+            <p className="terminal-foundation__eyebrow">Execution lifecycle</p>
+            <h2 id="execution-state-title" style={{ margin: 0 }}>
+              Positions &amp; Recent Executions
+            </h2>
+            <p className="muted" style={{ marginTop: 'var(--space-2)', lineHeight: 1.6 }}>
+              Read-only execution state from the server-side execution engine. Values are
+              never calculated from browser market data.
+            </p>
+          </div>
+
+          {loadingExecution && !execution ? (
+            <Card title="Loading execution state">
+              <LoadingSpinner text="Loading open positions and recent executions…" />
+            </Card>
+          ) : execution ? (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+                gap: 'var(--space-4)',
+              }}
+            >
+              <Card title={`Open Positions (${execution.openPositions.length})`}>
+                {execution.openPositions.length === 0 ? (
+                  <p className="muted">
+                    The execution engine reports no open positions for this account.
+                  </p>
+                ) : (
+                  <div style={{ display: 'grid', gap: 'var(--space-3)' }}>
+                    {execution.openPositions.map((trade) => (
+                      <ExecutionRecord key={trade.id} trade={trade} />
+                    ))}
+                  </div>
+                )}
+              </Card>
+
+              <Card title="Recent Executions">
+                {execution.recentExecutions.length === 0 ? (
+                  <p className="muted">No execution lifecycle records are available yet.</p>
+                ) : (
+                  <div style={{ display: 'grid', gap: 'var(--space-3)' }}>
+                    {execution.recentExecutions.slice(0, 10).map((trade) => (
+                      <ExecutionRecord key={trade.id} trade={trade} />
+                    ))}
+                  </div>
+                )}
+              </Card>
+            </div>
+          ) : null}
+        </section>
+
+        <aside className="terminal-foundation__policy" aria-label="Trading data integrity policy">
+          <strong>Authoritative data only</strong>
+          <p>
+            This view composes Risk Engine, trading-session, sanitized broker, and
+            frontend-safe execution APIs. It does not calculate or fabricate balances,
+            P&amp;L, unrealised P&amp;L, AI confidence, market regime, chart candles, or
+            execution quality in the browser. P&amp;L remains intentionally hidden until
+            the backend can return it with an authoritative account currency.
+          </p>
+        </aside>
       </main>
     </DashboardShell>
   );
