@@ -93,6 +93,8 @@ jobs:
 
       - name: Web quality gates
         shell: bash
+        env:
+          NEXT_PUBLIC_API_BASE_URL: 'http://localhost:3999/api/v1'
         run: |
           set -euo pipefail
           pnpm --filter @irexpro/web lint
@@ -100,6 +102,8 @@ jobs:
 
       - name: Admin quality gates
         shell: bash
+        env:
+          NEXT_PUBLIC_API_BASE_URL: 'http://localhost:3998/api/v1'
         run: |
           set -euo pipefail
           pnpm --filter @irexpro/admin lint
