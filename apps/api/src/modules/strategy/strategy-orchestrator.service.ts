@@ -39,8 +39,6 @@ const CONFIDENCE_THRESHOLD = 0.6;
  *
  * There is NO direct path from signal to broker adapter.
  * The Risk Engine is always invoked before ExecutionService.
- *
- * See: docs/architecture/10-ai-trading-architecture.md
  */
 @Injectable()
 export class StrategyOrchestratorService {
@@ -71,7 +69,12 @@ export class StrategyOrchestratorService {
     const structureError = this.validateStructure(candidate);
     if (structureError) {
       this.logger.warn(`Signal ${signalId} rejected: invalid structure — ${structureError}`);
-      this.publishIgnored(candidate, structureError);
+      await this.recordIgnored(
+        candidate,
+        'SIGNAL_INVALID',
+        'INVALID_STRUCTURE',
+        'Signal structure failed validation',
+      );
       return { outcome: 'SIGNAL_INVALID', signalId, reason: structureError };
     }
 
@@ -79,7 +82,12 @@ export class StrategyOrchestratorService {
     if (candidate.confidenceScore < CONFIDENCE_THRESHOLD) {
       const reason = `Confidence ${candidate.confidenceScore} below threshold ${CONFIDENCE_THRESHOLD}`;
       this.logger.log(`Signal ${signalId} ignored: ${reason}`);
-      this.publishIgnored(candidate, reason);
+      await this.recordIgnored(
+        candidate,
+        'LOW_CONFIDENCE',
+        'LOW_CONFIDENCE',
+        'Model confidence was below the execution threshold',
+      );
       return { outcome: 'LOW_CONFIDENCE', signalId, reason };
     }
 
@@ -89,19 +97,34 @@ export class StrategyOrchestratorService {
       if (!session || session.status !== TradingSessionStatus.ACTIVE) {
         const reason = 'No active trading session';
         this.logger.warn(`Signal ${signalId} rejected: ${reason}`);
-        this.publishIgnored(candidate, reason);
+        await this.recordIgnored(
+          candidate,
+          'SESSION_INACTIVE',
+          'SESSION_INACTIVE',
+          'No active trading session was available',
+        );
         return { outcome: 'SESSION_INACTIVE', signalId, reason };
       }
       if (session.id !== candidate.tradingSessionId) {
         const reason = `Signal session ${candidate.tradingSessionId} does not match active session ${session.id}`;
         this.logger.warn(`Signal ${signalId} rejected: ${reason}`);
-        this.publishIgnored(candidate, reason);
+        await this.recordIgnored(
+          candidate,
+          'SESSION_INACTIVE',
+          'SESSION_MISMATCH',
+          'Signal did not match the active trading session',
+        );
         return { outcome: 'SESSION_INACTIVE', signalId, reason };
       }
     } catch (err) {
       const reason = 'Failed to verify trading session';
       this.logger.error(`Signal ${signalId}: session check error`, (err as Error).message);
-      this.publishIgnored(candidate, reason);
+      await this.recordIgnored(
+        candidate,
+        'SESSION_INACTIVE',
+        'SESSION_CHECK_FAILED',
+        'Trading session could not be verified',
+      );
       return { outcome: 'SESSION_INACTIVE', signalId, reason };
     }
 
@@ -111,13 +134,23 @@ export class StrategyOrchestratorService {
       if (!hasBroker) {
         const reason = 'No active broker connection';
         this.logger.warn(`Signal ${signalId} rejected: ${reason}`);
-        this.publishIgnored(candidate, reason);
+        await this.recordIgnored(
+          candidate,
+          'NO_BROKER_CONNECTION',
+          'BROKER_UNAVAILABLE',
+          'No active broker connection was available',
+        );
         return { outcome: 'NO_BROKER_CONNECTION', signalId, reason };
       }
     } catch (err) {
       const reason = 'Failed to verify broker connection';
       this.logger.error(`Signal ${signalId}: broker check error`, (err as Error).message);
-      this.publishIgnored(candidate, reason);
+      await this.recordIgnored(
+        candidate,
+        'NO_BROKER_CONNECTION',
+        'BROKER_CHECK_FAILED',
+        'Broker connection could not be verified',
+      );
       return { outcome: 'NO_BROKER_CONNECTION', signalId, reason };
     }
 
@@ -142,6 +175,19 @@ export class StrategyOrchestratorService {
     } catch (err) {
       const reason = 'Risk Engine error — trade rejected (fail-closed)';
       this.logger.error(`Signal ${signalId}: risk engine exception`, (err as Error).message);
+      await this.auditService.log({
+        actorUserId: userId,
+        action: AuditAction.AI_SIGNAL_RISK_REJECTED,
+        severity: AuditSeverity.CRITICAL,
+        resourceType: 'AiSignal',
+        resourceId: signalId,
+        metadata: {
+          instrument: candidate.instrument,
+          direction: candidate.direction,
+          rejectionCode: 'RISK_ENGINE_ERROR',
+          rejectionReason: reason,
+        },
+      });
       this.eventBus.publish(DomainEventType.RISK_SIGNAL_REJECTED, userId, {
         userId,
         instrument: candidate.instrument,
@@ -179,6 +225,18 @@ export class StrategyOrchestratorService {
       };
     }
 
+    await this.auditService.log({
+      actorUserId: userId,
+      action: AuditAction.AI_SIGNAL_RISK_APPROVED,
+      severity: AuditSeverity.INFO,
+      resourceType: 'AiSignal',
+      resourceId: signalId,
+      metadata: {
+        instrument: candidate.instrument,
+        direction: candidate.direction,
+      },
+    });
+
     // ── Gate 6: Execution ──────────────────────────────────────────────────────
     try {
       const trade = await this.executionService.executeTrade(userId, riskDecision);
@@ -209,7 +267,7 @@ export class StrategyOrchestratorService {
         metadata: {
           instrument: candidate.instrument,
           direction: candidate.direction,
-          error: (err as Error).message,
+          failureCode: 'EXECUTION_ERROR',
         },
       });
       return { outcome: 'EXECUTION_FAILED', signalId, reason };
@@ -233,14 +291,36 @@ export class StrategyOrchestratorService {
     return null;
   }
 
-  private publishIgnored(candidate: AiSignalCandidate, reason: string): void {
+  private async recordIgnored(
+    candidate: AiSignalCandidate,
+    outcome: StrategyOutcome,
+    reasonCode: string,
+    reasonSummary: string,
+  ): Promise<void> {
+    await this.auditService.log({
+      actorUserId: candidate.userId,
+      action: AuditAction.AI_SIGNAL_IGNORED,
+      severity: AuditSeverity.INFO,
+      resourceType: 'AiSignal',
+      resourceId: candidate.signalId,
+      metadata: {
+        instrument: candidate.instrument,
+        direction: candidate.direction,
+        confidenceScore: candidate.confidenceScore,
+        strategyCode: candidate.strategyCode,
+        outcome,
+        reasonCode,
+        reasonSummary,
+      },
+    });
+
     this.eventBus.publish(DomainEventType.AI_SIGNAL_IGNORED, candidate.userId, {
       signalId: candidate.signalId,
       instrument: candidate.instrument,
       direction: candidate.direction,
       confidenceScore: candidate.confidenceScore,
       strategyCode: candidate.strategyCode,
-      ignoredReason: reason,
+      ignoredReason: reasonSummary,
     });
   }
 }
