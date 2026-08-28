@@ -8,12 +8,7 @@ export type AiDecisionOutcome =
 
 export type AiDecisionStage = 'SIGNAL' | 'ELIGIBILITY' | 'RISK' | 'EXECUTION';
 
-export type AiDecisionStageStatus =
-  | 'RECEIVED'
-  | 'APPROVED'
-  | 'REJECTED'
-  | 'SUCCEEDED'
-  | 'FAILED';
+export type AiDecisionStageStatus = 'RECEIVED' | 'APPROVED' | 'REJECTED' | 'SUCCEEDED' | 'FAILED';
 
 export interface AiDecisionEvidenceDto {
   instrument: string | null;
