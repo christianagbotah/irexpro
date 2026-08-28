@@ -1,6 +1,8 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bullmq';
+import { ExecutionController } from './execution.controller';
+import { ExecutionReadService } from './execution-read.service';
 import { ExecutionService } from './execution.service';
 import { Trade } from './entities/trade.entity';
 import { TradingSession } from './entities/trading-session.entity';
@@ -14,7 +16,8 @@ import { BrokerModule } from '../broker/broker.module';
 import { AuditModule } from '../audit/audit.module';
 
 /**
- * ExecutionModule — Live trade execution and lifecycle management.
+ * ExecutionModule — Live trade execution, lifecycle management, and
+ * frontend-safe read projections.
  *
  * Circular dependency with RiskModule (Risk uses ExecutionService for
  * trade counts / daily P&L; Execution uses RiskDecision types).
@@ -30,7 +33,13 @@ import { AuditModule } from '../audit/audit.module';
     BrokerModule,
     AuditModule,
   ],
-  providers: [ExecutionService, TradeReconciliationJob, TradeReconciliationProducer],
-  exports: [ExecutionService],
+  controllers: [ExecutionController],
+  providers: [
+    ExecutionService,
+    ExecutionReadService,
+    TradeReconciliationJob,
+    TradeReconciliationProducer,
+  ],
+  exports: [ExecutionService, ExecutionReadService],
 })
 export class ExecutionModule {}
