@@ -1,12 +1,21 @@
 /**
- * Web UI primitives — shared across apps/web pages.
- * Sprint 26: modern enterprise fintech design system.
- * These are simple functional components — no state library needed.
+ * Web UI primitives shared across the iRexPro trader application.
  */
 
+import Link from 'next/link';
 import { ButtonHTMLAttributes, ComponentType, ReactNode } from 'react';
 import MobileBottomNav from '@/components/mobile-bottom-nav';
-import { DashboardIcon, PaymentsIcon } from '@/components/icons';
+import {
+  AiIcon,
+  DashboardIcon,
+  PaymentsIcon,
+  PlugIcon,
+  PortfolioIcon,
+  ShieldIcon,
+  TradeIcon,
+  UserIcon,
+  type IconProps,
+} from '@/components/icons';
 
 // ── Button ───────────────────────────────────────────────────────────────────
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
@@ -96,7 +105,7 @@ export function EmptyState({ icon = '📭', title, description }: { icon?: strin
   );
 }
 
-// ── AuthLayout (split-screen) ─────────────────────────────────────────────────
+// ── AuthLayout ────────────────────────────────────────────────────────────────
 interface AuthLayoutProps { title: string; subtitle?: string; children: ReactNode; }
 
 export function AuthLayout({ title, subtitle, children }: AuthLayoutProps) {
@@ -132,61 +141,137 @@ export function AuthLayout({ title, subtitle, children }: AuthLayoutProps) {
   );
 }
 
-// ── DashboardShell ────────────────────────────────────────────────────────────
+// ── Trader workspace shell ───────────────────────────────────────────────────
 interface DashboardShellProps {
   user: { email: string | null; firstName?: string | null; lastName?: string | null } | null;
   onLogout: () => void;
   activeRoute?: string;
+  title?: string;
   children: ReactNode;
 }
 
-export function DashboardShell({ user, onLogout, activeRoute, children }: DashboardShellProps) {
-  const navItems = [
-    { href: '/dashboard', label: 'Dashboard', Icon: DashboardIcon },
-    { href: '/payments/success', label: 'Payments', Icon: PaymentsIcon },
-  ];
+interface WorkspaceNavItem {
+  href: string;
+  label: string;
+  Icon: ComponentType<IconProps>;
+  matchPrefix?: boolean;
+}
+
+interface WorkspaceNavGroup {
+  label: string;
+  items: WorkspaceNavItem[];
+}
+
+const WORKSPACE_NAV: WorkspaceNavGroup[] = [
+  {
+    label: 'Overview',
+    items: [{ href: '/dashboard', label: 'Dashboard', Icon: DashboardIcon }],
+  },
+  {
+    label: 'Trade',
+    items: [{ href: '/trade', label: 'Trading Workspace', Icon: TradeIcon, matchPrefix: true }],
+  },
+  {
+    label: 'Intelligence',
+    items: [{ href: '/ai', label: 'AI Command Center', Icon: AiIcon, matchPrefix: true }],
+  },
+  {
+    label: 'Portfolio',
+    items: [{ href: '/portfolio', label: 'Portfolio & Risk', Icon: PortfolioIcon, matchPrefix: true }],
+  },
+  {
+    label: 'Account',
+    items: [
+      { href: '/onboarding/broker', label: 'Broker Accounts', Icon: PlugIcon },
+      { href: '/onboarding/risk', label: 'Risk Limits', Icon: ShieldIcon },
+      { href: '/onboarding/profile', label: 'Profile', Icon: UserIcon },
+      { href: '/payments/success', label: 'Fees & Payments', Icon: PaymentsIcon, matchPrefix: true },
+    ],
+  },
+];
+
+function navItemActive(activeRoute: string | undefined, item: WorkspaceNavItem): boolean {
+  if (!activeRoute) return false;
+  if (item.matchPrefix) {
+    return activeRoute === item.href || activeRoute.startsWith(`${item.href}/`);
+  }
+  return activeRoute === item.href;
+}
+
+function routeTitle(activeRoute: string | undefined): string {
+  for (const group of WORKSPACE_NAV) {
+    for (const item of group.items) {
+      if (navItemActive(activeRoute, item)) return item.label;
+    }
+  }
+  return 'Dashboard';
+}
+
+export function DashboardShell({ user, onLogout, activeRoute, title, children }: DashboardShellProps) {
+  const userLabel = user
+    ? (user.firstName || user.lastName
+      ? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim()
+      : user.email)
+    : null;
 
   return (
-    <div className="dashboard-shell">
-      <aside className="dashboard-sidebar">
-        <div className="dashboard-sidebar__logo">
-          <span className="auth-layout__logo-mark" style={{ width: 36, height: 36, fontSize: '1rem' }}>iR</span>
-          iRexPro
-        </div>
-        <nav className="dashboard-sidebar__nav">
-          {navItems.map((item) => {
-            const { Icon } = item;
-            return (
-              <a key={item.href} href={item.href} className={activeRoute === item.href ? 'active' : ''}>
-                <span aria-hidden="true"><Icon size={18} /></span> {item.label}
-              </a>
-            );
-          })}
+    <div className="dashboard-shell terminal-shell">
+      <aside className="dashboard-sidebar terminal-sidebar">
+        <Link href="/dashboard" className="dashboard-sidebar__logo terminal-sidebar__brand" aria-label="iRexPro dashboard">
+          <span className="auth-layout__logo-mark terminal-sidebar__logo-mark">iR</span>
+          <span>
+            <span className="terminal-sidebar__brand-name">iRexPro</span>
+            <span className="terminal-sidebar__brand-subtitle">AI Trading</span>
+          </span>
+        </Link>
+
+        <nav className="dashboard-sidebar__nav terminal-nav" aria-label="Primary workspace navigation">
+          {WORKSPACE_NAV.map((group) => (
+            <div className="terminal-nav__group" key={group.label}>
+              <div className="terminal-nav__group-label">{group.label}</div>
+              {group.items.map((item) => {
+                const { Icon } = item;
+                const active = navItemActive(activeRoute, item);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={active ? 'active' : ''}
+                    aria-current={active ? 'page' : undefined}
+                  >
+                    <span className="terminal-nav__icon" aria-hidden="true"><Icon size={18} /></span>
+                    <span>{item.label}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          ))}
         </nav>
+
         {user && (
-          <div className="dashboard-sidebar__user">
-            <p className="text-sm muted" style={{ marginBottom: '0.5rem', wordBreak: 'break-all' }}>
-              {user.firstName || user.lastName
-                ? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim()
-                : user.email}
+          <div className="dashboard-sidebar__user terminal-sidebar__user">
+            <span className="terminal-sidebar__user-label">Signed in</span>
+            <p className="text-sm" style={{ marginBottom: '0.5rem', wordBreak: 'break-word' }}>
+              {userLabel}
             </p>
             <Button variant="ghost" size="sm" block onClick={onLogout}>Log out</Button>
           </div>
         )}
       </aside>
-      <div className="dashboard-main">
-        <header className="dashboard-header">
-          <span className="dashboard-header__title">Dashboard</span>
+
+      <div className="dashboard-main terminal-main">
+        <header className="dashboard-header terminal-header">
+          <div>
+            <span className="terminal-header__eyebrow">AI trading workspace</span>
+            <span className="dashboard-header__title terminal-header__title">{title ?? routeTitle(activeRoute)}</span>
+          </div>
+          <div className="terminal-header__principle" aria-label="Execution safety principle">
+            Autonomous execution · risk-gated
+          </div>
         </header>
-        <div className="dashboard-content">{children}</div>
+        <div className="dashboard-content terminal-content">{children}</div>
       </div>
-      {/*
-        Sprint 31: mobile bottom navigation. Hidden on desktop via CSS
-        (.mobile-bottom-nav is display:none above 700px). Rendered here so
-        every authenticated page using DashboardShell gets the same mobile
-        nav without per-page wiring. The desktop sidebar remains the primary
-        navigation on tablet/desktop. Safe-area-aware (env(safe-area-inset-bottom)).
-      */}
+
       <MobileBottomNav onLogout={onLogout} />
     </div>
   );
