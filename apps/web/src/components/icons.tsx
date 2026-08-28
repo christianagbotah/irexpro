@@ -1,25 +1,10 @@
 /**
- * Professional SVG icon set for the iRexPro web app — Sprint 31 remediation.
+ * Professional SVG icon set for the iRexPro web app.
  *
- * Replaces the emoji icons previously used in the mobile bottom navigation and
- * "More" sheet. Emoji render inconsistently across Android, iOS, Windows and
- * macOS (different glyph sets, color emoji vs. monochrome, varying widths),
- * which is unacceptable for an enterprise trading product. These inline SVG
- * icons render identically everywhere, support `currentColor`, and have a
- * consistent visual weight (1.75 stroke, 24×24 viewBox, Lucide-style outline).
- *
- * Design rules:
- *   - viewBox="0 0 24 24", fill="none", stroke="currentColor", strokeWidth 1.75
- *   - strokeLinecap="round", strokeLinejoin="round" (rounded, professional)
- *   - aria-hidden="true" + focusable="false" — the icon is decorative; the
- *     adjacent text label provides the accessible name (per architect §7).
- *   - No new dependencies. Mirrors the existing InfoCircleIcon pattern in
- *     apps/web/src/components/ui/InfoTooltip.tsx.
- *
- * Each icon accepts a `size` prop (default 24) so callers can scale without
- * introducing a separate stylesheet. The `title` prop is intentionally absent —
- * icons are decorative; if an icon-only button is ever needed, the caller must
- * supply its own aria-label.
+ * Inline SVG keeps the trading shell dependency-light while guaranteeing
+ * consistent rendering across desktop and mobile platforms. Icons use
+ * currentColor and are decorative by default; accessible names belong to the
+ * adjacent navigation labels or icon-button aria-labels.
  */
 import type { SVGProps } from 'react';
 
@@ -47,9 +32,7 @@ function Svg({ size = 24, children, ...rest }: IconProps & { children: React.Rea
   );
 }
 
-// ── Primary navigation icons ────────────────────────────────────────────────
-
-/** Dashboard — four-quadrant grid (home/overview). */
+/** Dashboard — four-quadrant overview. */
 export function DashboardIcon(props: IconProps) {
   return (
     <Svg {...props}>
@@ -61,7 +44,44 @@ export function DashboardIcon(props: IconProps) {
   );
 }
 
-/** Payments — credit card. */
+/** Trading workspace — candlestick chart. */
+export function TradeIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M6 2v20" />
+      <rect x="4" y="6" width="4" height="7" rx="1" />
+      <path d="M12 3v18" />
+      <rect x="10" y="10" width="4" height="6" rx="1" />
+      <path d="M18 2v20" />
+      <rect x="16" y="5" width="4" height="9" rx="1" />
+    </Svg>
+  );
+}
+
+/** AI command center — processor/circuit. */
+export function AiIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="6" y="6" width="12" height="12" rx="3" />
+      <path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4" />
+      <path d="M9.5 13.5l2.5-5 2.5 5M10.5 11.5h3" />
+    </Svg>
+  );
+}
+
+/** Portfolio intelligence — layered performance curve. */
+export function PortfolioIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M3 19h18" />
+      <path d="M5 16l4-5 3 2 6-7" />
+      <path d="M15 6h3v3" />
+      <path d="M5 5v11" />
+    </Svg>
+  );
+}
+
+/** Payments / performance fees — credit card. */
 export function PaymentsIcon(props: IconProps) {
   return (
     <Svg {...props}>
@@ -72,7 +92,7 @@ export function PaymentsIcon(props: IconProps) {
   );
 }
 
-/** More — three horizontal dots (overflow). */
+/** More — three horizontal dots. */
 export function MoreIcon(props: IconProps) {
   return (
     <Svg {...props}>
@@ -82,8 +102,6 @@ export function MoreIcon(props: IconProps) {
     </Svg>
   );
 }
-
-// ── Secondary (More sheet) icons ─────────────────────────────────────────────
 
 /** Profile — single user bust. */
 export function UserIcon(props: IconProps) {
