@@ -169,6 +169,27 @@
   min-width: 0;
 }
 
+/* The global mobile sheet overlay owns the dimmed surface. Keep the semantic
+ * backdrop as a full-screen pointer target behind the dialog so the dialog and
+ * its links remain in the accessibility tree. */
+.mobile-sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  appearance: none;
+  cursor: default;
+}
+
+.mobile-sheet-overlay .mobile-sheet {
+  position: relative;
+  z-index: 1;
+}
+
 /* ── Foundation routes ────────────────────────────────────────────────────── */
 .terminal-foundation {
   width: 100%;
