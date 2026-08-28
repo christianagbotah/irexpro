@@ -45,7 +45,9 @@ export class AiDecisionExplorerService {
 
   async getRecentDecisions(userId: string, limit = 25): Promise<AiDecisionExplorerResponseDto> {
     const receipts = await this.auditService.listRecentAiSignalReceipts(userId, limit);
-    const signalIds = receipts.map((receipt) => receipt.resourceId).filter((id): id is string => !!id);
+    const signalIds = receipts
+      .map((receipt) => receipt.resourceId)
+      .filter((id): id is string => !!id);
 
     const [lifecycle, trades] = await Promise.all([
       this.auditService.listAiSignalLifecycle(userId, signalIds),
