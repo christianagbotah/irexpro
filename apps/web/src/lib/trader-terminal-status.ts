@@ -76,6 +76,16 @@ function isTradingSessionStatus(value: unknown): value is TradingSessionStatusVi
   );
 }
 
+function isBrokerStatus(value: unknown): value is TerminalBrokerView['status'] {
+  return (
+    value === 'CONNECTING' ||
+    value === 'CONNECTED' ||
+    value === 'DISCONNECTED' ||
+    value === 'ERROR' ||
+    value === 'SUSPENDED'
+  );
+}
+
 function isRiskStatus(value: unknown): value is RiskStatusView {
   if (!isRecord(value) || !isRecord(value.limits)) return false;
   const limits = value.limits;
@@ -118,7 +128,7 @@ function isTerminalBroker(value: unknown): value is TerminalBrokerView {
     typeof value.brokerName === 'string' &&
     (value.displayName === null || typeof value.displayName === 'string') &&
     (value.accountType === 'DEMO' || value.accountType === 'LIVE') &&
-    typeof value.status === 'string' &&
+    isBrokerStatus(value.status) &&
     typeof value.liveTradingEnabled === 'boolean' &&
     (value.lastHealthCheckAt === null || typeof value.lastHealthCheckAt === 'string') &&
     (value.lastErrorMessage === null || typeof value.lastErrorMessage === 'string')
