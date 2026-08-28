@@ -15,6 +15,7 @@ import { ToggleKillSwitchDto } from './dto/kill-switch.dto';
 import { UpdateRiskProfileDto } from './dto/update-risk-profile.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUserId } from '../../common/decorators/current-user.decorator';
+import { toRiskViolationSummary } from './risk-response.mapper';
 
 /**
  * RiskController — User-facing risk management endpoints.
@@ -23,7 +24,7 @@ import { CurrentUserId } from '../../common/decorators/current-user.decorator';
  *   POST   /risk/kill-switch         — Activate or deactivate personal kill switch
  *   GET    /risk/profile             — Get current risk profile
  *   PATCH  /risk/profile             — Update risk limits
- *   GET    /risk/violations          — Get recent risk violations (rejected signals)
+ *   GET    /risk/violations          — Get recent sanitized risk violations
  *   GET    /risk/status              — Quick status summary
  */
 @ApiTags('Risk Management')
@@ -80,12 +81,18 @@ export class RiskController {
   // ─── Risk violations ──────────────────────────────────────────────────────
 
   @Get('violations')
-  @ApiOperation({ summary: 'Get recent risk violations (rejected signals)' })
+  @ApiOperation({
+    summary: 'Get recent sanitized risk violations (rejected signals)',
+    description:
+      'Returns rejection code, reason, and timestamp only. Internal risk context, signal lineage, ' +
+      'ownership IDs, balances, equity, and proposed order details are never exposed.',
+  })
   @ApiQuery({ name: 'limit', required: false, description: 'Max results (default 50)' })
-  @ApiResponse({ status: 200, description: 'List of recent risk violations' })
+  @ApiResponse({ status: 200, description: 'List of recent sanitized risk violations' })
   async getViolations(@CurrentUserId() userId: string, @Query('limit') limit?: string) {
     const take = limit ? Math.min(parseInt(limit, 10), 200) : 50;
-    return this.riskService.getViolations(userId, take);
+    const violations = await this.riskService.getViolations(userId, take);
+    return violations.map(toRiskViolationSummary);
   }
 
   // ─── Status ───────────────────────────────────────────────────────────────

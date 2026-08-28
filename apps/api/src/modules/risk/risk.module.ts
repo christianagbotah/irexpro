@@ -2,6 +2,8 @@ import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { RiskService } from './risk.service';
 import { RiskController } from './risk.controller';
+import { RiskIntelligenceController } from './risk-intelligence.controller';
+import { RiskIntelligenceService } from './risk-intelligence.service';
 import { RiskProfile } from './entities/risk-profile.entity';
 import { RiskViolation } from './entities/risk-violation.entity';
 import { BrokerModule } from '../broker/broker.module';
@@ -25,8 +27,8 @@ import { ExecutionModule } from '../execution/execution.module';
     AuditModule,
     forwardRef(() => ExecutionModule),
   ],
-  controllers: [RiskController],
-  providers: [RiskService],
+  controllers: [RiskController, RiskIntelligenceController],
+  providers: [RiskService, RiskIntelligenceService],
   exports: [RiskService],
 })
 export class RiskModule {}

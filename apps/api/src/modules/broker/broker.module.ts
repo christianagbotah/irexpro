@@ -54,6 +54,7 @@ import { AuditModule } from '../audit/audit.module';
   ],
   exports: [
     BrokerService,
+    PortfolioReadService,
     BrokerAdapterRegistry,
     PaperBrokerAdapter,
     // CredentialEncryptionService is exported so that ExecutionModule (which
