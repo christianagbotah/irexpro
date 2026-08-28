@@ -1,0 +1,33 @@
+name: Sprint 37 Targeted Web
+
+on:
+  push:
+    branches:
+      - architect/sprint37-targeted-web
+
+jobs:
+  targeted-web:
+    runs-on: ubuntu-24.04
+    env:
+      NEXT_PUBLIC_API_BASE_URL: 'http://localhost:3999/api/v1'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4.4.0
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build web
+        working-directory: apps/web
+        run: pnpm exec next build
+      - name: Install Chromium
+        working-directory: apps/web
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Run Sprint 37 risk intelligence spec across configured viewports
+        working-directory: apps/web
+        run: pnpm exec playwright test e2e/risk-intelligence.spec.ts
+        env:
+          CI: 'true'
