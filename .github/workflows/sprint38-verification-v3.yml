@@ -1,0 +1,65 @@
+name: Sprint 38 Verification V3
+
+on:
+  push:
+    branches:
+      - architect/sprint38-verification-v3
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '22'
+  PNPM_VERSION: '10.34.5'
+  NEXT_PUBLIC_API_BASE_URL: 'http://localhost:3999/api/v1'
+
+jobs:
+  verification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4.4.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: API lint
+        run: pnpm api:lint
+
+      - name: API tests
+        run: pnpm api:test
+        env:
+          NODE_ENV: test
+          JWT_SECRET: test_jwt_secret_minimum_32_characters_long
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: irexpro_test
+          DB_USER: irexpro
+          DB_PASSWORD: test_password
+          COOKIE_SECRET: test_cookie_secret_min_16
+
+      - name: API build
+        run: pnpm api:build
+
+      - name: Shared types typecheck
+        run: pnpm --filter @irexpro/types typecheck
+
+      - name: Shared API client typecheck
+        run: pnpm --filter @irexpro/api-client typecheck
+
+      - name: Web lint
+        run: pnpm --filter @irexpro/web lint
+
+      - name: Patch whitespace
+        run: git diff --check 0679cc12a31c4e829c020708ce3512b2f4b1ad8b...HEAD
