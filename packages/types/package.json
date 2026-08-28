@@ -21,6 +21,10 @@
     "./risk-intelligence": {
       "types": "./src/risk-intelligence.ts",
       "default": "./src/risk-intelligence.ts"
+    },
+    "./ai-decision-explorer": {
+      "types": "./src/ai-decision-explorer.ts",
+      "default": "./src/ai-decision-explorer.ts"
     }
   },
   "scripts": {
