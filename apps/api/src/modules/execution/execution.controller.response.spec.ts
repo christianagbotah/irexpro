@@ -70,7 +70,7 @@ describe('ExecutionController frontend-safe responses', () => {
     expect(readService.listRecentExecutions).toHaveBeenCalledWith(USER_ID, 25);
   });
 
-  it('does not expose internal execution entity fields', async () => {
+  it('does not expose internal execution entity fields or currency-less P&L', async () => {
     const [response] = await controller.listOpenPositions(USER_ID);
     const keys = Object.keys(response);
 
@@ -80,6 +80,7 @@ describe('ExecutionController frontend-safe responses', () => {
     expect(keys).not.toContain('idempotencyKey');
     expect(keys).not.toContain('externalOrderId');
     expect(keys).not.toContain('brokerRejectionReason');
+    expect(keys).not.toContain('realisedPnl');
 
     expect(response).toMatchObject({
       instrument: 'EURUSD',
@@ -89,9 +90,10 @@ describe('ExecutionController frontend-safe responses', () => {
     });
   });
 
-  it('returns persisted realised P&L and close reason only from the entity', async () => {
+  it('returns authoritative lifecycle fields without exposing persisted currency-less P&L', async () => {
     const [response] = await controller.listRecentExecutions(USER_ID, 50);
-    expect(response.realisedPnl).toBe('80.25');
+    expect(response.exitPrice).toBe('1.10800000');
     expect(response.closeReason).toBe(TradeCloseReason.TAKE_PROFIT_HIT);
+    expect(Object.keys(response)).not.toContain('realisedPnl');
   });
 });
