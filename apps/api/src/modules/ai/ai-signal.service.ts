@@ -143,7 +143,8 @@ export class AiSignalService {
       strategyCode: candidate.strategyCode,
       modelVersion: candidate.modelVersion,
       timeframe: candidate.timeframe,
-      generatedAt: candidate.generatedAt instanceof Date ? candidate.generatedAt.toISOString() : null,
+      generatedAt:
+        candidate.generatedAt instanceof Date ? candidate.generatedAt.toISOString() : null,
       ...(candidate.marketRegime ? { marketRegime: candidate.marketRegime } : {}),
       ...(typeof candidate.volatilityScore === 'number'
         ? { volatilityScore: candidate.volatilityScore }
