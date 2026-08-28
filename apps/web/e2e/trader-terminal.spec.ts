@@ -1,20 +1,87 @@
 import { test, expect } from '@playwright/test';
 import {
   gotoAsAuthenticated,
+  setupErrorCollectors,
   assertNoHorizontalOverflow,
   assertNoConsoleErrors,
+  assertNoFailedRequests,
+  assertNoExternalRequests,
+  mockAuthUser,
+  mockAuthTokens,
+  mockBrokerConnections,
 } from './fixtures';
 
-const WORKSPACES = [
-  { path: '/trade', heading: 'Trading Workspace', navLabel: 'Trading Workspace' },
-  { path: '/ai', heading: 'AI Command Center', navLabel: 'AI Command Center' },
-  { path: '/portfolio', heading: 'Portfolio & Risk', navLabel: 'Portfolio & Risk' },
+const FOUNDATION_WORKSPACES = [
+  { path: '/ai', heading: 'AI Command Center' },
+  { path: '/portfolio', heading: 'Portfolio & Risk' },
 ] as const;
 
-test.describe('Sprint 33 trader terminal foundation', () => {
-  for (const workspace of WORKSPACES) {
-    test(`${workspace.heading} renders the authenticated authoritative-data foundation`, async ({ page }) => {
-      await gotoAsAuthenticated(page, workspace.path, { heading: new RegExp(workspace.heading, 'i') });
+const ACTIVE_SESSION_ID = '44444444-4444-4444-8444-444444444444';
+
+async function gotoTradeWithLiveStatusMocks(page: Parameters<typeof setupErrorCollectors>[0]) {
+  setupErrorCollectors(page);
+
+  await page.route('**/api/v1/**', (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const apiPath = url.pathname.split('/api/v1/')[1] ?? '';
+
+    const fulfill = (status: number, body: unknown) =>
+      route.fulfill({
+        status,
+        contentType: 'application/json',
+        body: JSON.stringify(body),
+      });
+
+    if (apiPath === 'auth/refresh') return fulfill(200, mockAuthTokens);
+    if (apiPath === 'auth/me') return fulfill(200, mockAuthUser);
+    if (apiPath === 'auth/logout') return fulfill(200, { message: 'Logged out' });
+
+    if (apiPath === 'risk/status') {
+      return fulfill(200, {
+        killSwitchActive: false,
+        brokerConnected: true,
+        canTrade: true,
+        limits: {
+          maxDailyLossPercent: '5',
+          maxDrawdownPercent: '10',
+          maxOpenTrades: 3,
+          maxPositionSizeLot: '1.00',
+          allowedInstruments: 'ALL',
+          maxVolatilityScore: '7',
+        },
+      });
+    }
+
+    if (apiPath === 'trading/sessions/active') {
+      return fulfill(200, {
+        id: ACTIVE_SESSION_ID,
+        brokerConnectionId: mockBrokerConnections[0].id,
+        status: 'ACTIVE',
+        startedAt: '2026-08-28T18:00:00.000Z',
+        endedAt: null,
+        createdAt: '2026-08-28T18:00:00.000Z',
+        updatedAt: '2026-08-28T18:00:00.000Z',
+      });
+    }
+
+    if (apiPath === 'broker/connections') {
+      return fulfill(200, mockBrokerConnections);
+    }
+
+    return fulfill(200, {});
+  });
+
+  await page.goto('/trade');
+  await expect(page.getByRole('heading', { level: 1, name: 'Trading Workspace' })).toBeVisible();
+}
+
+test.describe('Trader terminal workspaces', () => {
+  for (const workspace of FOUNDATION_WORKSPACES) {
+    test(`${workspace.heading} retains the authoritative-data foundation`, async ({ page }) => {
+      await gotoAsAuthenticated(page, workspace.path, {
+        heading: new RegExp(workspace.heading, 'i'),
+      });
 
       await expect(page.getByRole('heading', { level: 1, name: workspace.heading })).toBeVisible();
       await expect(page.getByText(/will not display fabricated trading metrics/i)).toBeVisible();
@@ -25,6 +92,45 @@ test.describe('Sprint 33 trader terminal foundation', () => {
       assertNoConsoleErrors(page);
     });
   }
+
+  test('Trading Workspace renders authoritative risk, session, and broker status', async ({ page }) => {
+    await gotoTradeWithLiveStatusMocks(page);
+
+    const riskCard = page
+      .getByRole('heading', { level: 2, name: 'Risk Engine' })
+      .locator('..');
+    await expect(riskCard.getByText('Risk gate clear', { exact: true })).toBeVisible();
+    await expect(riskCard.getByText('5%', { exact: true })).toBeVisible();
+    await expect(riskCard.getByText('10%', { exact: true })).toBeVisible();
+
+    const sessionCard = page
+      .getByRole('heading', { level: 2, name: 'AI Trading Session' })
+      .locator('..');
+    await expect(sessionCard.getByText('Active', { exact: true })).toBeVisible();
+    await expect(sessionCard.getByText('Trading session service', { exact: true })).toBeVisible();
+    await expect(sessionCard.getByText(/not exposed to this browser contract/i)).toBeVisible();
+
+    const brokerCard = page
+      .getByRole('heading', { level: 2, name: 'Broker Health' })
+      .locator('..');
+    await expect(brokerCard.getByText('Paper Broker', { exact: true })).toBeVisible();
+    await expect(brokerCard.getByText('Demo paper account', { exact: true })).toBeVisible();
+    await expect(brokerCard.getByText('Connected', { exact: true })).toBeVisible();
+    await expect(brokerCard.getByText('Demo', { exact: true })).toBeVisible();
+
+    await expect(page.getByText(/authoritative data only/i)).toBeVisible();
+    await expect(page.getByText(/does not calculate or fabricate balances/i)).toBeVisible();
+
+    // Internal persistence-only session fields must never appear in the UI.
+    await expect(page.getByText('riskProfileSnapshot', { exact: false })).toHaveCount(0);
+    await expect(page.getByText('openingBalance', { exact: false })).toHaveCount(0);
+    await expect(page.getByText('peakEquity', { exact: false })).toHaveCount(0);
+
+    await assertNoHorizontalOverflow(page);
+    assertNoConsoleErrors(page);
+    assertNoFailedRequests(page);
+    assertNoExternalRequests(page);
+  });
 
   test('desktop workspace navigation exposes the four primary product areas', async ({ page }) => {
     await gotoAsAuthenticated(page, '/trade', { heading: /Trading Workspace/i });
@@ -37,7 +143,10 @@ test.describe('Sprint 33 trader terminal foundation', () => {
 
     const nav = page.getByRole('navigation', { name: /primary workspace navigation/i });
     await expect(nav.getByRole('link', { name: 'Dashboard' })).toBeVisible();
-    await expect(nav.getByRole('link', { name: 'Trading Workspace' })).toHaveAttribute('aria-current', 'page');
+    await expect(nav.getByRole('link', { name: 'Trading Workspace' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
     await expect(nav.getByRole('link', { name: 'AI Command Center' })).toBeVisible();
     await expect(nav.getByRole('link', { name: 'Portfolio & Risk' })).toBeVisible();
   });
@@ -57,7 +166,10 @@ test.describe('Sprint 33 trader terminal foundation', () => {
     await page.getByRole('button', { name: /more navigation/i }).click();
     const sheet = page.locator('#mobile-more-sheet');
     await expect(sheet).toBeVisible();
-    await expect(sheet.getByRole('link', { name: 'Trading Workspace' })).toHaveAttribute('aria-current', 'page');
+    await expect(sheet.getByRole('link', { name: 'Trading Workspace' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
     await expect(sheet.getByRole('link', { name: 'AI Command Center' })).toBeVisible();
     await expect(sheet.getByRole('link', { name: 'Portfolio & Risk' })).toBeVisible();
   });
