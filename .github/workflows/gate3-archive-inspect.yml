@@ -1,0 +1,38 @@
+name: Gate 3 Archive Inspect
+
+on:
+  push:
+    branches:
+      - architect/gate3-publish-staging
+    paths:
+      - '.github/workflows/gate3-archive-inspect.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Verify and inventory archived tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d .gate3/final-tree.tar.gz.b64 > /tmp/gate3-tree.tar.gz
+          echo 'ad8a5d70772efb39166c450d04916ef4137db36fba9abe5bbf868ff581db2d9c  /tmp/gate3-tree.tar.gz' | sha256sum -c -
+          rm -rf /tmp/gate3-tree
+          mkdir -p /tmp/gate3-tree
+          tar -xzf /tmp/gate3-tree.tar.gz -C /tmp/gate3-tree
+          (
+            cd /tmp/gate3-tree
+            find . -type f -print0 | sort -z | xargs -0 sha256sum
+          ) > .gate3/old-archive-manifest.txt
+          tar -tzf /tmp/gate3-tree.tar.gz | sort > .gate3/old-archive-paths.txt
+          git add .gate3/old-archive-manifest.txt .gate3/old-archive-paths.txt
+          git config user.name 'iRexPro Architect Gate'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'chore(gate3): inventory archived verification tree'
+          git push origin HEAD:architect/gate3-publish-staging
