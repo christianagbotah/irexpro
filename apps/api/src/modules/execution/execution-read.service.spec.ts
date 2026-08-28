@@ -35,13 +35,9 @@ describe('ExecutionReadService', () => {
 
   it('clamps recent execution limits to 1..100', async () => {
     await service.listRecentExecutions(USER_ID, 999);
-    expect(tradeRepo.find).toHaveBeenLastCalledWith(
-      expect.objectContaining({ take: 100 }),
-    );
+    expect(tradeRepo.find).toHaveBeenLastCalledWith(expect.objectContaining({ take: 100 }));
 
     await service.listRecentExecutions(USER_ID, -5);
-    expect(tradeRepo.find).toHaveBeenLastCalledWith(
-      expect.objectContaining({ take: 1 }),
-    );
+    expect(tradeRepo.find).toHaveBeenLastCalledWith(expect.objectContaining({ take: 1 }));
   });
 });
