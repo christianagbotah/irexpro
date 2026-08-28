@@ -275,9 +275,11 @@ export default function PortfolioRiskPage() {
               </Card>
             </section>
 
-            <Alert variant="info" className="mt-4">
-              This workspace reports risk policy and capacity only. It does not calculate exposure, P&amp;L, drawdown usage, or margin utilisation in the browser. Those metrics will be added only after authoritative server-side contracts exist.
-            </Alert>
+            <div className="mt-4">
+              <Alert variant="info">
+                This workspace reports risk policy and capacity only. It does not calculate exposure, P&amp;L, drawdown usage, or margin utilisation in the browser. Those metrics will be added only after authoritative server-side contracts exist.
+              </Alert>
+            </div>
           </>
         ) : null}
       </main>
