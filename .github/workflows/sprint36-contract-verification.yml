@@ -1,0 +1,26 @@
+name: Sprint 36 Contract Verification
+
+on:
+  push:
+    branches:
+      - architect/sprint36-contract-verification
+
+jobs:
+  contract-gates:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4.4.0
+        with:
+          version: 10
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Shared types typecheck
+        run: pnpm --filter @irexpro/types typecheck
+      - name: Shared API client typecheck
+        run: pnpm --filter @irexpro/api-client typecheck
+      - name: Web lint
+        run: pnpm --filter @irexpro/web lint
