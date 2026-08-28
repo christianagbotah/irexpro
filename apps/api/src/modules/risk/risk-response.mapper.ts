@@ -7,9 +7,7 @@ import { RiskViolationSummaryResponseDto } from './dto/risk-intelligence-respons
  * Never expose userId, signalId, or riskContext. riskContext can contain
  * balances, equity, proposed order parameters, and other internal evidence.
  */
-export function toRiskViolationSummary(
-  violation: RiskViolation,
-): RiskViolationSummaryResponseDto {
+export function toRiskViolationSummary(violation: RiskViolation): RiskViolationSummaryResponseDto {
   return {
     id: violation.id,
     rejectionCode: violation.rejectionCode,
