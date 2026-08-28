@@ -1,4 +1,4 @@
-// Real PostgreSQL 16 Gate 3 integration coverage; reconciliation harness now registers explicit entities.
+// Final real PostgreSQL 16 Gate 3 integration coverage; reconciliation harness registers explicit entities.
 import { BadRequestException } from '@nestjs/common';
 import { DataSource, IsNull, Repository } from 'typeorm';
 import { AuditService } from '../audit/audit.service';
