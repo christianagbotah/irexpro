@@ -1,0 +1,53 @@
+name: Gate 3 PG Prettier Fix
+
+on:
+  push:
+    branches:
+      - architect/gate3-candidate-bootstrap-20260828
+    paths:
+      - '.github/workflows/gate3-pg-prettier-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix-candidate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact clean candidate
+        uses: actions/checkout@v5
+        with:
+          ref: architect/gate3-candidate-clean-20260828
+          fetch-depth: 0
+
+      - name: Apply exact Prettier formatting correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='f7de24eabd991dc81651864e95b7be9e88fea229'
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$expected"
+          file='apps/api/src/modules/broker-reconciliation/services/broker-trade-reconciliation.pg-integration.spec.ts'
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('apps/api/src/modules/broker-reconciliation/services/broker-trade-reconciliation.pg-integration.spec.ts')
+          s = p.read_text()
+          old = "      entities: [\n        BrokerTradeReconciliationRun,\n        BrokerReconciledTrade,\n        PerformanceFeeLedgerEntry,\n      ],\n"
+          new = "      entities: [BrokerTradeReconciliationRun, BrokerReconciledTrade, PerformanceFeeLedgerEntry],\n"
+          if s.count(old) != 1:
+              raise SystemExit(f'expected exactly one formatting target, found {s.count(old)}')
+          p.write_text(s.replace(old, new, 1))
+          PY
+          grep -n 'entities:' "$file"
+          git diff --check
+
+      - name: Commit and push formatting correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'iRexPro Architect Gate'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'style(gate3): format PostgreSQL entity registration'
+          git push origin HEAD:refs/heads/architect/gate3-candidate-clean-20260828
