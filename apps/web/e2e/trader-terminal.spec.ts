@@ -96,20 +96,27 @@ test.describe('Trader terminal workspaces', () => {
   test('Trading Workspace renders authoritative risk, session, and broker status', async ({ page }) => {
     await gotoTradeWithLiveStatusMocks(page);
 
-    await expect(page.getByRole('heading', { level: 2, name: 'Risk Engine' })).toBeVisible();
-    await expect(page.getByText('Risk gate clear')).toBeVisible();
-    await expect(page.getByText('5%')).toBeVisible();
-    await expect(page.getByText('10%')).toBeVisible();
+    const riskCard = page
+      .getByRole('heading', { level: 2, name: 'Risk Engine' })
+      .locator('..');
+    await expect(riskCard.getByText('Risk gate clear', { exact: true })).toBeVisible();
+    await expect(riskCard.getByText('5%', { exact: true })).toBeVisible();
+    await expect(riskCard.getByText('10%', { exact: true })).toBeVisible();
 
-    await expect(page.getByRole('heading', { level: 2, name: 'AI Trading Session' })).toBeVisible();
-    await expect(page.getByText('Active', { exact: true })).toBeVisible();
-    await expect(page.getByText('Trading session service')).toBeVisible();
-    await expect(page.getByText(/not exposed to this browser contract/i)).toBeVisible();
+    const sessionCard = page
+      .getByRole('heading', { level: 2, name: 'AI Trading Session' })
+      .locator('..');
+    await expect(sessionCard.getByText('Active', { exact: true })).toBeVisible();
+    await expect(sessionCard.getByText('Trading session service', { exact: true })).toBeVisible();
+    await expect(sessionCard.getByText(/not exposed to this browser contract/i)).toBeVisible();
 
-    await expect(page.getByRole('heading', { level: 2, name: 'Broker Health' })).toBeVisible();
-    await expect(page.getByText('Paper Broker')).toBeVisible();
-    await expect(page.getByText('Connected', { exact: true })).toBeVisible();
-    await expect(page.getByText('Demo', { exact: true })).toBeVisible();
+    const brokerCard = page
+      .getByRole('heading', { level: 2, name: 'Broker Health' })
+      .locator('..');
+    await expect(brokerCard.getByText('Paper Broker', { exact: true })).toBeVisible();
+    await expect(brokerCard.getByText('Demo paper account', { exact: true })).toBeVisible();
+    await expect(brokerCard.getByText('Connected', { exact: true })).toBeVisible();
+    await expect(brokerCard.getByText('Demo', { exact: true })).toBeVisible();
 
     await expect(page.getByText(/authoritative data only/i)).toBeVisible();
     await expect(page.getByText(/does not calculate or fabricate balances/i)).toBeVisible();
