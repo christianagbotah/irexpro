@@ -42,7 +42,9 @@ function trade(signalId: string): Trade {
 
 describe('AiDecisionExplorerService', () => {
   const signalId = '11111111-1111-4111-8111-111111111111';
-  let auditService: jest.Mocked<Pick<AuditService, 'listRecentAiSignalReceipts' | 'listAiSignalLifecycle'>>;
+  let auditService: jest.Mocked<
+    Pick<AuditService, 'listRecentAiSignalReceipts' | 'listAiSignalLifecycle'>
+  >;
   let executionReadService: jest.Mocked<Pick<ExecutionReadService, 'listBySignalIds'>>;
   let service: AiDecisionExplorerService;
 
@@ -183,9 +185,12 @@ describe('AiDecisionExplorerService', () => {
 
     const result = await service.getRecentDecisions('user-1');
     const serialized = JSON.stringify(result);
+    const timeline = result.decisions[0].timeline;
 
     expect(result.decisions[0].outcome).toBe('EXECUTION_FAILED');
-    expect(result.decisions[0].timeline.at(-1)?.message).toBe('Execution failed after risk approval');
+    expect(timeline[timeline.length - 1]?.message).toBe(
+      'Execution failed after risk approval',
+    );
     expect(serialized).not.toContain('private broker stack detail');
     expect(serialized).not.toContain('error');
   });
