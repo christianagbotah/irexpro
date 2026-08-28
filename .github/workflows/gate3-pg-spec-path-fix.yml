@@ -1,0 +1,54 @@
+name: Gate 3 PG Spec Path Fix
+
+on:
+  push:
+    branches:
+      - architect/gate3-candidate-bootstrap-20260828
+    paths:
+      - '.github/workflows/gate3-pg-spec-path-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix-candidate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout clean candidate
+        uses: actions/checkout@v5
+        with:
+          ref: architect/gate3-candidate-clean-20260828
+          fetch-depth: 0
+
+      - name: Apply minimal PG spec path/type correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='07e4fdf5a34f37f23b30363f033877dbf8654e44'
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$expected"
+          old='apps/api/src/modules/broker-reconciliation/broker-trade-reconciliation.pg-integration.spec.ts'
+          new='apps/api/src/modules/broker-reconciliation/services/broker-trade-reconciliation.pg-integration.spec.ts'
+          test -f "$old"
+          test ! -e "$new"
+          git mv "$old" "$new"
+          # The moved file's existing relative imports now resolve correctly from services/.
+          # Fix the one explicit unknown passed to TypeORM EntityManager.getRepository.
+          sed -i 's/getRepository: (entity: unknown) =>/getRepository: (entity: any) =>/' "$new"
+          grep -q "from './broker-trade-reconciliation.service'" "$new"
+          grep -q "from './closed-trade-normalizer.service'" "$new"
+          grep -q "from '../entities/broker-trade-reconciliation-run.entity'" "$new"
+          grep -q 'getRepository: (entity: any) =>' "$new"
+          git diff --check
+          git status --short
+
+      - name: Commit and push candidate correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'iRexPro Architect Gate'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'test(gate3): fix PostgreSQL reconciliation spec path and typing'
+          git push origin HEAD:refs/heads/architect/gate3-candidate-clean-20260828
