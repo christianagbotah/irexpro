@@ -1,11 +1,6 @@
 import { ExecutionController } from './execution.controller';
 import { ExecutionReadService } from './execution-read.service';
-import {
-  Trade,
-  TradeCloseReason,
-  TradeDirection,
-  TradeStatus,
-} from './entities/trade.entity';
+import { Trade, TradeCloseReason, TradeDirection, TradeStatus } from './entities/trade.entity';
 
 function makeTrade(overrides: Partial<Trade> = {}): Trade {
   const trade = new Trade();
