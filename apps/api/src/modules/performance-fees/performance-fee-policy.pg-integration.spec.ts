@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { DataSource, IsNull, Repository } from 'typeorm';
-import { AuditService } from '../../audit/audit.service';
+import { AuditService } from '../audit/audit.service';
 import { PerformanceFeeService } from './services/performance-fee.service';
 import { BillingFrequency, PerformanceFeePolicy } from './entities/performance-fee-policy.entity';
 
