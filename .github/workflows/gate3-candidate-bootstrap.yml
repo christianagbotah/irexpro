@@ -41,6 +41,9 @@ jobs:
           rm -f 'apps/admin/src/app/admin/(protected)/subscriptions/page.tsx'
           rm -rf .gate3-package
           rm -f .github/workflows/gate3-candidate-bootstrap.yml
+          # Normalize the two known whitespace-only defects found by the prior gate.
+          sed -i 's/[[:space:]]\+$//' 'apps/admin/src/app/admin/(protected)/dashboard/page.tsx'
+          sed -i 's/[[:space:]]\+$//' 'apps/admin/src/components/admin-nav.tsx'
           test ! -e 'apps/admin/src/app/admin/(protected)/subscriptions/page.tsx'
           if grep -nE '/admin/(subscriptions|performance-fees)' apps/admin/src/components/admin-nav.tsx apps/admin/src/components/mobile-bottom-nav.tsx; then
             echo 'Retired admin navigation reappeared'
@@ -50,6 +53,7 @@ jobs:
           grep -q 'pg_advisory_xact_lock' apps/api/src/modules/performance-fees/services/performance-fee.service.ts
           grep -q 'pg_advisory_xact_lock' apps/api/src/modules/broker-reconciliation/services/broker-trade-reconciliation.service.ts
           test -f apps/api/src/modules/performance-fees/performance-fee-policy.pg-integration.spec.ts
+          git diff --check
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4.4.0
