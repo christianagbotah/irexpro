@@ -265,8 +265,14 @@ export default function TradingWorkspacePage() {
                     <dl style={{ display: 'grid', gap: 'var(--space-2)' }}>
                       <div>
                         <dt className="text-sm muted">Broker</dt>
-                        <dd>{broker.displayName || broker.brokerName}</dd>
+                        <dd>{broker.brokerName}</dd>
                       </div>
+                      {broker.displayName && (
+                        <div>
+                          <dt className="text-sm muted">Account alias</dt>
+                          <dd>{broker.displayName}</dd>
+                        </div>
+                      )}
                       <div>
                         <dt className="text-sm muted">Environment</dt>
                         <dd>{formatEnumLabel(broker.accountType)}</dd>
