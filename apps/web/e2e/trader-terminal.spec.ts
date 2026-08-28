@@ -13,7 +13,6 @@ import {
 
 const FOUNDATION_WORKSPACES = [
   { path: '/ai', heading: 'AI Command Center' },
-  { path: '/portfolio', heading: 'Portfolio & Risk' },
 ] as const;
 
 const ACTIVE_SESSION_ID = '44444444-4444-4444-8444-444444444444';
