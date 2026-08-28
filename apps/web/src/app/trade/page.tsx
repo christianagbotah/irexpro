@@ -58,6 +58,9 @@ export default function TradingWorkspacePage() {
     try {
       setTerminal(await loadTraderTerminalStatus());
     } catch {
+      // Fail closed: never preserve previously loaded readiness after a refresh
+      // failure because broker/risk/session state may have changed meanwhile.
+      setTerminal(null);
       setStatusError(
         'Unable to load the current trading status. No trading metrics have been inferred locally.',
       );
