@@ -5,9 +5,10 @@ import { Trade, TradeCloseReason, TradeDirection, TradeStatus } from '../entitie
  * Frontend-safe execution read model.
  *
  * Deliberately excludes internal ownership, signal lineage, idempotency keys,
- * broker connection identifiers, raw external order identifiers, and broker
- * rejection diagnostics. The browser receives only fields required to render
- * authoritative trade lifecycle state.
+ * broker connection identifiers, raw external order identifiers, broker
+ * rejection diagnostics, and realised P&L. Realised P&L is withheld here
+ * because the Trade entity does not carry its account currency; exposing a
+ * currency-less monetary value would be ambiguous for a global client.
  */
 export class TradeExecutionResponseDto {
   @ApiProperty({ format: 'uuid' })
@@ -43,12 +44,6 @@ export class TradeExecutionResponseDto {
   @ApiPropertyOptional({ nullable: true })
   exitPrice: string | null;
 
-  @ApiPropertyOptional({
-    nullable: true,
-    description: 'Persisted realised P&L in account currency. Null until authoritative.',
-  })
-  realisedPnl: string | null;
-
   @ApiPropertyOptional({ enum: TradeCloseReason, nullable: true })
   closeReason: TradeCloseReason | null;
 
@@ -78,7 +73,6 @@ export function toTradeExecutionResponse(trade: Trade): TradeExecutionResponseDt
     trailingStopPips: trade.trailingStopPips,
     status: trade.status,
     exitPrice: trade.exitPrice,
-    realisedPnl: trade.realisedPnl,
     closeReason: trade.closeReason,
     openedAt: trade.openedAt,
     closedAt: trade.closedAt,
