@@ -38,6 +38,11 @@ describe('BrokerTradeReconciliationService — real PostgreSQL atomicity (GATE-3
       database: process.env.DB_NAME ?? 'irexpro_test',
       synchronize: false,
       logging: false,
+      entities: [
+        BrokerTradeReconciliationRun,
+        BrokerReconciledTrade,
+        PerformanceFeeLedgerEntry,
+      ],
     });
     await dataSource.initialize();
     await dataSource.query('CREATE SCHEMA IF NOT EXISTS broker_reconciliation');
