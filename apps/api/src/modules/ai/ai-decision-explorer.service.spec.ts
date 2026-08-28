@@ -188,9 +188,7 @@ describe('AiDecisionExplorerService', () => {
     const timeline = result.decisions[0].timeline;
 
     expect(result.decisions[0].outcome).toBe('EXECUTION_FAILED');
-    expect(timeline[timeline.length - 1]?.message).toBe(
-      'Execution failed after risk approval',
-    );
+    expect(timeline[timeline.length - 1]?.message).toBe('Execution failed after risk approval');
     expect(serialized).not.toContain('private broker stack detail');
     expect(serialized).not.toContain('error');
   });
