@@ -8,10 +8,13 @@ import {
   ParseUUIDPipe,
   Post,
 } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { TradingService } from './trading.service';
-import { TradingSession } from '../execution/entities/trading-session.entity';
 import { StartSessionDto } from './dto/start-session.dto';
+import {
+  TradingSessionResponseDto,
+  toTradingSessionResponse,
+} from './dto/trading-session-response.dto';
 import { CurrentUserId } from '../../common/decorators/current-user.decorator';
 
 /**
@@ -37,6 +40,11 @@ import { CurrentUserId } from '../../common/decorators/current-user.decorator';
  *   completing onboarding, and a performance fee is assessed only when their
  *   trading generates qualifying realised profit above the high-water mark.
  *   The legacy "active subscription with allowsAiAutoTrading" gate is gone.
+ *
+ * Frontend safety boundary:
+ *   Session endpoints return TradingSessionResponseDto rather than the raw
+ *   TypeORM entity. Internal audit snapshots and financial session fields are
+ *   deliberately excluded from browser-facing responses.
  */
 @ApiTags('Trading')
 @Controller('trading/sessions')
@@ -64,19 +72,21 @@ export class TradingController {
     description:
       'Requires onboarding complete (profile + risk acknowledgement + broker connected), ' +
       'healthy broker connection, and kill switch inactive. No subscription is required ' +
-      '(performance-fee-only model). Returns the created TradingSession. PAPER_ONLY mode ' +
-      'is the default. FULL_AUTO does NOT automatically enable live broker execution — ' +
-      'live trading requires a separate explicit enablement on the broker connection.',
+      '(performance-fee-only model). PAPER_ONLY mode is the default. FULL_AUTO does NOT ' +
+      'automatically enable live broker execution — live trading requires a separate ' +
+      'explicit enablement on the broker connection.',
   })
+  @ApiResponse({ status: 201, type: TradingSessionResponseDto })
   async startSession(
     @CurrentUserId() userId: string,
     @Body() dto: StartSessionDto,
-  ): Promise<TradingSession> {
-    return this.tradingService.startTradingSession(
+  ): Promise<TradingSessionResponseDto> {
+    const session = await this.tradingService.startTradingSession(
       userId,
       dto.brokerConnectionId,
       dto.requestedMode,
     );
+    return toTradingSessionResponse(session);
   }
 
   /**
@@ -109,8 +119,12 @@ export class TradingController {
    */
   @Get('active')
   @ApiOperation({ summary: 'Get the current active trading session' })
-  async getActive(@CurrentUserId() userId: string): Promise<TradingSession | null> {
-    return this.tradingService.getActiveSession(userId);
+  @ApiResponse({ status: 200, type: TradingSessionResponseDto })
+  async getActive(
+    @CurrentUserId() userId: string,
+  ): Promise<TradingSessionResponseDto | null> {
+    const session = await this.tradingService.getActiveSession(userId);
+    return session ? toTradingSessionResponse(session) : null;
   }
 
   /**
@@ -120,14 +134,15 @@ export class TradingController {
    */
   @Get(':id')
   @ApiOperation({ summary: 'Get a trading session by ID' })
+  @ApiResponse({ status: 200, type: TradingSessionResponseDto })
   async getById(
     @CurrentUserId() userId: string,
     @Param('id', ParseUUIDPipe) sessionId: string,
-  ): Promise<TradingSession> {
+  ): Promise<TradingSessionResponseDto> {
     const session = await this.tradingService.getSessionById(userId, sessionId);
     if (!session) {
       throw new NotFoundException(`Trading session ${sessionId} not found`);
     }
-    return session;
+    return toTradingSessionResponse(session);
   }
 }
