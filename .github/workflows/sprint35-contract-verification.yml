@@ -1,0 +1,31 @@
+name: Sprint 35 Contract Verification
+
+on:
+  push:
+    branches:
+      - architect/sprint35-contract-verification
+    paths:
+      - '.github/workflows/sprint35-contract-verification.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  contract-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4.4.0
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Shared types typecheck
+        run: pnpm --filter @irexpro/types typecheck
+      - name: Shared API client typecheck
+        run: pnpm --filter @irexpro/api-client typecheck
+      - name: Web lint
+        run: pnpm --filter @irexpro/web lint
