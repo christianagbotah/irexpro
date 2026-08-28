@@ -92,8 +92,7 @@ export class PortfolioReadService {
 
     const accountSyncMs = account.syncedAt.getTime();
     const healthMarkerMs = connection.lastHealthCheckAt?.getTime() ?? null;
-    const verifiedAfterHealthMarker =
-      healthMarkerMs !== null && accountSyncMs > healthMarkerMs;
+    const verifiedAfterHealthMarker = healthMarkerMs !== null && accountSyncMs > healthMarkerMs;
     const hasNonZeroFinancialValue =
       !isZeroDecimal(account.balance) || !isZeroDecimal(account.equity);
 
@@ -106,8 +105,7 @@ export class PortfolioReadService {
       return {
         ...base,
         snapshot: null,
-        snapshotUnavailableReason:
-          PortfolioSnapshotUnavailableReason.UNVERIFIED_ZERO_PLACEHOLDER,
+        snapshotUnavailableReason: PortfolioSnapshotUnavailableReason.UNVERIFIED_ZERO_PLACEHOLDER,
       };
     }
 
@@ -123,9 +121,7 @@ export class PortfolioReadService {
         currency,
         balance: account.balance,
         equity: account.equity,
-        freshness: stale
-          ? PortfolioSnapshotFreshness.STALE
-          : PortfolioSnapshotFreshness.FRESH,
+        freshness: stale ? PortfolioSnapshotFreshness.STALE : PortfolioSnapshotFreshness.FRESH,
         syncedAt: account.syncedAt,
         ageSeconds: Math.floor(ageMs / 1000),
       },
