@@ -171,7 +171,7 @@ export default function MobileBottomNav({ onLogout }: MobileBottomNavProps) {
           <button
             type="button"
             className="mobile-sheet-backdrop"
-            aria-label="Close more navigation"
+            aria-label="Close navigation sheet"
             tabIndex={-1}
             onClick={closeSheet}
           />
@@ -191,7 +191,7 @@ export default function MobileBottomNav({ onLogout }: MobileBottomNavProps) {
                 ref={sheetCloseRef}
                 type="button"
                 className="mobile-sheet__close"
-                aria-label="Close more navigation"
+                aria-label="Close navigation sheet"
                 onClick={closeSheet}
               >
                 <CloseIcon size={20} />
