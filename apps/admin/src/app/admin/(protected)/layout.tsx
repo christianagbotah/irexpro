@@ -15,7 +15,7 @@ import { formatEnumLabel } from '@irexpro/types';
  *   - /admin/users
  *   - /admin/brokers
  *   - /admin/payments
- *   - /admin/subscriptions
+
  *   - /admin/audit
  *
  * Three-state guard (mirrors the dashboard page logic, but at the layout

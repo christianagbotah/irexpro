@@ -15,7 +15,6 @@ import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { GlobalConfigModule } from './modules/global-config/global-config.module';
-import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { BrokerModule } from './modules/broker/broker.module';
@@ -76,7 +75,11 @@ import { PerformanceBillingModule } from './modules/performance-billing/performa
     UsersModule,
     AuditModule,
     GlobalConfigModule,
-    SubscriptionsModule,
+    // Subscription-retirement (SUBSCRIPTION-RETIREMENT-IMPL):
+    // SubscriptionsModule is no longer imported. The system now operates on a
+    // performance-fee-only model — users do NOT need a subscription to trade.
+    // The SubscriptionsModule code is retained under apps/api/src/modules/subscriptions
+    // for historical compatibility but is no longer loaded at runtime.
     PaymentsModule,
     NotificationsModule,
     BrokerModule,

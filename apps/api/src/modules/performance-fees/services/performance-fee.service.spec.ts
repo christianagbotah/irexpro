@@ -14,14 +14,18 @@ import {
 } from '../entities/performance-fee-ledger-entry.entity';
 import { Invoice } from '../../payments/entities/invoice.entity';
 import { PaymentTransaction } from '../../payments/entities/payment-transaction.entity';
-import {
-  UserSubscription,
-  SubscriptionStatus,
-} from '../../subscriptions/entities/user-subscription.entity';
 import { AuditService } from '../../audit/audit.service';
 
 // ── Mock repositories ─────────────────────────────────────────────────────────
-const mockPolicyRepo = { find: jest.fn(), findOne: jest.fn(), create: jest.fn(), save: jest.fn() };
+const mockPolicyManager = { transaction: jest.fn() };
+const mockPolicyRepo = {
+  find: jest.fn(),
+  findOne: jest.fn(),
+  create: jest.fn(),
+  save: jest.fn(),
+  count: jest.fn(),
+  manager: mockPolicyManager,
+};
 const mockPerformanceRepo = {
   findOne: jest.fn(),
   create: jest.fn(),
@@ -38,7 +42,6 @@ const mockAssessmentRepo = {
 const mockLedgerRepo = { find: jest.fn(), save: jest.fn() };
 const mockInvoiceRepo = { create: jest.fn(), save: jest.fn() };
 const mockTransactionRepo = { create: jest.fn(), save: jest.fn() };
-const mockSubscriptionRepo = { findOne: jest.fn() };
 const mockAuditService = { log: jest.fn() };
 
 // ── Test helpers ──────────────────────────────────────────────────────────────
@@ -59,15 +62,6 @@ function makePolicy(overrides: Partial<PerformanceFeePolicy> = {}): PerformanceF
   };
 }
 
-function makeActiveSubscription(planId = 'plan-1'): Partial<UserSubscription> {
-  return {
-    id: 'sub-1',
-    userId: 'user-1',
-    subscriptionPlanId: planId,
-    status: SubscriptionStatus.ACTIVE,
-  };
-}
-
 function makePeriod() {
   const start = new Date('2026-01-01T00:00:00Z');
   const end = new Date('2026-01-31T23:59:59Z');
@@ -80,6 +74,12 @@ describe('PerformanceFeeService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockPolicyManager.transaction.mockImplementation(async (callback) =>
+      callback({
+        query: jest.fn().mockResolvedValue(undefined),
+        getRepository: () => mockPolicyRepo,
+      }),
+    );
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -90,7 +90,6 @@ describe('PerformanceFeeService', () => {
         { provide: getRepositoryToken(PerformanceFeeLedgerEntry), useValue: mockLedgerRepo },
         { provide: getRepositoryToken(Invoice), useValue: mockInvoiceRepo },
         { provide: getRepositoryToken(PaymentTransaction), useValue: mockTransactionRepo },
-        { provide: getRepositoryToken(UserSubscription), useValue: mockSubscriptionRepo },
         { provide: AuditService, useValue: mockAuditService },
       ],
     }).compile();
@@ -104,16 +103,16 @@ describe('PerformanceFeeService', () => {
 
   describe('calculateAssessment — high-water mark', () => {
     function setupBaseline(realisedPnL: string, hwm: string) {
-      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
-      mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
+      mockPolicyRepo.find.mockResolvedValue([makePolicy()]);
       mockAssessmentRepo.findOne.mockResolvedValue(null); // no duplicate
       mockPerformanceRepo.findOne.mockResolvedValue({
         id: 'perf-1',
         currentHighWaterMark: hwm,
         totalRealisedProfit: '0',
+        currency: 'USD',
       });
       mockLedgerRepo.find.mockResolvedValue([
-        { entryType: LedgerEntryType.REALISED_TRADE_PROFIT, amount: realisedPnL },
+        { entryType: LedgerEntryType.REALISED_TRADE_PROFIT, amount: realisedPnL, currency: 'USD' },
       ]);
       const assessment = { id: 'assess-1', feeAmount: '0', status: AssessmentStatus.DRAFT };
       mockAssessmentRepo.create.mockReturnValue(assessment);
@@ -154,16 +153,16 @@ describe('PerformanceFeeService', () => {
 
     it('fee applies only on amount above high-water mark', async () => {
       // profit $7k, HWM $5k → taxable basis = $2k, 20% fee = $400
-      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
-      mockPolicyRepo.findOne.mockResolvedValue(makePolicy({ feePercent: '20.0000' }));
+      mockPolicyRepo.find.mockResolvedValue([makePolicy({ feePercent: '20.0000' })]);
       mockAssessmentRepo.findOne.mockResolvedValue(null);
       mockPerformanceRepo.findOne.mockResolvedValue({
         id: 'perf-1',
         currentHighWaterMark: '500000',
         totalRealisedProfit: '0',
+        currency: 'USD',
       });
       mockLedgerRepo.find.mockResolvedValue([
-        { entryType: LedgerEntryType.REALISED_TRADE_PROFIT, amount: '700000' },
+        { entryType: LedgerEntryType.REALISED_TRADE_PROFIT, amount: '700000', currency: 'USD' },
       ]);
       // profit above HWM = 700000 - 500000 = 200000
       // fee = 200000 * 20 / 100 = 40000 (verified by the mocked assessment below)
@@ -236,14 +235,16 @@ describe('PerformanceFeeService', () => {
   // ─────────────────────────────────────────────────────────────────────────
 
   describe('calculateAssessment — deposit/top-up exclusion', () => {
-    function setupWithEntries(entries: Array<{ entryType: LedgerEntryType; amount: string }>) {
-      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
-      mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
+    function setupWithEntries(
+      entries: Array<{ entryType: LedgerEntryType; amount: string; currency?: string }>,
+    ) {
+      mockPolicyRepo.find.mockResolvedValue([makePolicy()]);
       mockAssessmentRepo.findOne.mockResolvedValue(null);
       mockPerformanceRepo.findOne.mockResolvedValue({
         id: 'perf-1',
         currentHighWaterMark: '0',
         totalRealisedProfit: '0',
+        currency: 'USD',
       });
       mockLedgerRepo.find.mockResolvedValue(entries);
       const assessment = {
@@ -259,7 +260,9 @@ describe('PerformanceFeeService', () => {
     }
 
     it('deposits do not count as profit — zero fee on pure deposit', async () => {
-      setupWithEntries([{ entryType: LedgerEntryType.DEPOSIT, amount: '1000000' }]);
+      setupWithEntries([
+        { entryType: LedgerEntryType.DEPOSIT, amount: '1000000', currency: 'USD' },
+      ]);
       const { start, end } = makePeriod();
 
       const result = await service.calculateAssessment(
@@ -276,17 +279,17 @@ describe('PerformanceFeeService', () => {
 
     it('top-up (deposit) with profit: only profit above HWM is taxed', async () => {
       // $5k deposit + $1k trade profit, HWM=0 → only $1k is basis for fee
-      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
-      mockPolicyRepo.findOne.mockResolvedValue(makePolicy({ feePercent: '20.0000' }));
+      mockPolicyRepo.find.mockResolvedValue([makePolicy({ feePercent: '20.0000' })]);
       mockAssessmentRepo.findOne.mockResolvedValue(null);
       mockPerformanceRepo.findOne.mockResolvedValue({
         id: 'perf-1',
         currentHighWaterMark: '0',
         totalRealisedProfit: '0',
+        currency: 'USD',
       });
       mockLedgerRepo.find.mockResolvedValue([
-        { entryType: LedgerEntryType.DEPOSIT, amount: '500000' },
-        { entryType: LedgerEntryType.REALISED_TRADE_PROFIT, amount: '100000' },
+        { entryType: LedgerEntryType.DEPOSIT, amount: '500000', currency: 'USD' },
+        { entryType: LedgerEntryType.REALISED_TRADE_PROFIT, amount: '100000', currency: 'USD' },
       ]);
       const assessment = {
         id: 'assess-mix',
@@ -313,7 +316,9 @@ describe('PerformanceFeeService', () => {
     });
 
     it('withdrawal adjusts ledger but does not count as profit', async () => {
-      setupWithEntries([{ entryType: LedgerEntryType.WITHDRAWAL, amount: '-200000' }]);
+      setupWithEntries([
+        { entryType: LedgerEntryType.WITHDRAWAL, amount: '-200000', currency: 'USD' },
+      ]);
       const { start, end } = makePeriod();
 
       const result = await service.calculateAssessment(
@@ -334,16 +339,16 @@ describe('PerformanceFeeService', () => {
 
   describe('calculateAssessment — realised profit only', () => {
     function setupProfitEntries(
-      entries: Array<{ entryType: LedgerEntryType; amount: string }>,
+      entries: Array<{ entryType: LedgerEntryType; amount: string; currency?: string }>,
       hwm = '0',
     ) {
-      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
-      mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
+      mockPolicyRepo.find.mockResolvedValue([makePolicy()]);
       mockAssessmentRepo.findOne.mockResolvedValue(null);
       mockPerformanceRepo.findOne.mockResolvedValue({
         id: 'perf-1',
         currentHighWaterMark: hwm,
         totalRealisedProfit: '0',
+        currency: 'USD',
       });
       mockLedgerRepo.find.mockResolvedValue(entries);
       const netPnL = entries.reduce((sum, e) => {
@@ -370,7 +375,9 @@ describe('PerformanceFeeService', () => {
     }
 
     it('closed winning trades count toward realised profit', async () => {
-      setupProfitEntries([{ entryType: LedgerEntryType.REALISED_TRADE_PROFIT, amount: '500000' }]);
+      setupProfitEntries([
+        { entryType: LedgerEntryType.REALISED_TRADE_PROFIT, amount: '500000', currency: 'USD' },
+      ]);
       const { start, end } = makePeriod();
       const result = await service.calculateAssessment(
         'user-1',
@@ -386,8 +393,8 @@ describe('PerformanceFeeService', () => {
 
     it('closed losing trades reduce realised profit (net negative → no fee)', async () => {
       setupProfitEntries([
-        { entryType: LedgerEntryType.REALISED_TRADE_PROFIT, amount: '100000' },
-        { entryType: LedgerEntryType.REALISED_TRADE_LOSS, amount: '-300000' },
+        { entryType: LedgerEntryType.REALISED_TRADE_PROFIT, amount: '100000', currency: 'USD' },
+        { entryType: LedgerEntryType.REALISED_TRADE_LOSS, amount: '-300000', currency: 'USD' },
       ]);
       const { start, end } = makePeriod();
       const result = await service.calculateAssessment(
@@ -403,8 +410,8 @@ describe('PerformanceFeeService', () => {
 
     it('FEE_ASSESSED and FEE_PAID entries are ignored in profit calculation', async () => {
       setupProfitEntries([
-        { entryType: LedgerEntryType.FEE_ASSESSED, amount: '-50000' },
-        { entryType: LedgerEntryType.FEE_PAID, amount: '-50000' },
+        { entryType: LedgerEntryType.FEE_ASSESSED, amount: '-50000', currency: 'USD' },
+        { entryType: LedgerEntryType.FEE_PAID, amount: '-50000', currency: 'USD' },
       ]);
       const { start, end } = makePeriod();
       const result = await service.calculateAssessment(
@@ -426,8 +433,7 @@ describe('PerformanceFeeService', () => {
 
   describe('calculateAssessment — duplicate prevention', () => {
     it('returns existing DRAFT assessment without recalculating', async () => {
-      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
-      mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
+      mockPolicyRepo.find.mockResolvedValue([makePolicy()]);
       const existingDraft = {
         id: 'draft-existing',
         status: AssessmentStatus.DRAFT,
@@ -450,8 +456,7 @@ describe('PerformanceFeeService', () => {
     });
 
     it('rejects duplicate assessment that is already ASSESSED', async () => {
-      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
-      mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
+      mockPolicyRepo.find.mockResolvedValue([makePolicy()]);
       mockAssessmentRepo.findOne.mockResolvedValue({
         id: 'existing',
         status: AssessmentStatus.ASSESSED,
@@ -464,8 +469,7 @@ describe('PerformanceFeeService', () => {
     });
 
     it('rejects duplicate assessment that is already INVOICED', async () => {
-      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
-      mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
+      mockPolicyRepo.find.mockResolvedValue([makePolicy()]);
       mockAssessmentRepo.findOne.mockResolvedValue({
         id: 'existing',
         status: AssessmentStatus.INVOICED,
@@ -484,8 +488,7 @@ describe('PerformanceFeeService', () => {
 
   describe('calculateAssessment — outstanding assessment guard (double-charge prevention)', () => {
     it('rejects a new period when an unpaid ASSESSED assessment exists for the account', async () => {
-      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
-      mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
+      mockPolicyRepo.find.mockResolvedValue([makePolicy()]);
       // 1st findOne = duplicate-period check (none); 2nd findOne = outstanding check (ASSESSED)
       mockAssessmentRepo.findOne
         .mockResolvedValueOnce(null)
@@ -500,8 +503,7 @@ describe('PerformanceFeeService', () => {
     });
 
     it('rejects a new period when an unpaid INVOICED assessment exists for the account', async () => {
-      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
-      mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
+      mockPolicyRepo.find.mockResolvedValue([makePolicy()]);
       mockAssessmentRepo.findOne
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce({ id: 'prev-invoiced', status: AssessmentStatus.INVOICED });
@@ -513,17 +515,17 @@ describe('PerformanceFeeService', () => {
     });
 
     it('allows a new period when no outstanding assessment exists (prior periods resolved)', async () => {
-      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
-      mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
+      mockPolicyRepo.find.mockResolvedValue([makePolicy()]);
       // both duplicate and outstanding checks return null
       mockAssessmentRepo.findOne.mockResolvedValue(null);
       mockPerformanceRepo.findOne.mockResolvedValue({
         id: 'perf-1',
         currentHighWaterMark: '700000',
         totalRealisedProfit: '700000',
+        currency: 'USD',
       });
       mockLedgerRepo.find.mockResolvedValue([
-        { entryType: LedgerEntryType.REALISED_TRADE_PROFIT, amount: '300000' },
+        { entryType: LedgerEntryType.REALISED_TRADE_PROFIT, amount: '300000', currency: 'USD' },
       ]);
       const assessment = {
         id: 'next-period',
@@ -549,65 +551,43 @@ describe('PerformanceFeeService', () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Policy resolution (audit fix) — true global fallback, no wrong-plan leakage
+  // Global policy resolution (subscription-retirement model)
   // ─────────────────────────────────────────────────────────────────────────
 
-  describe('findApplicablePolicy — policy resolution', () => {
-    it('plan-specific policy takes precedence over global', async () => {
-      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription('plan-XYZ'));
-      const planPolicy = makePolicy({ id: 'plan-policy', planId: 'plan-XYZ' });
-      // First lookup (plan-specific) returns the plan policy → global lookup never runs
-      mockPolicyRepo.findOne.mockResolvedValueOnce(planPolicy);
-      mockAssessmentRepo.findOne.mockResolvedValue(null);
-      mockPerformanceRepo.findOne.mockResolvedValue({
-        id: 'perf-1',
-        currentHighWaterMark: '0',
-        totalRealisedProfit: '0',
+  describe('findActiveGlobalPolicy — single global policy resolution', () => {
+    it('returns the single active global policy when exactly one exists', async () => {
+      const globalPolicy = makePolicy({ id: 'global-policy', planId: null });
+      mockPolicyRepo.find.mockResolvedValue([globalPolicy]);
+
+      const result = await service.findActiveGlobalPolicy();
+      expect(result).toBe(globalPolicy);
+      // Must query plan_id IS NULL & isActive=true only
+      expect(mockPolicyRepo.find).toHaveBeenCalledWith({
+        where: { planId: expect.anything(), isActive: true },
       });
-      mockLedgerRepo.find.mockResolvedValue([]);
-      const assessment = { id: 'a', feeAmount: '0', status: AssessmentStatus.DRAFT };
-      mockAssessmentRepo.create.mockReturnValue(assessment);
-      mockAssessmentRepo.save.mockResolvedValue(assessment);
-      mockPerformanceRepo.update.mockResolvedValue(undefined);
+    });
 
-      const { start, end } = makePeriod();
-      await service.calculateAssessment('user-1', null, 'USD', start, end, 'admin-1');
-
-      // The plan-specific query must have used the concrete planId
-      expect(mockPolicyRepo.findOne).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({ planId: 'plan-XYZ', isActive: true }),
-        }),
+    it('throws BadRequestException when no active global policy exists', async () => {
+      mockPolicyRepo.find.mockResolvedValue([]);
+      await expect(service.findActiveGlobalPolicy()).rejects.toThrow(BadRequestException);
+      await expect(service.findActiveGlobalPolicy()).rejects.toThrow(
+        /No active global performance fee policy configured/,
       );
     });
 
-    it('global fallback queries plan_id IS NULL (not undefined) to avoid matching another plan', async () => {
-      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription('plan-NOPOLICY'));
-      const globalPolicy = makePolicy({ id: 'global-policy', planId: null });
-      // First lookup (plan-specific) returns null → second lookup (global IS NULL) returns global
-      mockPolicyRepo.findOne.mockResolvedValueOnce(null).mockResolvedValueOnce(globalPolicy);
-      mockAssessmentRepo.findOne.mockResolvedValue(null);
-      mockPerformanceRepo.findOne.mockResolvedValue({
-        id: 'perf-1',
-        currentHighWaterMark: '0',
-        totalRealisedProfit: '0',
-      });
-      mockLedgerRepo.find.mockResolvedValue([]);
-      const assessment = { id: 'a', feeAmount: '0', status: AssessmentStatus.DRAFT };
-      mockAssessmentRepo.create.mockReturnValue(assessment);
-      mockAssessmentRepo.save.mockResolvedValue(assessment);
-      mockPerformanceRepo.update.mockResolvedValue(undefined);
-
-      const { start, end } = makePeriod();
-      await service.calculateAssessment('user-1', null, 'USD', start, end, 'admin-1');
-
-      // The global fallback must use IsNull() — assert the 2nd call's planId is a FindOperator, not undefined
-      const globalCallArgs = mockPolicyRepo.findOne.mock.calls[1][0];
-      expect(globalCallArgs.where.planId).toBeDefined();
-      expect(typeof globalCallArgs.where.planId).toBe('object'); // IsNull() returns a FindOperator object
-      expect(globalCallArgs.where.isActive).toBe(true);
+    it('throws BadRequestException when multiple active global policies exist', async () => {
+      const a = makePolicy({ id: 'g-a', planId: null });
+      const b = makePolicy({ id: 'g-b', planId: null });
+      mockPolicyRepo.find.mockResolvedValue([a, b]);
+      await expect(service.findActiveGlobalPolicy()).rejects.toThrow(BadRequestException);
+      await expect(service.findActiveGlobalPolicy()).rejects.toThrow(
+        /Multiple active global performance fee policies found/,
+      );
     });
   });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
 
   // ─────────────────────────────────────────────────────────────────────────
   // Invoice integration
@@ -685,17 +665,17 @@ describe('PerformanceFeeService', () => {
     });
 
     it('zero fee assessment remains DRAFT — no invoice created', async () => {
-      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
-      mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
+      mockPolicyRepo.find.mockResolvedValue([makePolicy()]);
       mockAssessmentRepo.findOne.mockResolvedValue(null);
       mockPerformanceRepo.findOne.mockResolvedValue({
         id: 'perf-1',
         currentHighWaterMark: '1000000',
         totalRealisedProfit: '0',
+        currency: 'USD',
       });
       // Only $5k profit, HWM is $10k → no taxable amount
       mockLedgerRepo.find.mockResolvedValue([
-        { entryType: LedgerEntryType.REALISED_TRADE_PROFIT, amount: '500000' },
+        { entryType: LedgerEntryType.REALISED_TRADE_PROFIT, amount: '500000', currency: 'USD' },
       ]);
       const assessment = { id: 'zero-assess', feeAmount: '0', status: AssessmentStatus.DRAFT };
       mockAssessmentRepo.create.mockReturnValue(assessment);
@@ -718,35 +698,36 @@ describe('PerformanceFeeService', () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Subscription / plan checks
+  // Global policy / no-subscription checks (subscription-retirement model)
   // ─────────────────────────────────────────────────────────────────────────
 
-  describe('calculateAssessment — subscription/plan checks', () => {
-    it('rejects when user has no active subscription', async () => {
-      mockSubscriptionRepo.findOne.mockResolvedValue(null);
+  describe('calculateAssessment — global policy checks (no subscription required)', () => {
+    it('rejects when no active global performance fee policy exists', async () => {
+      mockPolicyRepo.find.mockResolvedValue([]); // no global policy
       const { start, end } = makePeriod();
       await expect(
         service.calculateAssessment('user-1', null, 'USD', start, end, 'admin-1'),
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('rejects when no active performance fee policy exists for plan', async () => {
-      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
-      mockPolicyRepo.findOne.mockResolvedValue(null); // no policy
+    it('rejects when multiple active global policies exist (ambiguous configuration)', async () => {
+      const a = makePolicy({ id: 'g-a', planId: null });
+      const b = makePolicy({ id: 'g-b', planId: null });
+      mockPolicyRepo.find.mockResolvedValue([a, b]);
       const { start, end } = makePeriod();
       await expect(
         service.calculateAssessment('user-1', null, 'USD', start, end, 'admin-1'),
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('allows assessment when active plan has matching policy', async () => {
-      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
-      mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
+    it('allows assessment WITHOUT a subscription when exactly one global policy exists', async () => {
+      mockPolicyRepo.find.mockResolvedValue([makePolicy()]);
       mockAssessmentRepo.findOne.mockResolvedValue(null);
       mockPerformanceRepo.findOne.mockResolvedValue({
         id: 'perf-1',
         currentHighWaterMark: '0',
         totalRealisedProfit: '0',
+        currency: 'USD',
       });
       mockLedgerRepo.find.mockResolvedValue([]);
       const assessment = { id: 'ok-assess', feeAmount: '0', status: AssessmentStatus.DRAFT };
@@ -764,6 +745,7 @@ describe('PerformanceFeeService', () => {
         'admin-1',
       );
       expect(result).toBeDefined();
+      expect(result.id).toBe('ok-assess');
     });
   });
 
@@ -793,13 +775,13 @@ describe('PerformanceFeeService', () => {
     });
 
     it('assessment audit logs do not expose sensitive internal fields', async () => {
-      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
-      mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
+      mockPolicyRepo.find.mockResolvedValue([makePolicy()]);
       mockAssessmentRepo.findOne.mockResolvedValue(null);
       mockPerformanceRepo.findOne.mockResolvedValue({
         id: 'perf-sec',
         currentHighWaterMark: '0',
         totalRealisedProfit: '0',
+        currency: 'USD',
       });
       mockLedgerRepo.find.mockResolvedValue([]);
       const assessment = { id: 'sec-assess', feeAmount: '0', status: AssessmentStatus.DRAFT };

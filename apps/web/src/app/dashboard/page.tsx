@@ -127,11 +127,14 @@ export default function DashboardPage() {
           )}
         </Card>
 
-        {/* Subscription */}
+        {/* Performance Fee (subscription-retirement model) */}
         <Card>
-          <span className="stat-card__icon" aria-hidden="true">📋</span>
-          <h2 className="card__title" style={{ marginBottom: 'var(--space-2)' }}>Subscription</h2>
-          <EmptyState icon="📋" title="No active subscription" description="Choose a plan to activate AI auto-trading." />
+          <span className="stat-card__icon" aria-hidden="true">💰</span>
+          <h2 className="card__title" style={{ marginBottom: 'var(--space-2)' }}>Performance Fee</h2>
+          <p className="text-sm muted" style={{ lineHeight: 1.6 }}>
+            You only pay a performance fee when your trading generates qualifying
+            realised profit above the high-water mark. No subscription required.
+          </p>
         </Card>
       </div>
 

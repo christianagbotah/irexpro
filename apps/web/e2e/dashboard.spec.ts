@@ -68,10 +68,10 @@ test.describe('Dashboard', () => {
 
   // ── Status cards ──────────────────────────────────────────────────────────
 
-  test('status cards (Account, Broker, Subscription) visible', async ({ page }) => {
+  test('status cards (Account, Broker, Performance Fee) visible', async ({ page }) => {
     await expect(page.locator('.card__title', { hasText: /account status/i })).toBeVisible();
     await expect(page.locator('.card__title', { hasText: /broker connection/i })).toBeVisible();
-    await expect(page.locator('.card__title', { hasText: /subscription/i })).toBeVisible();
+    await expect(page.locator('.card__title', { hasText: /performance fee/i })).toBeVisible();
   });
 
   // ── Start trading button ──────────────────────────────────────────────────

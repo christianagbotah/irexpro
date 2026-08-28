@@ -50,12 +50,16 @@ const CODE_MESSAGES: Record<string, string> = {
  * Whitelist of onboarding step keys the backend is allowed to surface. Anything
  * else is silently dropped (we never trust raw user-facing step names from the
  * API — they could be anything).
+ *
+ * Subscription-retirement (SUBSCRIPTION-RETIREMENT-IMPL):
+ *   The dead `subscription: '/payments/success'` entry has been removed. The
+ *   subscription onboarding step no longer exists; only profile, broker, and
+ *   risk remain as known onboarding steps.
  */
 const KNOWN_ONBOARDING_STEPS: Record<string, string> = {
   profile: '/onboarding/profile',
   broker: '/onboarding/broker',
   risk: '/onboarding/risk',
-  subscription: '/payments/success',
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

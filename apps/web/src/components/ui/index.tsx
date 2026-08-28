@@ -116,7 +116,7 @@ export function AuthLayout({ title, subtitle, children }: AuthLayoutProps) {
           <ul className="auth-layout__features">
             <li>AI signal generation with risk-gated execution</li>
             <li>High-water-mark performance fee billing</li>
-            <li>Secure subscription management</li>
+            <li>Transparent performance-fee billing</li>
             <li>Encrypted broker credentials (AES-256-GCM)</li>
           </ul>
         </div>

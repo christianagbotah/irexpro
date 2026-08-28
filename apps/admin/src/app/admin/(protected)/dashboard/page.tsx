@@ -31,8 +31,8 @@ export default function AdminDashboardPage() {
           <div className="stat-card__value">—</div>
         </div>
         <div className="stat-card">
-          <div className="stat-card__icon">📋</div>
-          <div className="stat-card__label">Active Subscriptions</div>
+          <div className="stat-card__icon">💰</div>
+          <div className="stat-card__label">Performance Fee Assessments</div>
           <div className="stat-card__value">—</div>
         </div>
         <div className="stat-card">
@@ -52,9 +52,9 @@ export default function AdminDashboardPage() {
           <EmptyState icon="👥" title="User overview" description="Search, suspend, and manage user accounts. KYC status and risk-disclosure shown per user." />
           <Link href="/admin/users" className="btn btn--secondary btn--sm btn--block">Manage users</Link>
         </Card>
-        <Card title="Subscriptions">
-          <EmptyState icon="📋" title="Subscription overview" description="View active subscriptions, manage plans and pricing." />
-          <Link href="/admin/subscriptions" className="btn btn--secondary btn--sm btn--block">View subscriptions</Link>
+        <Card title="Performance Fee">
+          <EmptyState icon="💰" title="Performance fee overview" description="Performance-fee assessments, invoices, and high-water-mark history. Performance-fee-only model — no subscription required." />
+
         </Card>
         <Card title="Payments">
           <EmptyState icon="💳" title="Payment records" description="Invoices, transactions, and webhook events. Payment truth from verified webhooks only." />

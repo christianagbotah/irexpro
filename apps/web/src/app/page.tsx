@@ -145,8 +145,8 @@ export default function HomePage() {
               <h2 className="landing-feature__title">Account &amp; dashboard access</h2>
               <p className="landing-feature__body">
                 Manage your profile, risk configuration, and broker connections from
-                a single dashboard. Subscription plans become available after
-                account creation.
+                a single dashboard. Start with a paper-trading account — no
+                subscription required.
               </p>
             </article>
           </div>

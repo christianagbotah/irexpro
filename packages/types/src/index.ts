@@ -148,9 +148,26 @@ export interface AuthSession {
 }
 
 // ── Subscriptions / plans ───────────────────────────────────────────────────
+//
+// Subscription-retirement (SUBSCRIPTION-RETIREMENT-IMPL):
+// The types in this section are DEPRECATED. The subscription billing model
+// has been retired — iRexPro now operates on a performance-fee-only model.
+// These types are retained for historical/compatibility reasons (existing
+// migrations, existing API client method signatures) but should NOT be used
+// by new code. New code should reference the performance-fee types instead.
 
+/**
+ * @deprecated Subscription-retirement (SUBSCRIPTION-RETIREMENT-IMPL):
+ *   Subscriptions are no longer sold. Retained for historical compatibility
+ *   with existing database rows and migrations only.
+ */
 export type BillingInterval = 'MONTHLY' | 'QUARTERLY' | 'ANNUAL';
 
+/**
+ * @deprecated Subscription-retirement (SUBSCRIPTION-RETIREMENT-IMPL):
+ *   Subscription plans are no longer sold. Retained for historical
+ *   compatibility only — do not use in new code.
+ */
 export interface SubscriptionPlan {
   id: string;
   name: string;
@@ -160,6 +177,11 @@ export interface SubscriptionPlan {
   isActive: boolean;
 }
 
+/**
+ * @deprecated Subscription-retirement (SUBSCRIPTION-RETIREMENT-IMPL):
+ *   Subscription status is no longer used by the live billing flow. Retained
+ *   for historical compatibility only — do not use in new code.
+ */
 export type SubscriptionStatus =
   | 'ACTIVE'
   | 'TRIAL'
@@ -167,6 +189,12 @@ export type SubscriptionStatus =
   | 'CANCELLED'
   | 'EXPIRED';
 
+/**
+ * @deprecated Subscription-retirement (SUBSCRIPTION-RETIREMENT-IMPL):
+ *   User subscriptions are no longer created. Retained for historical
+ *   compatibility only — existing rows remain in the database for audit but
+ *   no new subscriptions can be created. Use the performance-fee flow instead.
+ */
 export interface UserSubscription {
   id: string;
   userId: string;
@@ -234,6 +262,12 @@ export interface PaymentTransaction {
   createdAt: string;
 }
 
+/**
+ * @deprecated Subscription-retirement (SUBSCRIPTION-RETIREMENT-IMPL):
+ *   Subscription checkout is no longer performed. Retained for historical
+ *   compatibility with the API client signature only — new code should
+ *   use the performance-fee checkout flow instead.
+ */
 export interface CheckoutResult {
   invoiceId: string;
   transactionId: string;

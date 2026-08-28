@@ -16,7 +16,6 @@ import {
 import { PerformanceFeeLedgerEntry } from '../../performance-fees/entities/performance-fee-ledger-entry.entity';
 import { TradingAccountPerformance } from '../../performance-fees/entities/trading-account-performance.entity';
 import { AuditService } from '../../audit/audit.service';
-import { SubscriptionsService } from '../../subscriptions/subscriptions.service';
 
 const WEBHOOK_SECRET = 'whsec_stripe_secret_for_webhook_tests';
 
@@ -73,10 +72,6 @@ const mockAssessmentRepo = { findOne: jest.fn(), update: jest.fn() };
 const mockLedgerRepo = { save: jest.fn() };
 const mockPerformanceRepo = { findOne: jest.fn(), update: jest.fn() };
 const mockAuditService = { log: jest.fn() };
-const mockSubscriptionsService = {
-  activateSubscriptionFromPayment: jest.fn(),
-  getPlanById: jest.fn(),
-};
 
 describe('WebhookProcessorService — Stripe integration (Sprint 17)', () => {
   let service: WebhookProcessorService;
@@ -99,7 +94,6 @@ describe('WebhookProcessorService — Stripe integration (Sprint 17)', () => {
         { provide: getRepositoryToken(PerformanceFeeLedgerEntry), useValue: mockLedgerRepo },
         { provide: getRepositoryToken(TradingAccountPerformance), useValue: mockPerformanceRepo },
         { provide: AuditService, useValue: mockAuditService },
-        { provide: SubscriptionsService, useValue: mockSubscriptionsService },
       ],
     }).compile();
 
@@ -110,8 +104,11 @@ describe('WebhookProcessorService — Stripe integration (Sprint 17)', () => {
     await module.close();
   });
 
-  describe('subscription checkout', () => {
-    it('valid Stripe webhook success activates subscription', async () => {
+  describe('subscription checkout (retired — no activation path)', () => {
+    it('valid Stripe webhook success marks transaction SUCCEEDED + invoice PAID but does NOT activate any subscription', async () => {
+      // Subscription-retirement (SUBSCRIPTION-RETIREMENT-IMPL):
+      // Legacy SUBSCRIPTION_INITIAL payments are still reconciled (transaction
+      // SUCCEEDED, invoice PAID) but no subscription activation occurs.
       const rawBody = checkoutSessionCompletedPayload('evt_sub_1', 'cs_sub_ref');
       const signature = sign(rawBody);
 
@@ -128,20 +125,28 @@ describe('WebhookProcessorService — Stripe integration (Sprint 17)', () => {
         currency: 'USD',
         providerPayloadSummary: { planId: 'plan-1' },
       });
-      mockSubscriptionsService.activateSubscriptionFromPayment.mockResolvedValue({ id: 'sub-1' });
 
       const result = await service.processWebhook('stripe', rawBody, {
         'stripe-signature': signature,
       });
 
       expect(result.accepted).toBe(true);
-      expect(mockSubscriptionsService.activateSubscriptionFromPayment).toHaveBeenCalled();
-      expect(mockAuditService.log).toHaveBeenCalledWith(
-        expect.objectContaining({ action: 'SUBSCRIPTION_ACTIVATED' }),
+      expect(mockTransactionRepo.update).toHaveBeenCalledWith(
+        'tx-sub-1',
+        expect.objectContaining({ status: 'SUCCEEDED' }),
       );
+      expect(mockInvoiceRepo.update).toHaveBeenCalledWith(
+        'inv-sub-1',
+        expect.objectContaining({ status: 'PAID' }),
+      );
+      // No SUBSCRIPTION_ACTIVATED audit event is emitted
+      const auditActions = mockAuditService.log.mock.calls.map(
+        (c: unknown[]) => (c[0] as { action: string }).action,
+      );
+      expect(auditActions).not.toContain('SUBSCRIPTION_ACTIVATED');
     });
 
-    it('invalid signature does not activate subscription', async () => {
+    it('invalid signature does not mark transaction SUCCEEDED', async () => {
       const rawBody = checkoutSessionCompletedPayload('evt_sub_bad', 'cs_sub_ref_bad');
 
       await expect(
@@ -150,14 +155,13 @@ describe('WebhookProcessorService — Stripe integration (Sprint 17)', () => {
         }),
       ).rejects.toThrow(BadRequestException);
 
-      expect(mockSubscriptionsService.activateSubscriptionFromPayment).not.toHaveBeenCalled();
       expect(mockWebhookEventRepo.save).not.toHaveBeenCalled();
       expect(mockAuditService.log).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'PAYMENT_WEBHOOK_SIGNATURE_FAILED' }),
       );
     });
 
-    it('duplicate webhook does not double-activate subscription', async () => {
+    it('duplicate webhook is idempotent — no double-processing', async () => {
       const rawBody = checkoutSessionCompletedPayload('evt_sub_dup', 'cs_sub_dup');
       const signature = sign(rawBody);
 
@@ -173,7 +177,6 @@ describe('WebhookProcessorService — Stripe integration (Sprint 17)', () => {
       });
 
       expect(result.idempotent).toBe(true);
-      expect(mockSubscriptionsService.activateSubscriptionFromPayment).not.toHaveBeenCalled();
     });
   });
 
@@ -315,7 +318,6 @@ describe('WebhookProcessorService — Stripe integration (Sprint 17)', () => {
       });
 
       expect(result.accepted).toBe(true);
-      expect(mockSubscriptionsService.activateSubscriptionFromPayment).not.toHaveBeenCalled();
       expect(mockTransactionRepo.update).not.toHaveBeenCalled();
       expect(mockInvoiceRepo.update).not.toHaveBeenCalled();
       expect(mockAuditService.log).toHaveBeenCalledWith(
@@ -403,7 +405,6 @@ describe('WebhookProcessorService — Stripe integration (Sprint 17)', () => {
 
       expect(result.accepted).toBe(true);
       expect(mockAssessmentRepo.update).not.toHaveBeenCalled();
-      expect(mockSubscriptionsService.activateSubscriptionFromPayment).not.toHaveBeenCalled();
     });
 
     it('a missing amount/currency in the webhook fails closed', async () => {
@@ -434,7 +435,6 @@ describe('WebhookProcessorService — Stripe integration (Sprint 17)', () => {
       });
 
       expect(result.accepted).toBe(true);
-      expect(mockSubscriptionsService.activateSubscriptionFromPayment).not.toHaveBeenCalled();
     });
   });
 

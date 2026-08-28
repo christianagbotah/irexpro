@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { QueryFailedError } from 'typeorm';
+import { DataSource, EntityManager } from 'typeorm';
 import { BrokerTradeReconciliationService } from './broker-trade-reconciliation.service';
 import { ClosedTradeNormalizerService } from './closed-trade-normalizer.service';
 import {
@@ -13,14 +13,6 @@ import {
   PerformanceFeeLedgerEntry,
   LedgerEntryType,
 } from '../../performance-fees/entities/performance-fee-ledger-entry.entity';
-import {
-  PerformanceFeePolicy,
-  BillingFrequency,
-} from '../../performance-fees/entities/performance-fee-policy.entity';
-import {
-  UserSubscription,
-  SubscriptionStatus,
-} from '../../subscriptions/entities/user-subscription.entity';
 import { BrokerService } from '../../broker/broker.service';
 import {
   BrokerMode,
@@ -98,26 +90,6 @@ function makeClosedTrade(
   };
 }
 
-function makeActiveSubscription(): Partial<UserSubscription> {
-  return {
-    id: 'sub-1',
-    userId: 'user-1',
-    subscriptionPlanId: 'plan-1',
-    status: SubscriptionStatus.ACTIVE,
-  };
-}
-
-function makePolicy(): Partial<PerformanceFeePolicy> {
-  return {
-    id: 'policy-1',
-    planId: 'plan-1',
-    name: 'Standard 20%',
-    feePercent: '20.0000',
-    billingFrequency: BillingFrequency.MONTHLY,
-    isActive: true,
-  } as Partial<PerformanceFeePolicy>;
-}
-
 // ── Mock repositories ──────────────────────────────────────────────────────────
 
 const mockRunRepo = {
@@ -137,15 +109,34 @@ const mockTradeRepo = {
 const mockLedgerRepo = {
   create: jest.fn(),
   save: jest.fn(),
+  find: jest.fn(),
+  findOne: jest.fn(),
 };
-const mockPolicyRepo = { findOne: jest.fn() };
-const mockSubscriptionRepo = { findOne: jest.fn() };
 
 const mockBrokerService = {
   findConnectionById: jest.fn(),
   getClosedTradesForConnection: jest.fn(),
 };
 const mockAuditService = { log: jest.fn() };
+
+function makeMockEntityManager(): EntityManager {
+  const tx = {
+    getRepository: jest.fn((entity: unknown) => {
+      if (entity === BrokerReconciledTrade) return mockTradeRepo;
+      if (entity === PerformanceFeeLedgerEntry) return mockLedgerRepo;
+      if (entity === BrokerTradeReconciliationRun) return mockRunRepo;
+      throw new Error(`unexpected repo: ${String(entity)}`);
+    }),
+    query: jest.fn().mockResolvedValue([{ pg_advisory_xact_lock: '' }]),
+  };
+  return tx as unknown as EntityManager;
+}
+const mockDataSource = {
+  transaction: jest.fn(async (cb: (tx: EntityManager) => Promise<unknown>) =>
+    cb(makeMockEntityManager()),
+  ),
+  query: jest.fn(),
+};
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -177,6 +168,7 @@ describe('BrokerTradeReconciliationService', () => {
     const ledger = { id: 'ledger-1' };
     mockLedgerRepo.create.mockReturnValue(ledger);
     mockLedgerRepo.save.mockResolvedValue(ledger);
+    mockLedgerRepo.find.mockResolvedValue([]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -185,8 +177,7 @@ describe('BrokerTradeReconciliationService', () => {
         { provide: getRepositoryToken(BrokerTradeReconciliationRun), useValue: mockRunRepo },
         { provide: getRepositoryToken(BrokerReconciledTrade), useValue: mockTradeRepo },
         { provide: getRepositoryToken(PerformanceFeeLedgerEntry), useValue: mockLedgerRepo },
-        { provide: getRepositoryToken(PerformanceFeePolicy), useValue: mockPolicyRepo },
-        { provide: getRepositoryToken(UserSubscription), useValue: mockSubscriptionRepo },
+        { provide: DataSource, useValue: mockDataSource },
         { provide: BrokerService, useValue: mockBrokerService },
         { provide: AuditService, useValue: mockAuditService },
       ],
@@ -255,8 +246,6 @@ describe('BrokerTradeReconciliationService', () => {
         connection: makeLiveConnection(),
         trades: [makeClosedTrade({ realisedPnl: '100.00', commission: '-2.50', swap: '-0.50' })],
       });
-      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
-      mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
     });
 
     it('creates a REALISED_TRADE_PROFIT ledger entry for a winning live trade', async () => {
@@ -318,8 +307,6 @@ describe('BrokerTradeReconciliationService', () => {
         connection: makeLiveConnection(),
         trades: [makeClosedTrade({ realisedPnl: '-100.00', commission: '-2.50', swap: '-0.50' })],
       });
-      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
-      mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
     });
 
     it('creates a REALISED_TRADE_LOSS ledger entry for a losing live trade', async () => {
@@ -351,8 +338,6 @@ describe('BrokerTradeReconciliationService', () => {
         connection: makeLiveConnection(),
         trades: [makeClosedTrade({ realisedPnl: '0.00', commission: '0', swap: '0' })],
       });
-      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
-      mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
     });
 
     it('creates a reconciled trade record but no ledger entry for zero P&L', async () => {
@@ -374,18 +359,20 @@ describe('BrokerTradeReconciliationService', () => {
         connection: makeLiveConnection(),
         trades: [makeClosedTrade()],
       });
-      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
-      mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
     });
 
     it('skips duplicate brokerTradeId (unique constraint violation → idempotent)', async () => {
-      const dupError = new QueryFailedError('', [], new Error('unique violation'));
-      (dupError as unknown as { code: string }).code = '23505';
-      mockTradeRepo.save.mockRejectedValue(dupError);
-
+      mockTradeRepo.findOne.mockResolvedValueOnce({
+        id: 'rtrade-existing',
+        userId: 'user-1',
+        brokerConnectionId: 'conn-1',
+        brokerTradeId: 'trade-001',
+        netRealisedPnl: '9700',
+        currency: 'USD',
+        isFeeEligible: true,
+        ledgerEntryId: 'ledger-already-there',
+      });
       await service.runReconciliation('user-1', 'conn-1', FROM, TO, 'admin-1');
-
-      // No ledger entry created for duplicate
       expect(mockLedgerRepo.save).not.toHaveBeenCalled();
       // Run should be updated with duplicate count
       expect(mockRunRepo.update).toHaveBeenCalledWith(
@@ -395,15 +382,18 @@ describe('BrokerTradeReconciliationService', () => {
     });
 
     it('reruns same time range are idempotent — no new entries', async () => {
-      const dupError = new QueryFailedError('', [], new Error('unique violation'));
-      (dupError as unknown as { code: string }).code = '23505';
-      mockTradeRepo.save.mockRejectedValue(dupError);
-
-      // Run twice
+      mockTradeRepo.findOne.mockResolvedValue({
+        id: 'rtrade-existing',
+        userId: 'user-1',
+        brokerConnectionId: 'conn-1',
+        brokerTradeId: 'trade-001',
+        netRealisedPnl: '9700',
+        currency: 'USD',
+        isFeeEligible: true,
+        ledgerEntryId: 'ledger-1',
+      });
       await service.runReconciliation('user-1', 'conn-1', FROM, TO, 'admin-1');
       await service.runReconciliation('user-1', 'conn-1', FROM, TO, 'admin-1');
-
-      // No ledger entries created across both runs
       expect(mockLedgerRepo.save).not.toHaveBeenCalled();
     });
   });
@@ -415,8 +405,6 @@ describe('BrokerTradeReconciliationService', () => {
   describe('normalizer — invalid trades skipped', () => {
     beforeEach(() => {
       mockBrokerService.findConnectionById.mockResolvedValue(makeLiveConnection());
-      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
-      mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
     });
 
     it('skips trade with missing brokerTradeId (externalOrderId)', async () => {
@@ -450,51 +438,27 @@ describe('BrokerTradeReconciliationService', () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // Fee eligibility — no active subscription
+  // Fee eligibility — no active global policy (subscription-retirement model)
   // ─────────────────────────────────────────────────────────────────────────────
 
-  describe('fee eligibility — no active subscription', () => {
-    it('creates reconciled trade but not fee-eligible when no active subscription', async () => {
+  describe('fee eligibility — no active global performance fee policy', () => {
+    it('creates reconciled trade AND ledger when no global policy exists', async () => {
       mockBrokerService.findConnectionById.mockResolvedValue(makeLiveConnection());
       mockBrokerService.getClosedTradesForConnection.mockResolvedValue({
         connection: makeLiveConnection(),
         trades: [makeClosedTrade({ realisedPnl: '100.00' })],
       });
-      mockSubscriptionRepo.findOne.mockResolvedValue(null);
-      mockPolicyRepo.findOne.mockResolvedValue(null);
-
       await service.runReconciliation('user-1', 'conn-1', FROM, TO, 'admin-1');
-
       expect(mockTradeRepo.create).toHaveBeenCalledWith(
-        expect.objectContaining({ isFeeEligible: false }),
+        expect.objectContaining({ isFeeEligible: true, sourceType: TradeSourceType.LIVE_BROKER }),
       );
-      expect(mockLedgerRepo.save).not.toHaveBeenCalled();
+      expect(mockLedgerRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ entryType: LedgerEntryType.REALISED_TRADE_PROFIT }),
+      );
     });
   });
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // Fee eligibility — no performance fee policy
-  // ─────────────────────────────────────────────────────────────────────────────
-
-  describe('fee eligibility — no performance fee policy', () => {
-    it('creates reconciled trade but no ledger entry when subscription has no perf fee policy', async () => {
-      mockBrokerService.findConnectionById.mockResolvedValue(makeLiveConnection());
-      mockBrokerService.getClosedTradesForConnection.mockResolvedValue({
-        connection: makeLiveConnection(),
-        trades: [makeClosedTrade({ realisedPnl: '100.00' })],
-      });
-      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
-      mockPolicyRepo.findOne.mockResolvedValue(null); // no policy for plan
-
-      await service.runReconciliation('user-1', 'conn-1', FROM, TO, 'admin-1');
-
-      expect(mockTradeRepo.create).toHaveBeenCalledWith(
-        expect.objectContaining({ isFeeEligible: false }),
-      );
-      expect(mockLedgerRepo.save).not.toHaveBeenCalled();
-    });
-  });
-
   // ─────────────────────────────────────────────────────────────────────────────
   // Adapter failure → FAILED run
   // ─────────────────────────────────────────────────────────────────────────────
@@ -529,8 +493,6 @@ describe('BrokerTradeReconciliationService', () => {
         connection: makeLiveConnection(),
         trades: [goodTrade, badTrade],
       });
-      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
-      mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
 
       // First call (goodTrade) succeeds, second call (badTrade) throws
       mockTradeRepo.save
@@ -587,9 +549,6 @@ describe('BrokerTradeReconciliationService', () => {
           trades: [makeClosedTrade({ externalOrderId: 't-2' })],
         });
 
-      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
-      mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
-
       mockTradeRepo.save
         .mockResolvedValueOnce({ id: 'rtrade-1' })
         .mockResolvedValueOnce({ id: 'rtrade-2' });
@@ -619,8 +578,6 @@ describe('BrokerTradeReconciliationService', () => {
         connection: makeLiveConnection(),
         trades: [makeClosedTrade()],
       });
-      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
-      mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
 
       await service.runReconciliation('user-1', 'conn-1', FROM, TO, 'admin-1');
 
@@ -679,8 +636,6 @@ describe('BrokerTradeReconciliationService', () => {
         connection: makeLiveConnection(),
         trades: [makeClosedTrade({ realisedPnl: '100.00' })],
       });
-      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
-      mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
 
       await service.runReconciliation('user-1', 'conn-1', FROM, TO, 'admin-1');
 
@@ -706,23 +661,19 @@ describe('BrokerTradeReconciliationService', () => {
         connection: makeLiveConnection(),
         trades: [makeClosedTrade()],
       });
-      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
-      mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
 
-      // First run succeeds
-      mockTradeRepo.save.mockResolvedValueOnce({ id: 'rtrade-1' });
-
-      // Second run hits unique constraint
-      const dupError = new QueryFailedError('', [], new Error('unique violation'));
-      (dupError as unknown as { code: string }).code = '23505';
-      mockTradeRepo.save.mockRejectedValueOnce(dupError);
-
-      mockLedgerRepo.save.mockResolvedValue({ id: 'ledger-1' });
-
+      mockTradeRepo.findOne.mockResolvedValueOnce(null).mockResolvedValueOnce({
+        id: 'rtrade-1',
+        userId: 'user-1',
+        brokerConnectionId: 'conn-1',
+        brokerTradeId: 'trade-001',
+        netRealisedPnl: '9700',
+        currency: 'USD',
+        isFeeEligible: true,
+        ledgerEntryId: 'ledger-1',
+      });
       await service.runReconciliation('user-1', 'conn-1', FROM, TO, 'admin-1');
       await service.runReconciliation('user-1', 'conn-1', FROM, TO, 'admin-1');
-
-      // Ledger save called only once (first run), not twice
       expect(mockLedgerRepo.save).toHaveBeenCalledTimes(1);
     });
   });
@@ -751,8 +702,6 @@ describe('BrokerTradeReconciliationService', () => {
         connection: makeLiveConnection({ accountCurrency: 'JPY' }),
         trades: [makeClosedTrade({ realisedPnl: '1000', commission: '0', swap: '0' })],
       });
-      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
-      mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
 
       await service.runReconciliation('user-1', 'conn-1', FROM, TO, 'admin-1');
 
@@ -774,13 +723,8 @@ describe('BrokerTradeReconciliationService', () => {
         connection: makeLiveConnection(),
         trades: [makeClosedTrade({ realisedPnl: '100.00', commission: '-2.50', swap: '-0.50' })],
       });
-      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
-      mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
 
       // Simulate: trade row already exists (unique violation) ...
-      const dupError = new QueryFailedError('', [], new Error('unique violation'));
-      (dupError as unknown as { code: string }).code = '23505';
-      mockTradeRepo.save.mockRejectedValueOnce(dupError);
 
       // ... and that existing row is fee-eligible, non-zero, with NO ledger entry yet
       mockTradeRepo.findOne.mockResolvedValueOnce({
@@ -791,6 +735,7 @@ describe('BrokerTradeReconciliationService', () => {
         instrument: 'EURUSD',
         direction: 'BUY',
         netRealisedPnl: '9700',
+        currency: 'USD',
         closedAt: new Date(),
         isFeeEligible: true,
         ledgerEntryId: null,
@@ -816,16 +761,11 @@ describe('BrokerTradeReconciliationService', () => {
         connection: makeLiveConnection(),
         trades: [makeClosedTrade({ realisedPnl: '100.00' })],
       });
-      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
-      mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
-
-      const dupError = new QueryFailedError('', [], new Error('unique violation'));
-      (dupError as unknown as { code: string }).code = '23505';
-      mockTradeRepo.save.mockRejectedValueOnce(dupError);
 
       mockTradeRepo.findOne.mockResolvedValueOnce({
         id: 'rtrade-existing',
         netRealisedPnl: '9700',
+        currency: 'USD',
         isFeeEligible: true,
         ledgerEntryId: 'ledger-already-there', // already linked
       });
@@ -842,16 +782,11 @@ describe('BrokerTradeReconciliationService', () => {
         connection: makeLiveConnection(),
         trades: [makeClosedTrade({ realisedPnl: '0.00', commission: '0', swap: '0' })],
       });
-      mockSubscriptionRepo.findOne.mockResolvedValue(makeActiveSubscription());
-      mockPolicyRepo.findOne.mockResolvedValue(makePolicy());
-
-      const dupError = new QueryFailedError('', [], new Error('unique violation'));
-      (dupError as unknown as { code: string }).code = '23505';
-      mockTradeRepo.save.mockRejectedValueOnce(dupError);
 
       mockTradeRepo.findOne.mockResolvedValueOnce({
         id: 'rtrade-existing',
         netRealisedPnl: '0',
+        currency: 'USD',
         isFeeEligible: false,
         ledgerEntryId: null,
       });

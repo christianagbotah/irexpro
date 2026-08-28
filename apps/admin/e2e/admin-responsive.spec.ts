@@ -11,7 +11,7 @@ import {
  *
  * Verifies the remaining admin pages render without horizontal overflow at
  * every required viewport and that their content stays within bounds. The
- * Brokers, Payments, Subscriptions and Audit pages are currently placeholder
+ * Brokers, Payments and Audit pages are currently placeholder
  * pages (static explanatory text) — when real data tables are added later,
  * the same no-overflow + in-viewport assertions will catch regressions.
  *
@@ -24,7 +24,6 @@ import {
 const ADMIN_PAGES = [
   { path: '/admin/brokers', heading: /^brokers$/i, name: 'Brokers' },
   { path: '/admin/payments', heading: /^payments$/i, name: 'Payments' },
-  { path: '/admin/subscriptions', heading: /^subscriptions$/i, name: 'Subscriptions' },
   { path: '/admin/audit', heading: /^audit log$/i, name: 'Audit' },
 ];
 

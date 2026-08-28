@@ -43,8 +43,7 @@ export default function PaymentSuccessPage() {
       <h1>Payment received</h1>
       <div className="card">
         <p>
-          We are verifying your payment with the payment provider. Your
-          subscription will activate once verification completes.
+          Payment received — we are verifying with the provider.
         </p>
         {reference && (
           <p className="muted">

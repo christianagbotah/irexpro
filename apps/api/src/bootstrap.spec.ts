@@ -170,7 +170,6 @@ import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { GlobalConfigModule } from './modules/global-config/global-config.module';
-import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { BrokerModule } from './modules/broker/broker.module';
@@ -210,7 +209,8 @@ function realFeatureModules() {
     UsersModule,
     AuditModule,
     GlobalConfigModule,
-    SubscriptionsModule,
+    // Subscription-retirement (SUBSCRIPTION-RETIREMENT-IMPL):
+    // SubscriptionsModule is no longer imported — performance-fee-only model.
     PaymentsModule,
     NotificationsModule,
     BrokerModule,

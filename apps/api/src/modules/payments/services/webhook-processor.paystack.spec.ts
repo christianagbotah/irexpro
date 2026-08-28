@@ -16,7 +16,6 @@ import {
 import { PerformanceFeeLedgerEntry } from '../../performance-fees/entities/performance-fee-ledger-entry.entity';
 import { TradingAccountPerformance } from '../../performance-fees/entities/trading-account-performance.entity';
 import { AuditService } from '../../audit/audit.service';
-import { SubscriptionsService } from '../../subscriptions/subscriptions.service';
 
 const SECRET_KEY = 'sk_test_paystack_secret_for_webhook_tests';
 
@@ -62,10 +61,6 @@ const mockAssessmentRepo = { findOne: jest.fn(), update: jest.fn() };
 const mockLedgerRepo = { save: jest.fn() };
 const mockPerformanceRepo = { findOne: jest.fn(), update: jest.fn() };
 const mockAuditService = { log: jest.fn() };
-const mockSubscriptionsService = {
-  activateSubscriptionFromPayment: jest.fn(),
-  getPlanById: jest.fn(),
-};
 
 describe('WebhookProcessorService — Paystack integration', () => {
   let service: WebhookProcessorService;
@@ -90,7 +85,6 @@ describe('WebhookProcessorService — Paystack integration', () => {
         { provide: getRepositoryToken(PerformanceFeeLedgerEntry), useValue: mockLedgerRepo },
         { provide: getRepositoryToken(TradingAccountPerformance), useValue: mockPerformanceRepo },
         { provide: AuditService, useValue: mockAuditService },
-        { provide: SubscriptionsService, useValue: mockSubscriptionsService },
       ],
     }).compile();
 
@@ -101,8 +95,11 @@ describe('WebhookProcessorService — Paystack integration', () => {
     await module.close();
   });
 
-  describe('subscription checkout', () => {
-    it('valid Paystack webhook success activates subscription', async () => {
+  describe('subscription checkout (retired — no activation path)', () => {
+    it('valid Paystack webhook marks transaction SUCCEEDED + invoice PAID but does NOT activate any subscription', async () => {
+      // Subscription-retirement (SUBSCRIPTION-RETIREMENT-IMPL):
+      // Legacy SUBSCRIPTION_INITIAL payments are still reconciled (transaction
+      // SUCCEEDED, invoice PAID) but no subscription activation occurs.
       const rawBody = chargeSuccessPayload('psk_sub_ref', 1001);
       const signature = sign(rawBody);
 
@@ -119,20 +116,28 @@ describe('WebhookProcessorService — Paystack integration', () => {
         currency: 'GHS',
         providerPayloadSummary: { planId: 'plan-1' },
       });
-      mockSubscriptionsService.activateSubscriptionFromPayment.mockResolvedValue({ id: 'sub-1' });
 
       const result = await service.processWebhook('paystack', rawBody, {
         'x-paystack-signature': signature,
       });
 
       expect(result.accepted).toBe(true);
-      expect(mockSubscriptionsService.activateSubscriptionFromPayment).toHaveBeenCalled();
-      expect(mockAuditService.log).toHaveBeenCalledWith(
-        expect.objectContaining({ action: 'SUBSCRIPTION_ACTIVATED' }),
+      expect(mockTransactionRepo.update).toHaveBeenCalledWith(
+        'tx-sub-1',
+        expect.objectContaining({ status: 'SUCCEEDED' }),
       );
+      expect(mockInvoiceRepo.update).toHaveBeenCalledWith(
+        'inv-sub-1',
+        expect.objectContaining({ status: 'PAID' }),
+      );
+      // No SUBSCRIPTION_ACTIVATED audit event is emitted
+      const auditActions = mockAuditService.log.mock.calls.map(
+        (c: unknown[]) => (c[0] as { action: string }).action,
+      );
+      expect(auditActions).not.toContain('SUBSCRIPTION_ACTIVATED');
     });
 
-    it('invalid signature does not activate subscription', async () => {
+    it('invalid signature does not mark transaction SUCCEEDED', async () => {
       const rawBody = chargeSuccessPayload('psk_sub_ref_bad', 1002);
 
       await expect(
@@ -141,7 +146,6 @@ describe('WebhookProcessorService — Paystack integration', () => {
         }),
       ).rejects.toThrow(BadRequestException);
 
-      expect(mockSubscriptionsService.activateSubscriptionFromPayment).not.toHaveBeenCalled();
       expect(mockWebhookEventRepo.save).not.toHaveBeenCalled();
       expect(mockAuditService.log).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'PAYMENT_WEBHOOK_SIGNATURE_FAILED' }),
@@ -149,13 +153,14 @@ describe('WebhookProcessorService — Paystack integration', () => {
     });
 
     it('Paystack checkout initiation failure never reaches this service (no activation path)', () => {
-      // Checkout failures happen in SubscriptionsService.initiateCheckout before any
-      // webhook is ever sent — WebhookProcessorService only ever sees success/failure
-      // events for sessions that were actually created. Documented invariant.
-      expect(mockSubscriptionsService.activateSubscriptionFromPayment).not.toHaveBeenCalled();
+      // Checkout failures happen in the now-retired SubscriptionsService before
+      // any webhook is ever sent — WebhookProcessorService only ever sees
+      // success/failure events for sessions that were actually created.
+      // Documented invariant (no-op assertion).
+      expect(mockAuditService.log).not.toHaveBeenCalled();
     });
 
-    it('duplicate webhook does not double-activate subscription', async () => {
+    it('duplicate webhook is idempotent — no double-processing', async () => {
       const rawBody = chargeSuccessPayload('psk_sub_dup', 1003);
       const signature = sign(rawBody);
 
@@ -171,7 +176,6 @@ describe('WebhookProcessorService — Paystack integration', () => {
       });
 
       expect(result.idempotent).toBe(true);
-      expect(mockSubscriptionsService.activateSubscriptionFromPayment).not.toHaveBeenCalled();
     });
   });
 
@@ -309,7 +313,6 @@ describe('WebhookProcessorService — Paystack integration', () => {
       });
 
       expect(result.accepted).toBe(true);
-      expect(mockSubscriptionsService.activateSubscriptionFromPayment).not.toHaveBeenCalled();
       expect(mockTransactionRepo.update).not.toHaveBeenCalled();
       expect(mockInvoiceRepo.update).not.toHaveBeenCalled();
       expect(mockAuditService.log).toHaveBeenCalledWith(
@@ -399,7 +402,6 @@ describe('WebhookProcessorService — Paystack integration', () => {
 
       expect(result.accepted).toBe(true);
       expect(mockAssessmentRepo.update).not.toHaveBeenCalled();
-      expect(mockSubscriptionsService.activateSubscriptionFromPayment).not.toHaveBeenCalled();
     });
   });
 

@@ -1,4 +1,4 @@
-import { forwardRef, Module, OnModuleInit } from '@nestjs/common';
+import { Module, OnModuleInit } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ManualPaymentProvider } from './providers/manual.provider';
@@ -25,7 +25,6 @@ import { PerformanceFeeAssessment } from '../performance-fees/entities/performan
 import { PerformanceFeeLedgerEntry } from '../performance-fees/entities/performance-fee-ledger-entry.entity';
 import { TradingAccountPerformance } from '../performance-fees/entities/trading-account-performance.entity';
 import { User } from '../users/entities/user.entity';
-import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 
 @Module({
   imports: [
@@ -41,8 +40,10 @@ import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
     ]),
     ConfigModule,
     AuditModule,
-    // Bidirectional dependency with SubscriptionsModule — resolved via forwardRef.
-    forwardRef(() => SubscriptionsModule),
+    // Subscription-retirement (SUBSCRIPTION-RETIREMENT-IMPL):
+    // The bidirectional dependency on SubscriptionsModule has been retired.
+    // Performance-fee payments remain the only billing flow; subscription
+    // activation is no longer performed by the webhook processor.
   ],
   controllers: [PaymentsController, PerformanceFeePaymentController],
   providers: [
