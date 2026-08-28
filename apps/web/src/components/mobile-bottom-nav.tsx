@@ -167,7 +167,14 @@ export default function MobileBottomNav({ onLogout }: MobileBottomNavProps) {
       </nav>
 
       {moreOpen && (
-        <div className="mobile-sheet-overlay" onClick={closeSheet}>
+        <div className="mobile-sheet-overlay">
+          <button
+            type="button"
+            className="mobile-sheet-backdrop"
+            aria-label="Close more navigation"
+            tabIndex={-1}
+            onClick={closeSheet}
+          />
           <div
             id="mobile-more-sheet"
             ref={sheetRef}
@@ -175,7 +182,6 @@ export default function MobileBottomNav({ onLogout }: MobileBottomNavProps) {
             aria-modal="true"
             aria-labelledby="mobile-more-sheet-title"
             className="mobile-sheet"
-            onClick={(event) => event.stopPropagation()}
           >
             <div className="mobile-sheet__header">
               <h2 id="mobile-more-sheet-title" className="mobile-sheet__title">
