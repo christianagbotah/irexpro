@@ -13,6 +13,10 @@
     "./execution": {
       "types": "./src/execution.ts",
       "default": "./src/execution.ts"
+    },
+    "./portfolio": {
+      "types": "./src/portfolio.ts",
+      "default": "./src/portfolio.ts"
     }
   },
   "scripts": {
