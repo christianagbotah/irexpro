@@ -47,9 +47,7 @@ export class TradingSessionResponseDto {
  * Explicit mapper rather than Object.assign so internal entity fields never
  * become own-properties on the response object, even before serialization.
  */
-export function toTradingSessionResponse(
-  session: TradingSession,
-): TradingSessionResponseDto {
+export function toTradingSessionResponse(session: TradingSession): TradingSessionResponseDto {
   const response = new TradingSessionResponseDto();
   response.id = session.id;
   response.brokerConnectionId = session.brokerConnectionId;
