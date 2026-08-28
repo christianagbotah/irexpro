@@ -8,9 +8,7 @@ describe('PortfolioController', () => {
     const readService = {
       listAccounts: jest.fn().mockResolvedValue([]),
     };
-    const controller = new PortfolioController(
-      readService as unknown as PortfolioReadService,
-    );
+    const controller = new PortfolioController(readService as unknown as PortfolioReadService);
 
     await controller.listAccounts(USER_ID);
 
