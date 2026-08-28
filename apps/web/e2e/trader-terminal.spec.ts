@@ -17,6 +17,46 @@ const FOUNDATION_WORKSPACES = [
 ] as const;
 
 const ACTIVE_SESSION_ID = '44444444-4444-4444-8444-444444444444';
+const OPEN_TRADE_ID = '55555555-5555-4555-8555-555555555555';
+const CLOSED_TRADE_ID = '66666666-6666-4666-8666-666666666666';
+
+const mockOpenPosition = {
+  id: OPEN_TRADE_ID,
+  instrument: 'EURUSD',
+  direction: 'BUY',
+  lotSize: '0.1000',
+  requestedEntryPrice: '1.10000000',
+  fillPrice: '1.10010000',
+  stopLoss: '1.09500000',
+  takeProfit: '1.11000000',
+  trailingStopPips: null,
+  status: 'OPEN',
+  exitPrice: null,
+  closeReason: null,
+  openedAt: '2026-08-28T18:05:00.000Z',
+  closedAt: null,
+  createdAt: '2026-08-28T18:04:00.000Z',
+  updatedAt: '2026-08-28T18:05:00.000Z',
+};
+
+const mockClosedExecution = {
+  id: CLOSED_TRADE_ID,
+  instrument: 'GBPUSD',
+  direction: 'SELL',
+  lotSize: '0.0500',
+  requestedEntryPrice: '1.35000000',
+  fillPrice: '1.34990000',
+  stopLoss: '1.35500000',
+  takeProfit: '1.34000000',
+  trailingStopPips: null,
+  status: 'CLOSED',
+  exitPrice: '1.34200000',
+  closeReason: 'TAKE_PROFIT_HIT',
+  openedAt: '2026-08-28T15:00:00.000Z',
+  closedAt: '2026-08-28T17:00:00.000Z',
+  createdAt: '2026-08-28T14:59:00.000Z',
+  updatedAt: '2026-08-28T17:00:00.000Z',
+};
 
 async function gotoTradeWithLiveStatusMocks(page: Parameters<typeof setupErrorCollectors>[0]) {
   setupErrorCollectors(page);
@@ -69,6 +109,14 @@ async function gotoTradeWithLiveStatusMocks(page: Parameters<typeof setupErrorCo
       return fulfill(200, mockBrokerConnections);
     }
 
+    if (apiPath === 'execution/positions/open') {
+      return fulfill(200, [mockOpenPosition]);
+    }
+
+    if (apiPath === 'execution/trades/recent') {
+      return fulfill(200, [mockOpenPosition, mockClosedExecution]);
+    }
+
     return fulfill(200, {});
   });
 
@@ -93,7 +141,7 @@ test.describe('Trader terminal workspaces', () => {
     });
   }
 
-  test('Trading Workspace renders authoritative risk, session, and broker status', async ({ page }) => {
+  test('Trading Workspace renders authoritative risk, session, broker, and execution state', async ({ page }) => {
     await gotoTradeWithLiveStatusMocks(page);
 
     const riskCard = page
@@ -118,13 +166,30 @@ test.describe('Trader terminal workspaces', () => {
     await expect(brokerCard.getByText('Connected', { exact: true })).toBeVisible();
     await expect(brokerCard.getByText('Demo', { exact: true })).toBeVisible();
 
+    const openPositions = page
+      .getByRole('heading', { level: 2, name: 'Open Positions (1)' })
+      .locator('..');
+    await expect(openPositions.getByText('EURUSD', { exact: true })).toBeVisible();
+    await expect(openPositions.getByText(/BUY · 0.1000 lot/i)).toBeVisible();
+    await expect(openPositions.getByText('1.10010000', { exact: true })).toBeVisible();
+
+    const recentExecutions = page
+      .getByRole('heading', { level: 2, name: 'Recent Executions' })
+      .locator('..');
+    await expect(recentExecutions.getByText('GBPUSD', { exact: true })).toBeVisible();
+    await expect(recentExecutions.getByText('Take Profit Hit', { exact: true })).toBeVisible();
+
     await expect(page.getByText(/authoritative data only/i)).toBeVisible();
     await expect(page.getByText(/does not calculate or fabricate balances/i)).toBeVisible();
+    await expect(page.getByText(/P&L remains intentionally hidden/i)).toBeVisible();
 
-    // Internal persistence-only session fields must never appear in the UI.
+    // Internal persistence-only fields and ambiguous currency-less P&L must never appear.
     await expect(page.getByText('riskProfileSnapshot', { exact: false })).toHaveCount(0);
     await expect(page.getByText('openingBalance', { exact: false })).toHaveCount(0);
     await expect(page.getByText('peakEquity', { exact: false })).toHaveCount(0);
+    await expect(page.getByText('idempotencyKey', { exact: false })).toHaveCount(0);
+    await expect(page.getByText('externalOrderId', { exact: false })).toHaveCount(0);
+    await expect(page.getByText('realisedPnl', { exact: false })).toHaveCount(0);
 
     await assertNoHorizontalOverflow(page);
     assertNoConsoleErrors(page);
