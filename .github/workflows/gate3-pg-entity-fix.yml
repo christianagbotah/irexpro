@@ -1,0 +1,57 @@
+name: Gate 3 PG Entity Registration Fix
+
+on:
+  push:
+    branches:
+      - architect/gate3-candidate-bootstrap-20260828
+    paths:
+      - '.github/workflows/gate3-pg-entity-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix-candidate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact clean candidate
+        uses: actions/checkout@v5
+        with:
+          ref: architect/gate3-candidate-clean-20260828
+          fetch-depth: 0
+
+      - name: Register reconciliation entities in PostgreSQL harness
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='2d0c351c09ad060be90c808dc5a405fa8fe7920a'
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$expected"
+          file='apps/api/src/modules/broker-reconciliation/services/broker-trade-reconciliation.pg-integration.spec.ts'
+          test -f "$file"
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('apps/api/src/modules/broker-reconciliation/services/broker-trade-reconciliation.pg-integration.spec.ts')
+          s = p.read_text()
+          old = "      synchronize: false,\n      logging: false,\n"
+          new = "      synchronize: false,\n      logging: false,\n      entities: [\n        BrokerTradeReconciliationRun,\n        BrokerReconciledTrade,\n        PerformanceFeeLedgerEntry,\n      ],\n"
+          if s.count(old) != 1:
+              raise SystemExit(f'expected exactly one DataSource insertion point, found {s.count(old)}')
+          p.write_text(s.replace(old, new, 1))
+          PY
+          grep -A8 -n 'synchronize: false' "$file"
+          grep -q 'BrokerTradeReconciliationRun,' "$file"
+          grep -q 'BrokerReconciledTrade,' "$file"
+          grep -q 'PerformanceFeeLedgerEntry,' "$file"
+          git diff --check
+
+      - name: Commit and push candidate correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'iRexPro Architect Gate'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'test(gate3): register reconciliation entities in PostgreSQL harness'
+          git push origin HEAD:refs/heads/architect/gate3-candidate-clean-20260828
