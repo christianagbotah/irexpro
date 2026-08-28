@@ -11,28 +11,33 @@ import { api } from '@/lib/api';
 
 const portfolioApi = createPortfolioApi(api);
 
-const FORBIDDEN_ACCOUNT_FIELDS = [
-  'userId',
-  'accountId',
-  'encryptedCredentials',
-  'credentialIv',
-  'credentialTag',
-  'encryptionKeyId',
-  'lastErrorMessage',
+const ACCOUNT_KEYS = [
+  'connectionId',
+  'brokerName',
+  'displayName',
+  'accountType',
+  'connectionStatus',
+  'liveTradingEnabled',
+  'snapshot',
+  'snapshotUnavailableReason',
 ] as const;
 
-const FORBIDDEN_FINANCIAL_FIELDS = [
-  'margin',
-  'freeMargin',
-  'marginLevel',
-  'leverage',
-  'openPositionsCount',
-  'realisedPnl',
-  'unrealisedPnl',
+const SNAPSHOT_KEYS = [
+  'currency',
+  'balance',
+  'equity',
+  'freshness',
+  'syncedAt',
+  'ageSeconds',
 ] as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function hasExactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
+  const actual = Object.keys(value);
+  return actual.length === expected.length && actual.every((key) => expected.includes(key));
 }
 
 function isAccountType(value: unknown): value is PortfolioAccountType {
@@ -67,8 +72,7 @@ function isIsoDateString(value: unknown): value is string {
 }
 
 function isFinancialSnapshot(value: unknown): value is PortfolioFinancialSnapshotView {
-  if (!isRecord(value)) return false;
-  if (FORBIDDEN_FINANCIAL_FIELDS.some((field) => field in value)) return false;
+  if (!isRecord(value) || !hasExactKeys(value, SNAPSHOT_KEYS)) return false;
 
   return (
     typeof value.currency === 'string' &&
@@ -84,8 +88,7 @@ function isFinancialSnapshot(value: unknown): value is PortfolioFinancialSnapsho
 }
 
 export function isPortfolioAccountView(value: unknown): value is PortfolioAccountView {
-  if (!isRecord(value)) return false;
-  if (FORBIDDEN_ACCOUNT_FIELDS.some((field) => field in value)) return false;
+  if (!isRecord(value) || !hasExactKeys(value, ACCOUNT_KEYS)) return false;
 
   if (
     typeof value.connectionId !== 'string' ||
