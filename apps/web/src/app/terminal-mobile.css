@@ -1,0 +1,11 @@
+/* Sprint 33 compatibility guard.
+ * terminal.css is imported after the shared dashboard styles, so its compact
+ * mobile padding must preserve the established fixed bottom-navigation safe
+ * area rather than overriding it.
+ */
+@media (max-width: 700px) {
+  .dashboard-content.terminal-content {
+    padding: var(--space-5, 1.25rem) var(--space-4)
+      calc(72px + env(safe-area-inset-bottom, 0px));
+  }
+}
