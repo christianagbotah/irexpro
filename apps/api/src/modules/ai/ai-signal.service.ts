@@ -19,13 +19,6 @@ import { StrategyResult } from '../strategy/interfaces/strategy.interface';
  * CRITICAL INVARIANT:
  *   Signals are NEVER sent directly to ExecutionService or BrokerAdapter.
  *   All signals must pass through StrategyOrchestratorService.
- *
- * Pipeline:
- *   receiveSignal() → validateCandidate() → forwardToStrategyOrchestrator()
- *                  → StrategyOrchestratorService.processSignal()
- *                  → RiskService → ExecutionService → Broker
- *
- * See: docs/architecture/10-ai-trading-architecture.md
  */
 @Injectable()
 export class AiSignalService {
@@ -46,6 +39,7 @@ export class AiSignalService {
         `instrument=${candidate.instrument} direction=${candidate.direction}`,
     );
 
+    const safeEvidence = this.buildSafeEvidence(candidate);
     const validationError = this.validateCandidate(candidate);
     if (validationError) {
       this.logger.warn(`Signal ${candidate.signalId} validation failed: ${validationError}`);
@@ -56,9 +50,8 @@ export class AiSignalService {
         resourceType: 'AiSignal',
         resourceId: candidate.signalId,
         metadata: {
+          ...safeEvidence,
           validationError,
-          instrument: candidate.instrument,
-          direction: candidate.direction,
         },
       });
       return {
@@ -74,13 +67,7 @@ export class AiSignalService {
       severity: AuditSeverity.INFO,
       resourceType: 'AiSignal',
       resourceId: candidate.signalId,
-      metadata: {
-        instrument: candidate.instrument,
-        direction: candidate.direction,
-        confidenceScore: candidate.confidenceScore,
-        strategyCode: candidate.strategyCode,
-        modelVersion: candidate.modelVersion,
-      },
+      metadata: safeEvidence,
     });
 
     this.eventBus.publish(DomainEventType.AI_SIGNAL_RECEIVED, candidate.userId, {
@@ -142,5 +129,26 @@ export class AiSignalService {
       ...dto,
       userId,
     } as AiSignalCandidate;
+  }
+
+  /**
+   * Persist only explicit model provenance that is safe for later projection.
+   * Opaque candidate.metadata is intentionally excluded from the audit record.
+   */
+  private buildSafeEvidence(candidate: AiSignalCandidate): Record<string, unknown> {
+    return {
+      instrument: candidate.instrument,
+      direction: candidate.direction,
+      confidenceScore: candidate.confidenceScore,
+      strategyCode: candidate.strategyCode,
+      modelVersion: candidate.modelVersion,
+      timeframe: candidate.timeframe,
+      generatedAt:
+        candidate.generatedAt instanceof Date ? candidate.generatedAt.toISOString() : null,
+      ...(candidate.marketRegime ? { marketRegime: candidate.marketRegime } : {}),
+      ...(typeof candidate.volatilityScore === 'number'
+        ? { volatilityScore: candidate.volatilityScore }
+        : {}),
+    };
   }
 }
