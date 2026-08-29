@@ -131,8 +131,9 @@ test.describe('AI Decision Explorer', () => {
     await expect(page.getByText('82%', { exact: true })).toBeVisible();
     await expect(page.getByText('TREND_H1', { exact: true })).toBeVisible();
     await expect(page.getByText('Execution Succeeded', { exact: true })).toBeVisible();
-    await expect(page.getByText('Max Concurrent Trades', { exact: true }).first()).toBeVisible();
-    await expect(page.getByText('Open trade limit reached', { exact: true }).first()).toBeVisible();
+    await expect(
+      page.getByText('Max Concurrent Trades — Open trade limit reached', { exact: true }).first(),
+    ).toBeVisible();
 
     await expect(page.getByText('riskContext', { exact: false })).toHaveCount(0);
     await expect(page.getByText('brokerConnectionId', { exact: false })).toHaveCount(0);
