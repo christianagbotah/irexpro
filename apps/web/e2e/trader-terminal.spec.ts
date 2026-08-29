@@ -11,13 +11,14 @@ import {
   mockBrokerConnections,
 } from './fixtures';
 
-const FOUNDATION_WORKSPACES = [
-  { path: '/ai', heading: 'AI Command Center' },
-] as const;
-
 const ACTIVE_SESSION_ID = '44444444-4444-4444-8444-444444444444';
 const OPEN_TRADE_ID = '55555555-5555-4555-8555-555555555555';
 const CLOSED_TRADE_ID = '66666666-6666-4666-8666-666666666666';
+
+const emptyDecisionExplorerSnapshot = {
+  generatedAt: '2026-08-28T22:30:00.000Z',
+  decisions: [],
+};
 
 const mockOpenPosition = {
   id: OPEN_TRADE_ID,
@@ -124,21 +125,32 @@ async function gotoTradeWithLiveStatusMocks(page: Parameters<typeof setupErrorCo
 }
 
 test.describe('Trader terminal workspaces', () => {
-  for (const workspace of FOUNDATION_WORKSPACES) {
-    test(`${workspace.heading} retains the authoritative-data foundation`, async ({ page }) => {
-      await gotoAsAuthenticated(page, workspace.path, {
-        heading: new RegExp(workspace.heading, 'i'),
-      });
-
-      await expect(page.getByRole('heading', { level: 1, name: workspace.heading })).toBeVisible();
-      await expect(page.getByText(/will not display fabricated trading metrics/i)).toBeVisible();
-      await expect(page.getByText(/data integrity policy/i)).toBeVisible();
-      await expect(page.locator('.terminal-foundation__capability')).toHaveCount(4);
-
-      await assertNoHorizontalOverflow(page);
-      assertNoConsoleErrors(page);
+  test('AI Decision Explorer retains the authoritative-data foundation', async ({ page }) => {
+    await gotoAsAuthenticated(page, '/ai', {
+      heading: /AI Decision Explorer/i,
     });
-  }
+
+    await page.route('**/api/v1/ai/decisions', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(emptyDecisionExplorerSnapshot),
+      }),
+    );
+    await page.getByRole('button', { name: 'Refresh decisions' }).click();
+
+    await expect(page.getByRole('heading', { level: 1, name: 'AI Decision Explorer' })).toBeVisible();
+    await expect(page.getByText(/reports recorded evidence only/i)).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: 'Decision Timeline' })).toBeVisible();
+    await expect(page.getByText('No persisted AI decisions yet', { exact: true })).toBeVisible();
+    await expect(page.getByText(/does not expose hidden model reasoning/i)).toBeVisible();
+    await expect(page.getByText(/unable to load persisted ai decision evidence/i)).toHaveCount(0);
+
+    await assertNoHorizontalOverflow(page);
+    assertNoConsoleErrors(page);
+    assertNoFailedRequests(page);
+    assertNoExternalRequests(page);
+  });
 
   test('Trading Workspace renders authoritative risk, session, broker, and execution state', async ({ page }) => {
     await gotoTradeWithLiveStatusMocks(page);
