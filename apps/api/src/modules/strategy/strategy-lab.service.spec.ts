@@ -1,7 +1,6 @@
 import { StrategyLabService } from './strategy-lab.service';
 
-const DATASET_CHECKSUM =
-  'sha256:21540b6e21ccc999fc65edbbbe5891b762c5bf08b7abb34a58da7cd2ab72c02b';
+const DATASET_CHECKSUM = 'sha256:21540b6e21ccc999fc65edbbbe5891b762c5bf08b7abb34a58da7cd2ab72c02b';
 
 describe('StrategyLabService', () => {
   it('returns the checksum-verified v1 dataset', () => {
