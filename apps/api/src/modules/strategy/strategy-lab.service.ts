@@ -56,14 +56,18 @@ export class StrategyLabService {
         weights: { ...WEIGHTS },
         constraints: { ...CONSTRAINTS },
       },
-      scenarios: STRATEGY_LAB_DATASET.scenarios.map((scenario) => this.scoreScenario(scenario)),
+      scenarios: STRATEGY_LAB_DATASET.scenarios.map((scenario) =>
+        this.scoreScenario(scenario),
+      ),
       disclaimer:
         'Strategy Lab is a deterministic historical simulation surface for comparison and testing. It does not place trades, alter live risk limits, or predict future performance.',
     };
   }
 
   private assertDatasetIntegrity(): void {
-    const actual = createHash('sha256').update(JSON.stringify(STRATEGY_LAB_DATASET)).digest('hex');
+    const actual = createHash('sha256')
+      .update(JSON.stringify(STRATEGY_LAB_DATASET))
+      .digest('hex');
     if (actual !== STRATEGY_LAB_DATASET_SHA256) {
       throw new Error('Strategy Lab dataset checksum mismatch');
     }
@@ -98,7 +102,9 @@ export class StrategyLabService {
     };
   }
 
-  private scoreCandidate(candidate: StrategyLabDatasetCandidate): Omit<StrategyLabCandidateDto, 'rank'> {
+  private scoreCandidate(
+    candidate: StrategyLabDatasetCandidate,
+  ): Omit<StrategyLabCandidateDto, 'rank'> {
     const scorecard: StrategyLabScorecardDto = {
       expectedReturn: round1(clamp01(candidate.expectedReturnPct / 15) * 100),
       profitFactor: round1(clamp01((candidate.profitFactor - 0.8) / 1.2) * 100),
@@ -179,9 +185,13 @@ export class StrategyLabService {
       tradeoffs.push('Lower modeled drawdown improves capital preservation in this scenario.');
     }
     if (candidate.winRate >= 0.6) {
-      tradeoffs.push('Higher win rate does not by itself guarantee the strongest risk-adjusted score.');
+      tradeoffs.push(
+        'Higher win rate does not by itself guarantee the strongest risk-adjusted score.',
+      );
     } else if (candidate.profitFactor >= 1.3) {
-      tradeoffs.push('Lower win frequency is offset by stronger aggregate payoff quality in the fixture.');
+      tradeoffs.push(
+        'Lower win frequency is offset by stronger aggregate payoff quality in the fixture.',
+      );
     }
     return tradeoffs;
   }
