@@ -78,12 +78,7 @@ describe('MarketIntelligenceService', () => {
     });
 
     expect(marketDataReader.getCurrentPrice).toHaveBeenCalledWith('provider-account', 'EURUSD');
-    expect(marketDataReader.getOHLCV).toHaveBeenCalledWith(
-      'provider-account',
-      'EURUSD',
-      'H1',
-      120,
-    );
+    expect(marketDataReader.getOHLCV).toHaveBeenCalledWith('provider-account', 'EURUSD', 'H1', 120);
     expect(result.status).toBe('FRESH');
     expect(result.instrument).toBe('EURUSD');
     expect(result.quote).toEqual({
