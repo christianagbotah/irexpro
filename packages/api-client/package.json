@@ -25,6 +25,10 @@
     "./ai-decision-explorer": {
       "types": "./src/ai-decision-explorer.ts",
       "default": "./src/ai-decision-explorer.ts"
+    },
+    "./strategy-lab": {
+      "types": "./src/strategy-lab.ts",
+      "default": "./src/strategy-lab.ts"
     }
   },
   "scripts": {
