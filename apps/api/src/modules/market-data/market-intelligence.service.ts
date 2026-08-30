@@ -71,11 +71,7 @@ export class MarketIntelligenceService {
       });
     }
 
-    if (
-      !connection.encryptedCredentials ||
-      !connection.credentialIv ||
-      !connection.credentialTag
-    ) {
+    if (!connection.encryptedCredentials || !connection.credentialIv || !connection.credentialTag) {
       throw new ServiceUnavailableException({
         code: 'MARKET_DATA_UNAVAILABLE',
         message: 'Live market data requires an active broker connection',
@@ -92,12 +88,7 @@ export class MarketIntelligenceService {
     try {
       const [quote, rawCandles] = await Promise.all([
         this.marketDataReader.getCurrentPrice(credentials.accountId, instrument),
-        this.marketDataReader.getOHLCV(
-          credentials.accountId,
-          instrument,
-          timeframe,
-          query.limit,
-        ),
+        this.marketDataReader.getOHLCV(credentials.accountId, instrument, timeframe, query.limit),
       ]);
 
       const candles = rawCandles
