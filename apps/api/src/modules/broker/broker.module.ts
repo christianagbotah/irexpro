@@ -65,6 +65,9 @@ import { AuditModule } from '../audit/audit.module';
     // Sprint 20). The service remains a single provider owned by BrokerModule —
     // it is NOT re-declared anywhere else.
     CredentialEncryptionService,
+    // Exported for account-scoped, read-only MetaTrader market data. Consumers
+    // must never expose the provider account reference outside the server.
+    MetaApiClientService,
   ],
 })
 export class BrokerModule implements OnModuleInit {
