@@ -1,3 +1,4 @@
+import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { MarketDataController } from './market-data.controller';
 import { MarketDataService } from './market-data.service';
@@ -36,6 +37,7 @@ describe('MarketDataController — trader endpoint', () => {
       providers: [
         { provide: MarketDataService, useValue: { getInternalOhlcv: jest.fn() } },
         { provide: MarketIntelligenceService, useValue: marketIntelligence },
+        { provide: ConfigService, useValue: { get: jest.fn() } },
       ],
     }).compile();
 
