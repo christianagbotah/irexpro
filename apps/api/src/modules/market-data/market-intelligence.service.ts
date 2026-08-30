@@ -1,6 +1,5 @@
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { AuditAction } from '../../common/enums/audit-action.enum';
-import { BrokerAdapterRegistry } from '../broker/adapters/broker-adapter.registry';
 import { BrokerService } from '../broker/broker.service';
 import { CredentialEncryptionService } from '../broker/services/credential-encryption.service';
 import { AuditService } from '../audit/audit.service';
@@ -10,8 +9,10 @@ import {
   MarketDataFreshness,
   MarketIntelligenceResponseDto,
 } from './dto/market-intelligence-response.dto';
+import { MetaTraderMarketDataReaderService } from './meta-trader-market-data-reader.service';
 
 const QUOTE_FRESHNESS_MS = 60_000;
+const PROVIDER_BACKED_MARKET_BROKER_ID = 'metatrader5';
 const TIMEFRAME_MS: Record<string, number> = {
   M1: 60_000,
   M5: 5 * 60_000,
@@ -38,9 +39,11 @@ function freshness(timestamp: Date, thresholdMs: number, nowMs: number): MarketD
 /**
  * Authenticated, read-only market projection for trader-facing clients.
  *
- * The service reuses the same registered broker adapter infrastructure as the
- * internal AI market-data path but emits a deliberately narrower DTO. Broker
- * credentials are decrypted in memory only and are cleared in a finally block.
+ * Public market intelligence is deliberately stricter than the internal paper
+ * trading path: only provider-backed MetaTrader market evidence is accepted.
+ * Reads are account-scoped by the decrypted MetaAPI account reference, never by
+ * mutable adapter state. Credentials remain in memory only and are cleared in
+ * a finally block.
  */
 @Injectable()
 export class MarketIntelligenceService {
@@ -48,7 +51,7 @@ export class MarketIntelligenceService {
 
   constructor(
     private readonly brokerService: BrokerService,
-    private readonly adapterRegistry: BrokerAdapterRegistry,
+    private readonly marketDataReader: MetaTraderMarketDataReaderService,
     private readonly encryptionService: CredentialEncryptionService,
     private readonly auditService: AuditService,
   ) {}
@@ -61,8 +64,14 @@ export class MarketIntelligenceService {
     const timeframe = query.timeframe.toUpperCase();
     const connection = await this.brokerService.findActiveConnectionForUser(userId);
 
+    if (!connection || connection.brokerId !== PROVIDER_BACKED_MARKET_BROKER_ID) {
+      throw new ServiceUnavailableException({
+        code: 'MARKET_DATA_UNAVAILABLE',
+        message: 'Live market data requires a provider-backed broker connection',
+      });
+    }
+
     if (
-      !connection ||
       !connection.encryptedCredentials ||
       !connection.credentialIv ||
       !connection.credentialTag
@@ -79,14 +88,16 @@ export class MarketIntelligenceService {
       tag: connection.credentialTag,
       keyId: connection.encryptionKeyId ?? 'env-key-v1',
     });
-    const adapter = this.adapterRegistry.getAdapter(connection.brokerId);
-    adapter.setMode(connection.accountType);
 
     try {
-      await adapter.connect(credentials);
       const [quote, rawCandles] = await Promise.all([
-        adapter.getCurrentPrice(instrument),
-        adapter.getOHLCV(instrument, timeframe, query.limit),
+        this.marketDataReader.getCurrentPrice(credentials.accountId, instrument),
+        this.marketDataReader.getOHLCV(
+          credentials.accountId,
+          instrument,
+          timeframe,
+          query.limit,
+        ),
       ]);
 
       const candles = rawCandles
