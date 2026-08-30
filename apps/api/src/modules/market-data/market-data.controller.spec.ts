@@ -41,10 +41,7 @@ describe('MarketDataController — trader endpoint', () => {
 
     const controller = module.get(MarketDataController);
     const query = { instrument: 'EURUSD', timeframe: 'H1' as const, limit: 80 };
-    const result = await controller.getIntelligence(
-      '00000000-0000-0000-0000-000000000001',
-      query,
-    );
+    const result = await controller.getIntelligence('00000000-0000-0000-0000-000000000001', query);
 
     expect(result).toBe(snapshot);
     expect(marketIntelligence.getSnapshot).toHaveBeenCalledWith(
