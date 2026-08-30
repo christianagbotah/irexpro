@@ -56,18 +56,14 @@ export class StrategyLabService {
         weights: { ...WEIGHTS },
         constraints: { ...CONSTRAINTS },
       },
-      scenarios: STRATEGY_LAB_DATASET.scenarios.map((scenario) =>
-        this.scoreScenario(scenario),
-      ),
+      scenarios: STRATEGY_LAB_DATASET.scenarios.map((scenario) => this.scoreScenario(scenario)),
       disclaimer:
         'Strategy Lab is a deterministic historical simulation surface for comparison and testing. It does not place trades, alter live risk limits, or predict future performance.',
     };
   }
 
   private assertDatasetIntegrity(): void {
-    const actual = createHash('sha256')
-      .update(JSON.stringify(STRATEGY_LAB_DATASET))
-      .digest('hex');
+    const actual = createHash('sha256').update(JSON.stringify(STRATEGY_LAB_DATASET)).digest('hex');
     if (actual !== STRATEGY_LAB_DATASET_SHA256) {
       throw new Error('Strategy Lab dataset checksum mismatch');
     }
