@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { UnauthorizedException } from '@nestjs/common';
 import { MarketDataController } from './market-data.controller';
 import { MarketDataService } from './market-data.service';
+import { MarketIntelligenceService } from './market-intelligence.service';
 import { InternalApiKeyGuard } from '../../common/guards/internal-api-key.guard';
 
 const VALID_KEY = 'test-internal-key-12345678901234';
@@ -49,6 +50,7 @@ describe('MarketDataController — internal endpoint', () => {
       controllers: [MarketDataController],
       providers: [
         { provide: MarketDataService, useValue: marketDataService },
+        { provide: MarketIntelligenceService, useValue: { getSnapshot: jest.fn() } },
         { provide: ConfigService, useValue: configService },
         InternalApiKeyGuard,
       ],
