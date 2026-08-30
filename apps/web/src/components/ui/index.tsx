@@ -174,6 +174,7 @@ const WORKSPACE_NAV: WorkspaceNavGroup[] = [
   {
     label: 'Intelligence',
     items: [
+      { href: '/market', label: 'Market Intelligence', Icon: TradeIcon, matchPrefix: true },
       { href: '/ai', label: 'AI Command Center', Icon: AiIcon, matchPrefix: true },
       { href: '/strategy-lab', label: 'Strategy Lab', Icon: AiIcon, matchPrefix: true },
     ],
