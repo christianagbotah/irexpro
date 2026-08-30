@@ -145,7 +145,7 @@ export class MarketIntelligenceService {
         },
         candles,
       };
-    } catch (error) {
+    } catch {
       await this.auditService.log({
         actorUserId: userId,
         action: AuditAction.MARKET_DATA_REQUEST_FAILED,
