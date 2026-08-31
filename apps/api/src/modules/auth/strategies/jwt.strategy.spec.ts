@@ -15,7 +15,7 @@ import { User, UserStatus } from '../../users/entities/user.entity';
  *   - userRoles are absent
  *   - roles are preserved from the JWT payload
  *   - email and phone are nullable
- *   - SUSPENDED/CLOSED users are rejected
+ *   - SUSPENDED/PERMANENTLY_LOCKED/CLOSED users are rejected
  *   - missing subject is rejected
  */
 describe('JwtStrategy (Hotfix — sanitized principal)', () => {
@@ -113,6 +113,11 @@ describe('JwtStrategy (Hotfix — sanitized principal)', () => {
 
   it('should reject CLOSED users', async () => {
     userRepo.findOne.mockResolvedValue({ ...mockUser, status: UserStatus.CLOSED });
+    await expect(strategy.validate(validPayload)).rejects.toThrow(UnauthorizedException);
+  });
+
+  it('should reject PERMANENTLY_LOCKED users', async () => {
+    userRepo.findOne.mockResolvedValue({ ...mockUser, status: UserStatus.PERMANENTLY_LOCKED });
     await expect(strategy.validate(validPayload)).rejects.toThrow(UnauthorizedException);
   });
 

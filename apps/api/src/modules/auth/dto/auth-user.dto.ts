@@ -46,7 +46,7 @@ export class AuthUserDto {
 
   @ApiProperty({
     example: 'ACTIVE',
-    enum: ['PENDING_VERIFICATION', 'ACTIVE', 'SUSPENDED', 'CLOSED'],
+    enum: ['PENDING_VERIFICATION', 'ACTIVE', 'SUSPENDED', 'PERMANENTLY_LOCKED', 'CLOSED'],
   })
   status: string;
 

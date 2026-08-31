@@ -18,6 +18,13 @@ import {
   RegisterRequest,
   ResetPasswordRequest,
   ResetPasswordResponse,
+  AccountAppealAdminView,
+  AccountAppealStatus,
+  AdminAccountStatusView,
+  ResolveAccountAppealRequest,
+  SubmitAccountAppealRequest,
+  SubmitAccountAppealResponse,
+  UpdateAccountStatusRequest,
   RiskProfile,
   SupportedBroker,
   UpdateMyProfileRequest,
@@ -78,6 +85,19 @@ export interface ApiClient {
   forgotPassword(body: ForgotPasswordRequest): Promise<ForgotPasswordResponse>;
   /** POST /auth/reset-password → reset password using token (email) or code (phone). */
   resetPassword(body: ResetPasswordRequest): Promise<ResetPasswordResponse>;
+
+  // ── Sprint 43: Account governance ───────────────────────────────────────
+  /** Public, generic-response account-access appeal request. */
+  submitAccountAppeal(body: SubmitAccountAppealRequest): Promise<SubmitAccountAppealResponse>;
+  /** Admin-only appeal queue. */
+  listAccountAppeals(status?: AccountAppealStatus): Promise<AccountAppealAdminView[]>;
+  /** Admin-only review decision. */
+  resolveAccountAppeal(
+    appealId: string,
+    body: ResolveAccountAppealRequest,
+  ): Promise<AccountAppealAdminView>;
+  /** Admin-only account-access action. */
+  updateAccountStatus(userId: string, body: UpdateAccountStatusRequest): Promise<AdminAccountStatusView>;
 
   // ── Sprint 29: Users / onboarding / risk / broker ─────────────────────────
   /** GET /users/me → current user profile (full entity with profile relation). */
@@ -239,6 +259,30 @@ export function createApiClient(options: CreateApiClientOptions): ApiClient {
     resetPassword: (body) =>
       request<ResetPasswordResponse>('/auth/reset-password', {
         method: 'POST',
+        body: JSON.stringify(body),
+      }),
+
+    // Sprint 43: account governance
+    submitAccountAppeal: (body) =>
+      request<SubmitAccountAppealResponse>('/account-appeals', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+
+    listAccountAppeals: (status?: AccountAppealStatus) =>
+      request<AccountAppealAdminView[]>(
+        status ? `/admin/account-appeals?status=${encodeURIComponent(status)}` : '/admin/account-appeals',
+      ),
+
+    resolveAccountAppeal: (appealId, body) =>
+      request<AccountAppealAdminView>(`/admin/account-appeals/${encodeURIComponent(appealId)}/resolve`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+
+    updateAccountStatus: (userId, body) =>
+      request<AdminAccountStatusView>(`/admin/users/${encodeURIComponent(userId)}/account-status`, {
+        method: 'PATCH',
         body: JSON.stringify(body),
       }),
 

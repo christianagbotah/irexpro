@@ -231,6 +231,19 @@ describe('AuthService', () => {
         service.login({ identifier: 'test@example.com', password: 'Pass@1234!' }),
       ).rejects.toThrow(UnauthorizedException);
     });
+
+    it('should throw UnauthorizedException for permanently locked account', async () => {
+      mockUserRepo.findOne.mockResolvedValueOnce({
+        id: 'user-id',
+        email: 'test@example.com',
+        passwordHash: 'some-hash',
+        status: UserStatus.PERMANENTLY_LOCKED,
+        userRoles: [],
+      });
+      await expect(
+        service.login({ identifier: 'test@example.com', password: 'Pass@1234!' }),
+      ).rejects.toThrow(UnauthorizedException);
+    });
   });
 
   // ── Sprint 25: refresh token flow (mobile JSON body + web/admin cookie) ──────────
@@ -291,6 +304,18 @@ describe('AuthService', () => {
       mockUserRepo.findOne.mockResolvedValueOnce({
         id: 'user-id',
         status: UserStatus.CLOSED,
+        userRoles: [],
+      });
+
+      await expect(service.refreshTokens('some-token')).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('should throw UnauthorizedException if user status is PERMANENTLY_LOCKED', async () => {
+      const mockPayload = { sub: 'user-id', email: 'test@example.com', roles: [] };
+      mockJwtService.verify.mockReturnValueOnce(mockPayload);
+      mockUserRepo.findOne.mockResolvedValueOnce({
+        id: 'user-id',
+        status: UserStatus.PERMANENTLY_LOCKED,
         userRoles: [],
       });
 

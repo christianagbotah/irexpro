@@ -41,6 +41,7 @@ export type UserStatus =
   | 'PENDING_VERIFICATION'
   | 'ACTIVE'
   | 'SUSPENDED'
+  | 'PERMANENTLY_LOCKED'
   | 'CLOSED';
 
 /**
@@ -145,6 +146,60 @@ export interface AuthSession {
   user: AuthUser;
   accessToken: string;
   refreshToken: string;
+}
+
+// ── Sprint 43: Account governance ─────────────────────────────────────────
+
+// Public, generic-response account-access appeal request.
+export interface SubmitAccountAppealRequest {
+  identifier: string;
+  reason: string;
+}
+
+// This response is intentionally invariant to prevent account enumeration.
+export interface SubmitAccountAppealResponse {
+  message: string;
+}
+
+export type AccountAppealStatus = 'PENDING' | 'RESOLVED';
+export type AccountAppealDecision = 'REACTIVATE' | 'PERMANENTLY_LOCK' | 'DELETE';
+export type AccountStatusAction = 'DEACTIVATE' | 'PERMANENTLY_LOCK' | 'DELETE';
+
+// Admin-only, frontend-safe view. No credentials, session tokens, or broker data.
+export interface AccountAppealAdminView {
+  id: string;
+  userId: string;
+  reason: string;
+  status: AccountAppealStatus;
+  decision: AccountAppealDecision | null;
+  reviewerUserId: string | null;
+  reviewerNote: string | null;
+  resolvedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  user: {
+    id: string;
+    email: string | null;
+    phone: string | null;
+    status: UserStatus;
+    profile: { firstName: string | null; lastName: string | null } | null;
+  } | null;
+}
+
+export interface ResolveAccountAppealRequest {
+  decision: AccountAppealDecision;
+  reviewerNote?: string;
+}
+
+export interface UpdateAccountStatusRequest {
+  action: AccountStatusAction;
+  reason: string;
+}
+
+export interface AdminAccountStatusView {
+  id: string;
+  status: UserStatus;
+  deletedAt: string | null;
 }
 
 // ── Subscriptions / plans ───────────────────────────────────────────────────

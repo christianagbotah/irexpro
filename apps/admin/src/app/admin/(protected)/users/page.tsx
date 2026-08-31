@@ -5,11 +5,12 @@ import { useAuth } from '@/context/auth-context';
 import { Card, Badge, Alert, EmptyState } from '@/components/ui';
 import { api } from '@/lib/api';
 import { formatEnumLabel } from '@irexpro/types';
-import type { OnboardingStatus } from '@irexpro/types';
+import type { OnboardingStatus, UserStatus } from '@irexpro/types';
 import AdminUserOnboardingModal, {
   OnboardingStatusContent,
   type AdminUserLite,
 } from '@/components/admin-user-onboarding-modal';
+import AdminAccountAccessControls from '@/components/admin-account-access-controls';
 
 /**
  * Admin users list — Sprint 29 + Sprint 31 responsive + post-Sprint-31 hotfix.
@@ -144,6 +145,10 @@ export default function AdminUsersPage() {
     setSelectedUserId(null);
   }, []);
 
+  const handleAccountStatusChanged = useCallback((userId: string, status: UserStatus) => {
+    setUsers((current) => current.map((user) => (user.id === userId ? { ...user, status } : user)));
+  }, []);
+
   if (!hasAdminRole) {
     return (
       <>
@@ -260,11 +265,20 @@ export default function AdminUsersPage() {
             {!selectedUserId ? (
               <EmptyState icon="📋" title="Select a user" description="Tap a user on the left to view their onboarding status." />
             ) : (
-              <OnboardingStatusContent
-                onboarding={selectedOnboarding}
-                loading={onboardingLoading}
-                error={onboardingError}
-              />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <OnboardingStatusContent
+                  onboarding={selectedOnboarding}
+                  loading={onboardingLoading}
+                  error={onboardingError}
+                />
+                {selectedUser && (
+                  <AdminAccountAccessControls
+                    key={selectedUser.id}
+                    user={selectedUser}
+                    onStatusChanged={handleAccountStatusChanged}
+                  />
+                )}
+              </div>
             )}
           </Card>
         )}
@@ -283,6 +297,15 @@ export default function AdminUsersPage() {
         error={onboardingError}
         onClose={handleCloseModal}
         triggerRef={selectedCardRef}
+        accountAccessControls={
+          selectedUser ? (
+            <AdminAccountAccessControls
+              key={selectedUser.id}
+              user={selectedUser}
+              onStatusChanged={handleAccountStatusChanged}
+            />
+          ) : null
+        }
       />
     </>
   );

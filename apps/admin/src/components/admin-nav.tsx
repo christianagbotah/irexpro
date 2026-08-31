@@ -32,6 +32,7 @@ import {
 const NAV: Array<{ href: string; label: string; Icon: ComponentType<IconProps> }> = [
   { href: '/admin/dashboard', label: 'Dashboard', Icon: DashboardIcon },
   { href: '/admin/users', label: 'Users', Icon: UsersIcon },
+  { href: '/admin/account-appeals', label: 'Account Reviews', Icon: UsersIcon },
   // Subscription-retirement (SUBSCRIPTION-RETIREMENT-IMPL):
   // SubscriptionsModule is retired. The nav item is renamed "Performance Fees"
   // and points to a placeholder route until the dedicated admin view lands.

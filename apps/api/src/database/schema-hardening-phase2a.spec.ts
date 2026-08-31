@@ -454,8 +454,10 @@ describe('Sprint 30 Phase 2A — historical migration immutability (additive-onl
     expect(historicalFiles.length).toBe(18);
   });
 
-  it('the new Phase 2A migration (1752500000000) is present alongside them (19 total)', () => {
-    expect(allMigrationFiles.length).toBe(19);
+  it('the new Phase 2A migration (1752500000000) is present alongside later additive migrations', () => {
+    // Later releases may append migrations, but must never rewrite the 18
+    // historical files or remove the Phase 2A migration.
+    expect(allMigrationFiles.length).toBeGreaterThanOrEqual(19);
     expect(allMigrationFiles).toContain('1752500000000-AddStableDomainCheckConstraints.ts');
   });
 

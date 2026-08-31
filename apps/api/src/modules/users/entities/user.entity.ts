@@ -16,6 +16,7 @@ export enum UserStatus {
   PENDING_VERIFICATION = 'PENDING_VERIFICATION',
   ACTIVE = 'ACTIVE',
   SUSPENDED = 'SUSPENDED',
+  PERMANENTLY_LOCKED = 'PERMANENTLY_LOCKED',
   CLOSED = 'CLOSED',
 }
 
@@ -34,7 +35,14 @@ export class User {
   @Exclude()
   passwordHash: string;
 
-  @Column({ type: 'enum', enum: UserStatus, default: UserStatus.PENDING_VERIFICATION })
+  // The baseline migration stores this stable domain as varchar; the database
+  // CHECK constraint added by account governance is the persistence boundary.
+  @Column({
+    type: 'varchar',
+    length: 30,
+    enum: UserStatus,
+    default: UserStatus.PENDING_VERIFICATION,
+  })
   status: UserStatus;
 
   @Column({ name: 'email_verified_at', type: 'timestamptz', nullable: true })
