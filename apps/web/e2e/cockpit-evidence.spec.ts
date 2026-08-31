@@ -171,6 +171,75 @@ const strategySnapshot = {
   disclaimer: 'Strategy Lab is advisory only.',
 };
 
+const copilotSnapshot = {
+  generatedAt: '2026-08-31T02:02:30.000Z',
+  instrument: 'EURUSD',
+  timeframe: 'H1',
+  status: 'READY',
+  posture: 'NORMAL',
+  headline: 'Authoritative context is aligned',
+  explanation:
+    'The current read models are available and fresh enough for explanation. Any future execution still requires the live Risk Engine and Execution Engine gates.',
+  market: {
+    freshness: 'FRESH',
+    bid: '1.17001',
+    ask: '1.17013',
+    spread: '0.00012',
+    quoteAt: '2026-08-31T02:00:15.000Z',
+    retrievedAt: '2026-08-31T02:00:30.000Z',
+  },
+  risk: {
+    killSwitchActive: false,
+    brokerConnected: true,
+    riskAcknowledgementAccepted: true,
+    openPositionSlotsRemaining: 2,
+    dailyTradeSlotsRemaining: 6,
+    stalePortfolioSnapshots: 0,
+    unavailablePortfolioSnapshots: 0,
+    recentViolationCount: 0,
+  },
+  decision: {
+    signalId: '11111111-1111-4111-8111-111111111141',
+    outcome: 'EXECUTION_SUCCEEDED',
+    direction: 'BUY',
+    confidenceScore: 0.82,
+    strategyCode: 'TREND_H1',
+    modelVersion: 'ensemble-v2.3',
+    marketRegime: 'trending',
+    receivedAt: '2026-08-31T02:01:00.000Z',
+    riskDecision: 'APPROVED',
+    executionStatus: 'OPEN',
+  },
+  strategyResearch: {
+    datasetId: 'strategy-lab-core',
+    datasetVersion: '1.0.0',
+    asOf: '2026-08-29T00:00:00.000Z',
+    scenarioId: 'trend-expansion',
+    marketRegime: 'TRENDING',
+    strategyCode: 'TREND_H1',
+    eligible: true,
+    score: 72.5,
+    advisoryOnly: true,
+  },
+  evidence: [
+    { source: 'MARKET', state: 'FRESH', summary: 'Provider-backed EURUSD/H1 market evidence is fresh.' },
+    { source: 'RISK', state: 'AVAILABLE', summary: 'Risk policy, capacity, and portfolio freshness are available.' },
+    { source: 'AI_DECISION', state: 'AVAILABLE', summary: 'Latest matching persisted AI decision is EXECUTION_SUCCEEDED.' },
+    {
+      source: 'STRATEGY_RESEARCH',
+      state: 'AVAILABLE',
+      summary: 'The persisted AI strategy has a matching deterministic historical research fixture. The fixture remains advisory only.',
+    },
+  ],
+  nextChecks: ['Continue to use the live Risk Engine and Execution Engine as the only execution authority.'],
+  policy: {
+    explanationOnly: true,
+    noTradeInstruction: true,
+    hiddenReasoningExposed: false,
+    strategyResearchAdvisoryOnly: true,
+  },
+};
+
 const openPosition = {
   id: '55555555-5555-4555-8555-555555555541',
   instrument: 'EURUSD',
@@ -198,7 +267,21 @@ function evidencePath(page: Page): string {
 
 async function assertCockpitDomSafe(page: Page) {
   const bodyText = (await page.locator('body').textContent()) ?? '';
-  for (const marker of ['sk_live', 'pk_live', 'github_pat_', 'ghp_', 'Bearer ', 'provider-account-fixture']) {
+  for (const marker of [
+    'sk_live',
+    'pk_live',
+    'github_pat_',
+    'ghp_',
+    'Bearer ',
+    'provider-account-fixture',
+    'brokerConnectionId',
+    'providerAccountId',
+    'encryptedCredentials',
+    'credentialIv',
+    'credentialTag',
+    'idempotencyKey',
+    'placeOrder',
+  ]) {
     expect(bodyText).not.toContain(marker);
   }
   expect(bodyText).not.toMatch(/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/);
@@ -249,6 +332,7 @@ async function setupCockpitEvidence(page: Page) {
     if (apiPath === 'risk/intelligence') return fulfill(200, riskIntelligence);
     if (apiPath === 'ai/decisions') return fulfill(200, decisionSnapshot);
     if (apiPath === 'strategy/lab') return fulfill(200, strategySnapshot);
+    if (apiPath === 'ai/copilot/context') return fulfill(200, copilotSnapshot);
     return fulfill(200, {});
   });
 
@@ -257,7 +341,9 @@ async function setupCockpitEvidence(page: Page) {
   await expect(page.getByTestId('dynamic-trader-cockpit')).toBeVisible();
   await expect(page.getByText('1.17001', { exact: true }).first()).toBeVisible();
   await expect(page.getByRole('heading', { level: 2, name: 'AI Decision Pulse' })).toBeVisible();
-  await expect(page.getByText('TREND_H1', { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: 'Contextual AI Copilot' })).toBeVisible();
+  await expect(page.getByText('Authoritative context is aligned', { exact: true })).toBeVisible();
+  await expect(page.getByText('Historical research · Advisory only', { exact: true })).toBeVisible();
 }
 
 test.beforeEach(async ({}, testInfo) => {

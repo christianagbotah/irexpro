@@ -270,6 +270,171 @@
   font-size: 0.8rem;
 }
 
+.cockpit-copilot {
+  border-color: rgba(56, 189, 248, 0.18);
+  background:
+    radial-gradient(circle at 100% 0%, rgba(56, 189, 248, 0.08), transparent 20rem),
+    linear-gradient(145deg, rgba(20, 27, 43, 0.98), rgba(12, 20, 35, 0.94));
+}
+
+.cockpit-copilot-status,
+.cockpit-copilot-decision,
+.cockpit-copilot-evidence {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.cockpit-copilot-status {
+  margin-bottom: var(--space-4);
+}
+
+.cockpit-copilot-badges {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.cockpit-copilot-context {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.cockpit-copilot-summary {
+  padding: var(--space-4);
+  border: 1px solid rgba(56, 189, 248, 0.12);
+  border-radius: var(--radius-md);
+  background: rgba(7, 15, 28, 0.52);
+}
+
+.cockpit-copilot-summary strong {
+  display: block;
+  font-size: 1rem;
+  line-height: 1.4;
+}
+
+.cockpit-copilot-summary p {
+  margin: var(--space-2) 0 0;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+
+.cockpit-copilot-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
+}
+
+.cockpit-copilot-facts > div {
+  min-width: 0;
+  padding: 0.65rem 0.7rem;
+  border: 1px solid rgba(148, 163, 184, 0.09);
+  border-radius: var(--radius-md);
+  background: rgba(8, 14, 25, 0.4);
+}
+
+.cockpit-copilot-facts span,
+.cockpit-copilot-kicker {
+  display: block;
+  color: var(--text-muted);
+  font-size: 0.66rem;
+  font-weight: 750;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+}
+
+.cockpit-copilot-facts strong {
+  display: block;
+  margin-top: 0.28rem;
+  overflow-wrap: anywhere;
+  font-size: 0.78rem;
+}
+
+.cockpit-copilot-block {
+  padding: var(--space-3) 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.08);
+}
+
+.cockpit-copilot-kicker {
+  margin-bottom: var(--space-2);
+}
+
+.cockpit-copilot-decision strong {
+  overflow-wrap: anywhere;
+  font-size: 0.9rem;
+}
+
+.cockpit-copilot-evidence-list {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.cockpit-copilot-evidence {
+  align-items: flex-start;
+  padding: 0.72rem;
+  border: 1px solid rgba(148, 163, 184, 0.09);
+  border-radius: var(--radius-md);
+  background: rgba(8, 14, 25, 0.34);
+}
+
+.cockpit-copilot-evidence > div {
+  min-width: 0;
+}
+
+.cockpit-copilot-evidence strong,
+.cockpit-copilot-evidence span {
+  display: block;
+}
+
+.cockpit-copilot-evidence strong {
+  margin-bottom: 0.2rem;
+  font-size: 0.76rem;
+}
+
+.cockpit-copilot-evidence span {
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  line-height: 1.5;
+}
+
+.cockpit-copilot-checks {
+  margin: 0;
+  padding-left: 1.05rem;
+  color: var(--text-secondary);
+}
+
+.cockpit-copilot-checks li {
+  margin-bottom: 0.42rem;
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+
+.cockpit-copilot-policy {
+  display: grid;
+  gap: 0.2rem;
+  margin-top: var(--space-2);
+  padding: 0.75rem;
+  border: 1px solid rgba(45, 212, 191, 0.1);
+  border-radius: var(--radius-md);
+  background: rgba(45, 212, 191, 0.035);
+}
+
+.cockpit-copilot-policy strong {
+  color: var(--brand-light);
+  font-size: 0.76rem;
+}
+
+.cockpit-copilot-policy span {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
 .cockpit-provenance ul {
   margin: 0;
   padding-left: 1.1rem;
@@ -302,6 +467,7 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .cockpit-copilot,
   .cockpit-side-stack > :last-child {
     grid-column: 1 / -1;
   }
@@ -322,6 +488,7 @@
     grid-template-columns: 1fr;
   }
 
+  .cockpit-copilot,
   .cockpit-side-stack > :last-child {
     grid-column: auto;
   }
@@ -342,7 +509,8 @@
     padding: 0.85rem 1rem;
   }
 
-  .cockpit-quote-grid {
+  .cockpit-quote-grid,
+  .cockpit-copilot-facts {
     grid-template-columns: 1fr;
   }
 
@@ -358,5 +526,12 @@
   .cockpit-detail-list dd {
     max-width: none;
     text-align: left;
+  }
+
+  .cockpit-copilot-status,
+  .cockpit-copilot-decision,
+  .cockpit-copilot-evidence {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

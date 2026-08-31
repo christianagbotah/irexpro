@@ -29,6 +29,6 @@ import { ExecutionModule } from '../execution/execution.module';
   ],
   controllers: [RiskController, RiskIntelligenceController],
   providers: [RiskService, RiskIntelligenceService],
-  exports: [RiskService],
+  exports: [RiskService, RiskIntelligenceService],
 })
 export class RiskModule {}
