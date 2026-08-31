@@ -441,7 +441,9 @@ test.describe('Dynamic Trader Cockpit', () => {
       page.getByText('Evidence-based explanation · No hidden reasoning exposed', { exact: true }),
     ).toBeVisible();
     await expect(page.getByText('Authoritative context is aligned', { exact: true })).toBeVisible();
-    await expect(page.getByText('NORMAL', { exact: true })).toBeVisible();
+    await expect(
+      page.getByLabel('Copilot authoritative context').getByText('NORMAL', { exact: true }),
+    ).toBeVisible();
     await expect(page.getByText('Persisted AI decision evidence', { exact: true }).first()).toBeVisible();
     await expect(page.getByText('Historical research · Advisory only', { exact: true })).toBeVisible();
     await expect(page.getByText('Market', { exact: true }).last()).toBeVisible();
