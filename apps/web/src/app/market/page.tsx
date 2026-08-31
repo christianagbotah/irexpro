@@ -111,6 +111,7 @@ export default function MarketPage() {
   const refresh = useCallback(async (nextInstrument: string, nextTimeframe: MarketIntelligenceRequest['timeframe']) => {
     setLoading(true);
     setError(null);
+    setSnapshot(null);
     try {
       const next = await loadMarketIntelligence({
         instrument: nextInstrument.trim().toUpperCase(),
