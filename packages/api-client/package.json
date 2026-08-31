@@ -37,6 +37,10 @@
     "./ai-copilot": {
       "types": "./src/ai-copilot.ts",
       "default": "./src/ai-copilot.ts"
+    },
+    "./eligibility": {
+      "types": "./src/eligibility.ts",
+      "default": "./src/eligibility.ts"
     }
   },
   "scripts": {
