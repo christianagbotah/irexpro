@@ -360,3 +360,122 @@
     text-align: left;
   }
 }
+
+/* ── Sprint 42: Contextual AI Copilot panel ────────────────────────────────── */
+
+.cockpit-panel--copilot {
+  border-left: 3px solid var(--accent, #5b8def);
+}
+
+.copilot-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.copilot-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.copilot-status-cluster {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.copilot-context {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.copilot-headline {
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.copilot-explanation {
+  line-height: 1.55;
+  margin: 0;
+  color: var(--text-secondary, #555);
+}
+
+.copilot-evidence-block {
+  border-top: 1px solid var(--border-subtle, #e8e8e8);
+  padding-top: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.copilot-evidence-label {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.7rem;
+  margin: 0;
+}
+
+.copilot-evidence-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.copilot-evidence-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.copilot-next-checks {
+  list-style: disc;
+  padding-left: 1.2rem;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.875rem;
+}
+
+.copilot-policy-note {
+  border-top: 1px solid var(--border-subtle, #e8e8e8);
+  padding-top: 0.5rem;
+  font-style: italic;
+  margin: 0;
+}
+
+/* Mobile: Copilot structurally stacks and remains readable */
+@media (max-width: 768px) {
+  .copilot-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .copilot-headline {
+    font-size: 0.95rem;
+  }
+}
+
+@media (max-width: 430px) {
+  .copilot-status-cluster {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.3rem;
+  }
+
+  .copilot-evidence-list li {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.2rem;
+  }
+}

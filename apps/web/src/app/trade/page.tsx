@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { formatEnumLabel } from '@irexpro/types';
+import type { AiCopilotView } from '@irexpro/types/ai-copilot';
 import type { AiDecisionExplorerView, AiDecisionOutcome } from '@irexpro/types/ai-decision-explorer';
 import type { TradeExecutionView } from '@irexpro/types/execution';
 import type { MarketCandleView, MarketIntelligenceView } from '@irexpro/types/market-intelligence';
@@ -10,6 +11,7 @@ import type { RiskIntelligenceView } from '@irexpro/types/risk-intelligence';
 import type { StrategyLabView } from '@irexpro/types/strategy-lab';
 import { Alert, Badge, Button, Card, DashboardShell, LoadingSpinner } from '@/components/ui';
 import { useAuth } from '@/context/auth-context';
+import { loadAiCopilot } from '@/lib/ai-copilot';
 import { loadAiDecisionExplorer } from '@/lib/ai-decision-explorer';
 import { loadMarketIntelligence } from '@/lib/market-intelligence';
 import { loadStrategyLab } from '@/lib/strategy-lab';
@@ -169,6 +171,7 @@ export default function TradingWorkspacePage() {
   const [risk, setRisk] = useState<RiskIntelligenceView | null>(null);
   const [decisions, setDecisions] = useState<AiDecisionExplorerView | null>(null);
   const [strategy, setStrategy] = useState<StrategyLabView | null>(null);
+  const [copilot, setCopilot] = useState<AiCopilotView | null>(null);
 
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [loadingExecution, setLoadingExecution] = useState(true);
@@ -176,6 +179,7 @@ export default function TradingWorkspacePage() {
   const [loadingRisk, setLoadingRisk] = useState(true);
   const [loadingDecisions, setLoadingDecisions] = useState(true);
   const [loadingStrategy, setLoadingStrategy] = useState(true);
+  const [loadingCopilot, setLoadingCopilot] = useState(true);
 
   const [statusError, setStatusError] = useState<string | null>(null);
   const [executionError, setExecutionError] = useState<string | null>(null);
@@ -183,6 +187,7 @@ export default function TradingWorkspacePage() {
   const [riskError, setRiskError] = useState<string | null>(null);
   const [decisionError, setDecisionError] = useState<string | null>(null);
   const [strategyError, setStrategyError] = useState<string | null>(null);
+  const [copilotError, setCopilotError] = useState<string | null>(null);
 
   const refreshStatus = useCallback(async () => {
     setLoadingStatus(true);
@@ -263,6 +268,23 @@ export default function TradingWorkspacePage() {
     }
   }, []);
 
+  const refreshCopilot = useCallback(async () => {
+    // Fail-closed: immediately clear existing Copilot data before a new request
+    // begins. No previous authoritative explanation may remain visible if the
+    // request or validation fails.
+    setLoadingCopilot(true);
+    setCopilotError(null);
+    setCopilot(null);
+    try {
+      setCopilot(await loadAiCopilot({ instrument: 'EURUSD', timeframe: 'H1' }));
+    } catch {
+      setCopilot(null);
+      setCopilotError('Contextual AI Copilot is unavailable. The cockpit has cleared any previous explanation and will not fabricate fallback evidence.');
+    } finally {
+      setLoadingCopilot(false);
+    }
+  }, []);
+
   const refreshWorkspace = useCallback(async () => {
     await Promise.all([
       refreshStatus(),
@@ -271,8 +293,9 @@ export default function TradingWorkspacePage() {
       refreshRisk(),
       refreshDecisions(),
       refreshStrategy(),
+      refreshCopilot(),
     ]);
-  }, [refreshStatus, refreshExecution, refreshMarket, refreshRisk, refreshDecisions, refreshStrategy]);
+  }, [refreshStatus, refreshExecution, refreshMarket, refreshRisk, refreshDecisions, refreshStrategy, refreshCopilot]);
 
   useEffect(() => {
     if (!user) return;
@@ -300,7 +323,7 @@ export default function TradingWorkspacePage() {
 
   const session = terminal?.session ?? null;
   const broker = terminal?.sessionBroker ?? terminal?.primaryBroker ?? null;
-  const workspaceLoading = loadingStatus || loadingExecution || loadingMarket || loadingRisk || loadingDecisions || loadingStrategy;
+  const workspaceLoading = loadingStatus || loadingExecution || loadingMarket || loadingRisk || loadingDecisions || loadingStrategy || loadingCopilot;
 
   return (
     <DashboardShell user={user} onLogout={logout} activeRoute="/trade" title="Dynamic Trader Cockpit">
@@ -495,6 +518,102 @@ export default function TradingWorkspacePage() {
                   <p className="text-sm muted">{strategyScenario.recommendation.summary}</p>
                   <Link href="/strategy-lab" className="cockpit-text-link">Open Strategy Lab</Link>
                 </>
+              ) : null}
+            </Card>
+
+            <Card title="Contextual AI Copilot" subtitle="Evidence-based explanation · No hidden reasoning exposed" className="cockpit-panel cockpit-panel--copilot" data-testid="ai-copilot-panel">
+              {copilotError && <Alert variant="error">{copilotError}</Alert>}
+              {loadingCopilot && !copilot ? (
+                <LoadingSpinner text="Loading AI Copilot evidence…" />
+              ) : copilot ? (
+                <div className="copilot-body">
+                  <div className="copilot-header">
+                    <div className="copilot-status-cluster">
+                      <Badge variant={copilot.status === 'READY' ? 'success' : 'warning'}>{copilot.status}</Badge>
+                      <Badge variant={copilot.posture === 'NORMAL' ? 'success' : copilot.posture === 'CAUTION' ? 'warning' : 'error'}>{copilot.posture}</Badge>
+                    </div>
+                    <span className="copilot-context text-sm muted">{copilot.instrument} · {copilot.timeframe}</span>
+                  </div>
+                  <p className="copilot-headline">{copilot.headline}</p>
+                  <p className="copilot-explanation text-sm">{copilot.explanation}</p>
+
+                  {copilot.market && (
+                    <div className="copilot-evidence-block" data-testid="copilot-market-evidence">
+                      <p className="copilot-evidence-label text-sm muted">Market evidence</p>
+                      <dl className="cockpit-detail-list">
+                        <div><dt>Freshness</dt><dd>{copilot.market.freshness}</dd></div>
+                        <div><dt>Bid</dt><dd>{copilot.market.bid}</dd></div>
+                        <div><dt>Ask</dt><dd>{copilot.market.ask}</dd></div>
+                        <div><dt>Spread</dt><dd>{copilot.market.spread}</dd></div>
+                      </dl>
+                    </div>
+                  )}
+
+                  {copilot.risk && (
+                    <div className="copilot-evidence-block" data-testid="copilot-risk-evidence">
+                      <p className="copilot-evidence-label text-sm muted">Risk state</p>
+                      <dl className="cockpit-detail-list">
+                        <div><dt>Kill switch</dt><dd>{copilot.risk.killSwitchActive ? 'Active' : 'Inactive'}</dd></div>
+                        <div><dt>Broker gate</dt><dd>{copilot.risk.brokerConnected ? 'Connected' : 'Not connected'}</dd></div>
+                        <div><dt>Open slots</dt><dd>{copilot.risk.openPositionSlotsRemaining}</dd></div>
+                        <div><dt>Daily slots</dt><dd>{copilot.risk.dailyTradeSlotsRemaining}</dd></div>
+                      </dl>
+                    </div>
+                  )}
+
+                  {copilot.decision && (
+                    <div className="copilot-evidence-block" data-testid="copilot-decision-evidence">
+                      <p className="copilot-evidence-label text-sm muted">Persisted AI decision evidence</p>
+                      <dl className="cockpit-detail-list">
+                        <div><dt>Direction</dt><dd>{copilot.decision.direction ?? 'Not available'}</dd></div>
+                        <div><dt>Confidence</dt><dd>{copilot.decision.confidenceScore !== null ? `${Math.round(copilot.decision.confidenceScore * 100)}%` : 'Not available'}</dd></div>
+                        <div><dt>Risk decision</dt><dd>{formatEnumLabel(copilot.decision.riskDecision)}</dd></div>
+                        <div><dt>Strategy</dt><dd>{copilot.decision.strategyCode ?? 'Not available'}</dd></div>
+                      </dl>
+                    </div>
+                  )}
+
+                  {copilot.strategyResearch && (
+                    <div className="copilot-evidence-block" data-testid="copilot-strategy-evidence">
+                      <p className="copilot-evidence-label text-sm muted">Strategy Lab · Historical research · Advisory only</p>
+                      <dl className="cockpit-detail-list">
+                        <div><dt>Strategy</dt><dd>{copilot.strategyResearch.strategyCode}</dd></div>
+                        <div><dt>Eligible</dt><dd>{copilot.strategyResearch.eligible ? 'Yes' : 'No'}</dd></div>
+                        <div><dt>Score</dt><dd>{copilot.strategyResearch.score.toFixed(1)}</dd></div>
+                        <div><dt>Dataset</dt><dd>{copilot.strategyResearch.datasetVersion}</dd></div>
+                      </dl>
+                    </div>
+                  )}
+
+                  {copilot.evidence.length > 0 && (
+                    <div className="copilot-evidence-block" data-testid="copilot-evidence-sources">
+                      <p className="copilot-evidence-label text-sm muted">Evidence sources</p>
+                      <ul className="copilot-evidence-list">
+                        {copilot.evidence.map((item, index) => (
+                          <li key={index}>
+                            <Badge variant="info">{item.source}</Badge>
+                            <span className="text-sm">{item.summary}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {copilot.nextChecks.length > 0 && (
+                    <div className="copilot-evidence-block">
+                      <p className="copilot-evidence-label text-sm muted">Next checks</p>
+                      <ul className="copilot-next-checks">
+                        {copilot.nextChecks.map((check, index) => (
+                          <li key={index}>{check}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  <p className="copilot-policy-note text-sm muted">
+                    Explanation only · No trade instruction · No hidden reasoning exposed
+                  </p>
+                </div>
               ) : null}
             </Card>
 

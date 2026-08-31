@@ -255,8 +255,84 @@ const openPosition = {
   updatedAt: '2026-08-31T00:45:00.000Z',
 };
 
-async function gotoCockpit(page: Parameters<typeof setupErrorCollectors>[0]) {
+const copilotSnapshot = {
+  generatedAt: '2026-08-31T01:00:00.000Z',
+  instrument: 'EURUSD',
+  timeframe: 'H1',
+  status: 'READY',
+  posture: 'NORMAL',
+  headline: 'EURUSD H1 posture is normal with fresh broker market evidence.',
+  explanation:
+    'Broker market evidence is fresh. The Risk Engine reports a clear gate. Persisted AI decision evidence and deterministic Strategy Lab research are aligned. No trade instruction is issued from this surface.',
+  market: {
+    freshness: 'FRESH',
+    bid: '1.17001',
+    ask: '1.17013',
+    spread: '0.00012',
+    quoteAt: '2026-08-31T01:00:15.000Z',
+    retrievedAt: '2026-08-31T01:00:30.000Z',
+  },
+  risk: {
+    killSwitchActive: false,
+    brokerConnected: true,
+    riskAcknowledgementAccepted: true,
+    openPositionSlotsRemaining: 2,
+    dailyTradeSlotsRemaining: 8,
+    stalePortfolioSnapshots: 0,
+    unavailablePortfolioSnapshots: 0,
+    recentViolationCount: 0,
+  },
+  decision: {
+    signalId: 'sig_00000000-0000-0000-0000-000000000042',
+    outcome: 'RISK_APPROVED',
+    direction: 'BUY',
+    confidenceScore: 0.82,
+    strategyCode: 'TREND_H1',
+    modelVersion: 'irex-ai-v2.3',
+    marketRegime: 'TREND',
+    receivedAt: '2026-08-31T00:55:00.000Z',
+    riskDecision: 'APPROVED',
+    executionStatus: 'OPEN',
+  },
+  strategyResearch: {
+    datasetId: 'ds_trend_h1_v4',
+    datasetVersion: '4.2.0',
+    asOf: '2026-08-30T00:00:00.000Z',
+    scenarioId: 'trend_h1_normal',
+    marketRegime: 'TREND',
+    strategyCode: 'TREND_H1',
+    eligible: true,
+    score: 78.5,
+    advisoryOnly: true,
+  },
+  evidence: [
+    { source: 'MARKET', state: 'FRESH', summary: 'Broker quote is fresh.' },
+    { source: 'RISK', state: 'AVAILABLE', summary: 'Risk gate is clear.' },
+    { source: 'AI_DECISION', state: 'AVAILABLE', summary: 'Persisted AI decision evidence is available.' },
+    { source: 'STRATEGY_RESEARCH', state: 'AVAILABLE', summary: 'Deterministic strategy research is available.' },
+  ],
+  nextChecks: [
+    'Confirm broker connection health before considering any execution.',
+    'Review the Risk Engine limits for the configured instrument.',
+  ],
+  policy: {
+    explanationOnly: true,
+    noTradeInstruction: true,
+    hiddenReasoningExposed: false,
+    strategyResearchAdvisoryOnly: true,
+  },
+};
+
+async function gotoCockpit(
+  page: Parameters<typeof setupErrorCollectors>[0],
+  options?: {
+    copilotResponse?: unknown;
+    copilotStatus?: number;
+    copilotResponses?: unknown[];
+  },
+) {
   setupErrorCollectors(page);
+  let copilotCallIndex = 0;
   await page.route('**/api/v1/**', (route) => {
     const url = new URL(route.request().url());
     const apiPath = url.pathname.split('/api/v1/')[1] ?? '';
@@ -303,6 +379,17 @@ async function gotoCockpit(page: Parameters<typeof setupErrorCollectors>[0]) {
     if (apiPath === 'risk/intelligence') return fulfill(200, riskSnapshot);
     if (apiPath === 'ai/decisions') return fulfill(200, decisionSnapshot);
     if (apiPath === 'strategy/lab') return fulfill(200, strategySnapshot);
+    if (apiPath === 'ai/copilot/context') {
+      if (options?.copilotResponses) {
+        const response = options.copilotResponses[copilotCallIndex] ?? copilotSnapshot;
+        copilotCallIndex++;
+        return fulfill(200, response);
+      }
+      if (options?.copilotResponse !== undefined) {
+        return fulfill(options.copilotStatus ?? 200, options.copilotResponse);
+      }
+      return fulfill(200, copilotSnapshot);
+    }
     return fulfill(200, {});
   });
 
@@ -346,6 +433,18 @@ test.describe('Dynamic Trader Cockpit', () => {
     await expect(page.getByText('idempotencyKey', { exact: false })).toHaveCount(0);
     await expect(page.getByText('placeOrder', { exact: false })).toHaveCount(0);
 
+    // Copilot panel assertions
+    await expect(page.getByRole('heading', { level: 2, name: 'Contextual AI Copilot' })).toBeVisible();
+    await expect(page.getByText('Evidence-based explanation', { exact: false })).toBeVisible();
+    const copilotPanel = page.getByRole('heading', { level: 2, name: 'Contextual AI Copilot' }).locator('..');
+    await expect(copilotPanel.getByText('No hidden reasoning exposed', { exact: false }).first()).toBeVisible();
+    await expect(copilotPanel.getByText('READY', { exact: true })).toBeVisible();
+    await expect(copilotPanel.getByText('NORMAL', { exact: true })).toBeVisible();
+    await expect(copilotPanel.getByText('EURUSD · H1', { exact: true })).toBeVisible();
+    await expect(copilotPanel.getByText('Persisted AI decision evidence', { exact: false }).first()).toBeVisible();
+    await expect(copilotPanel.getByText('Historical research · Advisory only', { exact: false })).toBeVisible();
+    await expect(copilotPanel.getByText('Explanation only · No trade instruction · No hidden reasoning exposed', { exact: false })).toBeVisible();
+
     await assertNoHorizontalOverflow(page);
     assertNoConsoleErrors(page);
     assertNoFailedRequests(page);
@@ -372,6 +471,86 @@ test.describe('Dynamic Trader Cockpit', () => {
       await assertNoHorizontalOverflow(page);
     }
 
+    assertNoConsoleErrors(page);
+    assertNoFailedRequests(page);
+    assertNoExternalRequests(page);
+  });
+
+  // ── Sprint 42: Copilot fail-closed regression coverage ──────────────────────
+
+  test('Copilot rejects a broadened payload with an unexpected providerAccountId field', async ({
+    page,
+  }) => {
+    const broadened = { ...copilotSnapshot, providerAccountId: 'broker-account-leak-123' };
+    await gotoCockpit(page, { copilotResponse: broadened });
+
+    // The validator must reject the entire response — Copilot data must NOT render.
+    const copilotPanel = page.getByRole('heading', { level: 2, name: 'Contextual AI Copilot' }).locator('..');
+    await expect(copilotPanel.getByText('READY', { exact: true })).toHaveCount(0);
+    await expect(copilotPanel.getByText('NORMAL', { exact: true })).toHaveCount(0);
+    await expect(copilotPanel.getByText('EURUSD · H1', { exact: true })).toHaveCount(0);
+
+    // The forbidden field must never render in the DOM.
+    await expect(page.getByText('broker-account-leak-123', { exact: false })).toHaveCount(0);
+    await expect(page.getByText('providerAccountId', { exact: false })).toHaveCount(0);
+
+    // An unavailable/error state must be shown instead.
+    await expect(copilotPanel.getByText(/Contextual AI Copilot is unavailable/i)).toBeVisible();
+
+    assertNoHorizontalOverflow(page);
+    assertNoConsoleErrors(page);
+    assertNoFailedRequests(page);
+    assertNoExternalRequests(page);
+  });
+
+  test('Copilot rejects a policy violation (noTradeInstruction: false)', async ({ page }) => {
+    const violated = {
+      ...copilotSnapshot,
+      policy: {
+        ...copilotSnapshot.policy,
+        noTradeInstruction: false,
+      },
+    };
+    await gotoCockpit(page, { copilotResponse: violated });
+
+    const copilotPanel = page.getByRole('heading', { level: 2, name: 'Contextual AI Copilot' }).locator('..');
+    await expect(copilotPanel.getByText('READY', { exact: true })).toHaveCount(0);
+    await expect(copilotPanel.getByText('NORMAL', { exact: true })).toHaveCount(0);
+    await expect(copilotPanel.getByText(/Contextual AI Copilot is unavailable/i)).toBeVisible();
+
+    assertNoHorizontalOverflow(page);
+    assertNoConsoleErrors(page);
+    assertNoFailedRequests(page);
+    assertNoExternalRequests(page);
+  });
+
+  test('Copilot clears previous evidence on refresh failure', async ({ page }) => {
+    // First load: valid Copilot data renders.
+    // Second load (refresh): endpoint fails — old content must clear.
+    await gotoCockpit(page, {
+      copilotResponses: [
+        copilotSnapshot, // first call: valid
+        { error: 'internal server error' }, // second call: invalid (will fail validation)
+      ],
+    });
+
+    // Verify valid Copilot data rendered on first load.
+    const copilotPanel = page.getByRole('heading', { level: 2, name: 'Contextual AI Copilot' }).locator('..');
+    await expect(copilotPanel.getByText('READY', { exact: true })).toBeVisible();
+    await expect(copilotPanel.getByText('NORMAL', { exact: true })).toBeVisible();
+
+    // Click refresh — the second Copilot response is invalid.
+    await page.getByRole('button', { name: /refresh cockpit/i }).click();
+
+    // Old Copilot content must be cleared immediately and must not remain displayed.
+    await expect(copilotPanel.getByText('READY', { exact: true })).toHaveCount(0);
+    await expect(copilotPanel.getByText('NORMAL', { exact: true })).toHaveCount(0);
+    await expect(copilotPanel.getByText('EURUSD · H1', { exact: true })).toHaveCount(0);
+
+    // An unavailable/error state must be shown.
+    await expect(copilotPanel.getByText(/Contextual AI Copilot is unavailable/i)).toBeVisible();
+
+    assertNoHorizontalOverflow(page);
     assertNoConsoleErrors(page);
     assertNoFailedRequests(page);
     assertNoExternalRequests(page);

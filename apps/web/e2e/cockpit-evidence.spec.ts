@@ -171,6 +171,74 @@ const strategySnapshot = {
   disclaimer: 'Strategy Lab is advisory only.',
 };
 
+const copilotSnapshot = {
+  generatedAt: '2026-08-31T02:00:00.000Z',
+  instrument: 'EURUSD',
+  timeframe: 'H1',
+  status: 'READY',
+  posture: 'NORMAL',
+  headline: 'EURUSD H1 posture is normal with fresh broker market evidence.',
+  explanation:
+    'Broker market evidence is fresh. The Risk Engine reports a clear gate. Persisted AI decision evidence and deterministic Strategy Lab research are aligned. No trade instruction is issued from this surface.',
+  market: {
+    freshness: 'FRESH',
+    bid: '1.17001',
+    ask: '1.17013',
+    spread: '0.00012',
+    quoteAt: '2026-08-31T02:00:15.000Z',
+    retrievedAt: '2026-08-31T02:00:30.000Z',
+  },
+  risk: {
+    killSwitchActive: false,
+    brokerConnected: true,
+    riskAcknowledgementAccepted: true,
+    openPositionSlotsRemaining: 2,
+    dailyTradeSlotsRemaining: 8,
+    stalePortfolioSnapshots: 0,
+    unavailablePortfolioSnapshots: 0,
+    recentViolationCount: 0,
+  },
+  decision: {
+    signalId: 'sig_00000000-0000-0000-0000-000000000042',
+    outcome: 'RISK_APPROVED',
+    direction: 'BUY',
+    confidenceScore: 0.82,
+    strategyCode: 'TREND_H1',
+    modelVersion: 'irex-ai-v2.3',
+    marketRegime: 'TREND',
+    receivedAt: '2026-08-31T01:55:00.000Z',
+    riskDecision: 'APPROVED',
+    executionStatus: 'OPEN',
+  },
+  strategyResearch: {
+    datasetId: 'ds_trend_h1_v4',
+    datasetVersion: '4.2.0',
+    asOf: '2026-08-30T00:00:00.000Z',
+    scenarioId: 'trend_h1_normal',
+    marketRegime: 'TREND',
+    strategyCode: 'TREND_H1',
+    eligible: true,
+    score: 78.5,
+    advisoryOnly: true,
+  },
+  evidence: [
+    { source: 'MARKET', state: 'FRESH', summary: 'Broker quote is fresh.' },
+    { source: 'RISK', state: 'AVAILABLE', summary: 'Risk gate is clear.' },
+    { source: 'AI_DECISION', state: 'AVAILABLE', summary: 'Persisted AI decision evidence is available.' },
+    { source: 'STRATEGY_RESEARCH', state: 'AVAILABLE', summary: 'Deterministic strategy research is available.' },
+  ],
+  nextChecks: [
+    'Confirm broker connection health before considering any execution.',
+    'Review the Risk Engine limits for the configured instrument.',
+  ],
+  policy: {
+    explanationOnly: true,
+    noTradeInstruction: true,
+    hiddenReasoningExposed: false,
+    strategyResearchAdvisoryOnly: true,
+  },
+};
+
 const openPosition = {
   id: '55555555-5555-4555-8555-555555555541',
   instrument: 'EURUSD',
@@ -249,6 +317,7 @@ async function setupCockpitEvidence(page: Page) {
     if (apiPath === 'risk/intelligence') return fulfill(200, riskIntelligence);
     if (apiPath === 'ai/decisions') return fulfill(200, decisionSnapshot);
     if (apiPath === 'strategy/lab') return fulfill(200, strategySnapshot);
+    if (apiPath === 'ai/copilot/context') return fulfill(200, copilotSnapshot);
     return fulfill(200, {});
   });
 
