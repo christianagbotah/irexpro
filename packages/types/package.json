@@ -33,6 +33,10 @@
     "./market-intelligence": {
       "types": "./src/market-intelligence.ts",
       "default": "./src/market-intelligence.ts"
+    },
+    "./ai-copilot": {
+      "types": "./src/ai-copilot.ts",
+      "default": "./src/ai-copilot.ts"
     }
   },
   "scripts": {
