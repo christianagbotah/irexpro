@@ -29,6 +29,10 @@
     "./strategy-lab": {
       "types": "./src/strategy-lab.ts",
       "default": "./src/strategy-lab.ts"
+    },
+    "./market-intelligence": {
+      "types": "./src/market-intelligence.ts",
+      "default": "./src/market-intelligence.ts"
     }
   },
   "scripts": {

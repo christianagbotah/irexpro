@@ -40,6 +40,7 @@ const PRIMARY_NAV: NavDestination[] = [
 
 const SECONDARY_NAV: NavDestination[] = [
   { href: '/trade', label: 'Trading Workspace', Icon: TradeIcon, matchPrefix: true },
+  { href: '/market', label: 'Market Intelligence', Icon: TradeIcon, matchPrefix: true },
   { href: '/ai', label: 'AI Command Center', Icon: AiIcon, matchPrefix: true },
   { href: '/strategy-lab', label: 'Strategy Lab', Icon: AiIcon, matchPrefix: true },
   { href: '/portfolio', label: 'Portfolio & Risk', Icon: PortfolioIcon, matchPrefix: true },
