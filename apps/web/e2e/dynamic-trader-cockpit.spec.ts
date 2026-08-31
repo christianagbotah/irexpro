@@ -317,7 +317,9 @@ test.describe('Dynamic Trader Cockpit', () => {
   }) => {
     await gotoCockpit(page);
 
-    await expect(page.getByText('Dynamic Trader Cockpit', { exact: true })).toBeVisible();
+    await expect(page.locator('.trader-cockpit .terminal-foundation__eyebrow').first()).toHaveText(
+      'Dynamic Trader Cockpit',
+    );
     await expect(page.getByRole('heading', { level: 2, name: 'Broker Market · EURUSD' })).toBeVisible();
     await expect(page.getByText('1.17001', { exact: true }).first()).toBeVisible();
     await expect(page.getByRole('img', { name: /cockpit candlestick chart with 4 broker candles/i })).toBeVisible();
