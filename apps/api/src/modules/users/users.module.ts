@@ -8,6 +8,8 @@ import { UserRole } from './entities/user-role.entity';
 import { Role } from './entities/role.entity';
 import { UserPaymentProfile } from './entities/user-payment-profile.entity';
 import { AccountAppeal } from './entities/account-appeal.entity';
+import { UserDisclosureConsent } from './entities/user-disclosure-consent.entity';
+import { UserEligibilityReview } from './entities/user-eligibility-review.entity';
 import { RiskProfile } from '../risk/entities/risk-profile.entity';
 import { BrokerConnection } from '../broker/entities/broker-connection.entity';
 import { UsersController } from './users.controller';
@@ -17,10 +19,13 @@ import { OnboardingService } from './onboarding.service';
 import { AuditModule } from '../audit/audit.module';
 import { AccountGovernanceController } from './account-governance.controller';
 import { AccountGovernanceService } from './account-governance.service';
+import { EligibilityController } from './eligibility.controller';
+import { EligibilityService } from './eligibility.service';
 
 @Module({
   // Sprint 29: OnboardingService needs RiskProfile + BrokerConnection repos.
-  // AuditModule is imported for audit logging in the onboarding status check.
+  // Sprint 44: eligibility evidence is part of the same centralized readiness gate.
+  // AuditModule is imported for audit logging in onboarding/governance/eligibility.
   imports: [
     TypeOrmModule.forFeature([
       User,
@@ -29,6 +34,8 @@ import { AccountGovernanceService } from './account-governance.service';
       Role,
       UserPaymentProfile,
       AccountAppeal,
+      UserDisclosureConsent,
+      UserEligibilityReview,
       RiskProfile,
       BrokerConnection,
     ]),
@@ -49,8 +56,20 @@ import { AccountGovernanceService } from './account-governance.service';
       }),
     }),
   ],
-  controllers: [UsersController, AccountGovernanceController],
-  providers: [UsersService, BootstrapAdminService, OnboardingService, AccountGovernanceService],
-  exports: [UsersService, BootstrapAdminService, OnboardingService, TypeOrmModule],
+  controllers: [UsersController, AccountGovernanceController, EligibilityController],
+  providers: [
+    UsersService,
+    BootstrapAdminService,
+    OnboardingService,
+    AccountGovernanceService,
+    EligibilityService,
+  ],
+  exports: [
+    UsersService,
+    BootstrapAdminService,
+    OnboardingService,
+    EligibilityService,
+    TypeOrmModule,
+  ],
 })
 export class UsersModule {}
