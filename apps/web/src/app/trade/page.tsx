@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { formatEnumLabel } from '@irexpro/types';
+import type { AiCopilotView } from '@irexpro/types/ai-copilot';
 import type { AiDecisionExplorerView, AiDecisionOutcome } from '@irexpro/types/ai-decision-explorer';
 import type { TradeExecutionView } from '@irexpro/types/execution';
 import type { MarketCandleView, MarketIntelligenceView } from '@irexpro/types/market-intelligence';
@@ -10,6 +11,7 @@ import type { RiskIntelligenceView } from '@irexpro/types/risk-intelligence';
 import type { StrategyLabView } from '@irexpro/types/strategy-lab';
 import { Alert, Badge, Button, Card, DashboardShell, LoadingSpinner } from '@/components/ui';
 import { useAuth } from '@/context/auth-context';
+import { loadAiCopilot } from '@/lib/ai-copilot';
 import { loadAiDecisionExplorer } from '@/lib/ai-decision-explorer';
 import { loadMarketIntelligence } from '@/lib/market-intelligence';
 import { loadStrategyLab } from '@/lib/strategy-lab';
@@ -51,6 +53,14 @@ function decisionBadgeVariant(outcome: AiDecisionOutcome): 'success' | 'warning'
   if (outcome === 'RISK_REJECTED' || outcome === 'EXECUTION_FAILED') return 'error';
   if (outcome === 'IGNORED') return 'warning';
   return 'info';
+}
+
+function copilotPostureBadgeVariant(
+  posture: AiCopilotView['posture'],
+): 'success' | 'warning' | 'error' | 'info' {
+  if (posture === 'NORMAL') return 'success';
+  if (posture === 'CAUTION') return 'warning';
+  return 'error';
 }
 
 function formatTimestamp(value: string | null | undefined): string {
@@ -169,6 +179,7 @@ export default function TradingWorkspacePage() {
   const [risk, setRisk] = useState<RiskIntelligenceView | null>(null);
   const [decisions, setDecisions] = useState<AiDecisionExplorerView | null>(null);
   const [strategy, setStrategy] = useState<StrategyLabView | null>(null);
+  const [copilot, setCopilot] = useState<AiCopilotView | null>(null);
 
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [loadingExecution, setLoadingExecution] = useState(true);
@@ -176,6 +187,7 @@ export default function TradingWorkspacePage() {
   const [loadingRisk, setLoadingRisk] = useState(true);
   const [loadingDecisions, setLoadingDecisions] = useState(true);
   const [loadingStrategy, setLoadingStrategy] = useState(true);
+  const [loadingCopilot, setLoadingCopilot] = useState(true);
 
   const [statusError, setStatusError] = useState<string | null>(null);
   const [executionError, setExecutionError] = useState<string | null>(null);
@@ -183,6 +195,7 @@ export default function TradingWorkspacePage() {
   const [riskError, setRiskError] = useState<string | null>(null);
   const [decisionError, setDecisionError] = useState<string | null>(null);
   const [strategyError, setStrategyError] = useState<string | null>(null);
+  const [copilotError, setCopilotError] = useState<string | null>(null);
 
   const refreshStatus = useCallback(async () => {
     setLoadingStatus(true);
@@ -263,6 +276,20 @@ export default function TradingWorkspacePage() {
     }
   }, []);
 
+  const refreshCopilot = useCallback(async () => {
+    setLoadingCopilot(true);
+    setCopilotError(null);
+    setCopilot(null);
+    try {
+      setCopilot(await loadAiCopilot({ instrument: 'EURUSD', timeframe: 'H1' }));
+    } catch {
+      setCopilot(null);
+      setCopilotError('Contextual AI Copilot evidence is unavailable or failed verification. Previous Copilot explanation has been cleared.');
+    } finally {
+      setLoadingCopilot(false);
+    }
+  }, []);
+
   const refreshWorkspace = useCallback(async () => {
     await Promise.all([
       refreshStatus(),
@@ -271,8 +298,17 @@ export default function TradingWorkspacePage() {
       refreshRisk(),
       refreshDecisions(),
       refreshStrategy(),
+      refreshCopilot(),
     ]);
-  }, [refreshStatus, refreshExecution, refreshMarket, refreshRisk, refreshDecisions, refreshStrategy]);
+  }, [
+    refreshStatus,
+    refreshExecution,
+    refreshMarket,
+    refreshRisk,
+    refreshDecisions,
+    refreshStrategy,
+    refreshCopilot,
+  ]);
 
   useEffect(() => {
     if (!user) return;
@@ -300,7 +336,14 @@ export default function TradingWorkspacePage() {
 
   const session = terminal?.session ?? null;
   const broker = terminal?.sessionBroker ?? terminal?.primaryBroker ?? null;
-  const workspaceLoading = loadingStatus || loadingExecution || loadingMarket || loadingRisk || loadingDecisions || loadingStrategy;
+  const workspaceLoading =
+    loadingStatus ||
+    loadingExecution ||
+    loadingMarket ||
+    loadingRisk ||
+    loadingDecisions ||
+    loadingStrategy ||
+    loadingCopilot;
 
   return (
     <DashboardShell user={user} onLogout={logout} activeRoute="/trade" title="Dynamic Trader Cockpit">
@@ -498,12 +541,117 @@ export default function TradingWorkspacePage() {
               ) : null}
             </Card>
 
+            <Card
+              title="Contextual AI Copilot"
+              subtitle="Evidence-based explanation · No hidden reasoning exposed"
+              className="cockpit-panel cockpit-copilot"
+            >
+              {copilotError && <Alert variant="error">{copilotError}</Alert>}
+              {loadingCopilot && !copilot ? (
+                <LoadingSpinner text="Composing authoritative Copilot context…" />
+              ) : copilot ? (
+                <>
+                  <div className="cockpit-copilot-status">
+                    <div className="cockpit-copilot-badges">
+                      <Badge variant={copilot.status === 'READY' ? 'success' : 'warning'}>{copilot.status}</Badge>
+                      <Badge variant={copilotPostureBadgeVariant(copilot.posture)}>{copilot.posture}</Badge>
+                    </div>
+                    <span className="cockpit-copilot-context">{copilot.instrument} · {copilot.timeframe}</span>
+                  </div>
+
+                  <div className="cockpit-copilot-summary">
+                    <strong>{copilot.headline}</strong>
+                    <p>{copilot.explanation}</p>
+                  </div>
+
+                  <div className="cockpit-copilot-facts" aria-label="Copilot authoritative context">
+                    <div>
+                      <span>Market</span>
+                      <strong>{copilot.market ? copilot.market.freshness : 'Unavailable'}</strong>
+                    </div>
+                    <div>
+                      <span>Risk</span>
+                      <strong>{copilot.risk ? (copilot.risk.killSwitchActive ? 'Blocked' : copilot.posture) : 'Unavailable'}</strong>
+                    </div>
+                    <div>
+                      <span>Evidence</span>
+                      <strong>{copilot.evidence.length}</strong>
+                    </div>
+                  </div>
+
+                  {copilot.decision && (
+                    <section className="cockpit-copilot-block" aria-label="Persisted AI decision evidence">
+                      <span className="cockpit-copilot-kicker">Persisted AI decision evidence</span>
+                      <div className="cockpit-copilot-decision">
+                        <strong>
+                          {copilot.instrument}
+                          {copilot.decision.direction ? ` · ${copilot.decision.direction}` : ''}
+                        </strong>
+                        <Badge variant={decisionBadgeVariant(copilot.decision.outcome)}>
+                          {formatEnumLabel(copilot.decision.outcome)}
+                        </Badge>
+                      </div>
+                      <dl className="cockpit-detail-list">
+                        <div><dt>Confidence</dt><dd>{formatScore(copilot.decision.confidenceScore)}</dd></div>
+                        <div><dt>Strategy</dt><dd>{copilot.decision.strategyCode ?? 'Not available'}</dd></div>
+                        <div><dt>Risk decision</dt><dd>{formatEnumLabel(copilot.decision.riskDecision)}</dd></div>
+                      </dl>
+                    </section>
+                  )}
+
+                  {copilot.strategyResearch && (
+                    <section className="cockpit-copilot-block" aria-label="Historical strategy research">
+                      <span className="cockpit-copilot-kicker">Historical research · Advisory only</span>
+                      <dl className="cockpit-detail-list">
+                        <div><dt>Strategy</dt><dd>{copilot.strategyResearch.strategyCode}</dd></div>
+                        <div><dt>Dataset</dt><dd>{copilot.strategyResearch.datasetVersion}</dd></div>
+                        <div><dt>Fixture score</dt><dd>{copilot.strategyResearch.score.toFixed(1)}</dd></div>
+                        <div><dt>Constraint status</dt><dd>{copilot.strategyResearch.eligible ? 'Eligible in fixture' : 'Not eligible in fixture'}</dd></div>
+                      </dl>
+                    </section>
+                  )}
+
+                  <section className="cockpit-copilot-block" aria-label="Authoritative Copilot evidence">
+                    <span className="cockpit-copilot-kicker">Authoritative evidence</span>
+                    <div className="cockpit-copilot-evidence-list">
+                      {copilot.evidence.map((item) => (
+                        <div key={`${item.source}-${item.state}`} className="cockpit-copilot-evidence">
+                          <div>
+                            <strong>{formatEnumLabel(item.source)}</strong>
+                            <span>{item.summary}</span>
+                          </div>
+                          <Badge variant={item.state === 'BLOCKED' ? 'error' : item.state === 'STALE' ? 'warning' : item.state === 'UNAVAILABLE' ? 'warning' : 'info'}>
+                            {formatEnumLabel(item.state)}
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+
+                  {copilot.nextChecks.length > 0 && (
+                    <section className="cockpit-copilot-block" aria-label="Copilot next checks">
+                      <span className="cockpit-copilot-kicker">Next checks</span>
+                      <ul className="cockpit-copilot-checks">
+                        {copilot.nextChecks.map((item) => <li key={item}>{item}</li>)}
+                      </ul>
+                    </section>
+                  )}
+
+                  <div className="cockpit-copilot-policy">
+                    <strong>Explanation only</strong>
+                    <span>No hidden reasoning exposed. No trade instruction or broker mutation is available from this panel.</span>
+                  </div>
+                </>
+              ) : null}
+            </Card>
+
             <Card title="Cockpit Provenance" className="cockpit-panel cockpit-provenance">
               <ul>
                 <li>Market values: connected provider-backed broker.</li>
                 <li>AI state: persisted decision evidence only.</li>
                 <li>Risk/capacity: server-side Risk Engine contracts.</li>
                 <li>Strategy: deterministic research dataset, advisory only.</li>
+                <li>Copilot: server-composed evidence explanation, never execution authority.</li>
                 <li>Execution: server-side execution lifecycle read model.</li>
               </ul>
             </Card>
@@ -513,7 +661,7 @@ export default function TradingWorkspacePage() {
         <aside className="terminal-foundation__policy" aria-label="Trading data integrity policy">
           <strong>Authoritative data only</strong>
           <p>
-            This cockpit composes broker market data, Risk Engine, trading-session, sanitized broker, persisted AI-decision, deterministic Strategy Lab, portfolio-risk, and frontend-safe execution APIs. It does not calculate or fabricate balances, P&amp;L, unrealised P&amp;L, market prices, risk exposure, or execution quality in the browser. P&amp;L remains intentionally hidden until the backend returns it with authoritative currency context. The browser exposes no direct broker order control.
+            This cockpit composes broker market data, Risk Engine, trading-session, sanitized broker, persisted AI-decision, deterministic Strategy Lab, Contextual AI Copilot, portfolio-risk, and frontend-safe execution APIs. It does not calculate or fabricate balances, P&amp;L, unrealised P&amp;L, market prices, risk exposure, or execution quality in the browser. P&amp;L remains intentionally hidden until the backend returns it with authoritative currency context. The browser exposes no direct broker order control.
           </p>
         </aside>
       </main>
