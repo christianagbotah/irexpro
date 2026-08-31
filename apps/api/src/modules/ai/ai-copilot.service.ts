@@ -145,9 +145,7 @@ export class AiCopilotService {
         ),
       }))
       .filter(
-        (
-          item,
-        ): item is { scenario: StrategyLabScenarioDto; candidate: StrategyLabCandidateDto } =>
+        (item): item is { scenario: StrategyLabScenarioDto; candidate: StrategyLabCandidateDto } =>
           item.candidate !== undefined,
       );
 
@@ -316,20 +314,28 @@ export class AiCopilotService {
     const checks: string[] = [];
 
     if (!risk || this.getPosture(market, risk) === 'BLOCKED') {
-      checks.push('Review the authoritative Risk Engine status before interpreting execution readiness.');
+      checks.push(
+        'Review the authoritative Risk Engine status before interpreting execution readiness.',
+      );
     }
     if (!market || market.status === 'STALE') {
-      checks.push('Wait for fresh provider-backed market evidence before relying on market context.');
+      checks.push(
+        'Wait for fresh provider-backed market evidence before relying on market context.',
+      );
     }
     if (!decision) {
       checks.push('Inspect Decision Explorer after a matching AI signal is persisted.');
     }
     if (decision && !strategyResearch) {
-      checks.push('Treat Strategy Lab as separate historical research when no matching fixture exists.');
+      checks.push(
+        'Treat Strategy Lab as separate historical research when no matching fixture exists.',
+      );
     }
 
     if (checks.length === 0) {
-      checks.push('Continue to use the live Risk Engine and Execution Engine as the only execution authority.');
+      checks.push(
+        'Continue to use the live Risk Engine and Execution Engine as the only execution authority.',
+      );
     }
 
     return checks;
