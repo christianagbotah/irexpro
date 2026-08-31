@@ -146,7 +146,40 @@ test.describe('Market Intelligence', () => {
 
   test('supports instrument and timeframe refresh without preserving old data on failure', async ({ page }) => {
     let marketRequests = 0;
+    let expectedMarket503Responses = 0;
+    const unexpectedConsoleErrors: string[] = [];
+    const unexpectedFailedResponses: string[] = [];
+
     setupErrorCollectors(page);
+
+    // Chromium reports an intentionally mocked non-2xx resource as a console error.
+    // Keep this test strict by allowing only the single expected market-data 503
+    // while continuing to fail on every other console, HTTP, or network error.
+    page.on('console', (msg) => {
+      if (msg.type() !== 'error') return;
+      const text = msg.text();
+      if (/Failed to load resource: the server responded with a status of 503/i.test(text)) return;
+      unexpectedConsoleErrors.push(`[console.error] ${text}`);
+    });
+    page.on('pageerror', (err) => {
+      unexpectedConsoleErrors.push(`[pageerror] ${err.message}`);
+    });
+    page.on('response', (response) => {
+      if (response.status() < 400) return;
+      const url = new URL(response.url());
+      if (response.status() === 503 && url.pathname === '/api/v1/market-data/intelligence') {
+        expectedMarket503Responses += 1;
+        return;
+      }
+      unexpectedFailedResponses.push(
+        `${response.status()} ${response.request().method()} ${response.url()}`,
+      );
+    });
+    page.on('requestfailed', (request) => {
+      unexpectedFailedResponses.push(
+        `FAILED ${request.method()} ${request.url()} — ${request.failure()?.errorText ?? 'unknown'}`,
+      );
+    });
     await page.route('**/api/v1/**', (route) => {
       const url = new URL(route.request().url());
       const apiPath = url.pathname.split('/api/v1/')[1] ?? '';
@@ -168,7 +201,9 @@ test.describe('Market Intelligence', () => {
     await page.getByRole('button', { name: 'M15' }).click();
     await expect(page.getByText(/previously loaded quote and chart data have been cleared/i)).toBeVisible();
     await expect(page.getByText('1.17001', { exact: true })).toHaveCount(0);
-    assertNoConsoleErrors(page);
+    expect(expectedMarket503Responses).toBe(1);
+    expect(unexpectedConsoleErrors).toEqual([]);
+    expect(unexpectedFailedResponses).toEqual([]);
     assertNoExternalRequests(page);
   });
 
