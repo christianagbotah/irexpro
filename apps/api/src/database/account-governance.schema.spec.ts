@@ -16,8 +16,24 @@ describe('Sprint 43 — account governance migration contract', () => {
     'entities',
     'user.entity.ts',
   );
+  const scenarioDPath = path.join(
+    __dirname,
+    '..',
+    '..',
+    'scripts',
+    'validate-migration-scenario-d.ts',
+  );
+  const scenarioFPath = path.join(
+    __dirname,
+    '..',
+    '..',
+    'scripts',
+    'validate-migration-scenario-f.ts',
+  );
   const source = fs.readFileSync(migrationPath, 'utf8');
   const userEntitySource = fs.readFileSync(userEntityPath, 'utf8');
+  const scenarioDSource = fs.readFileSync(scenarioDPath, 'utf8');
+  const scenarioFSource = fs.readFileSync(scenarioFPath, 'utf8');
   const upSource = source.slice(
     source.indexOf('public async up'),
     source.indexOf('public async down'),
@@ -64,5 +80,16 @@ describe('Sprint 43 — account governance migration contract', () => {
     expect(downSource).toContain('DROP CONSTRAINT IF EXISTS chk_users_account_status');
     expect(downSource).toContain('DROP TABLE IF EXISTS identity.account_appeals');
     expect(downSource).not.toMatch(/CASCADE/i);
+  });
+
+  it('keeps the real-PostgreSQL migration gates append-safe', () => {
+    expect(scenarioDSource).toContain('migrationFiles.length >= MINIMUM_MIGRATION_COUNT');
+    expect(scenarioDSource).toContain('1752600000000-CreateAccountGovernanceSchema.ts');
+    expect(scenarioDSource).not.toContain('migrationFiles.length === 19');
+
+    expect(scenarioFSource).toContain('pendingFiles.length >= 1');
+    expect(scenarioFSource).toContain('1752500000000-AddStableDomainCheckConstraints.ts');
+    expect(scenarioFSource).toContain('migrationCount === allFiles.length');
+    expect(scenarioFSource).not.toContain('newFiles.length === 1');
   });
 });

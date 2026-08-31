@@ -7,7 +7,7 @@
  *
  *   1. uuid-ossp is genuinely available and installed.
  *   2. public.uuid_generate_v4() is extension-owned (via pg_depend).
- *   3. The iRexPro migration chain (all 16 migrations) succeeds against real PG.
+ *   3. The complete discovered iRexPro migration chain succeeds against real PG.
  *   4. The bridge migration (1751150000000) NO-OPs against the extension-owned
  *      function (does NOT replace, drop, or mark it).
  *   5. Migrations #6 and #7 (which use uuid_generate_v4() in DEFAULT) succeed.
@@ -33,6 +33,8 @@ const BRIDGE_MARKER =
   'iRexPro::EnsureLegacyUuidV4Compatibility1751150000000::bridge-owned';
 
 const MIGRATIONS_DIR = path.resolve(__dirname, '../src/database/migrations');
+const MINIMUM_MIGRATION_COUNT = 20;
+const LATEST_REQUIRED_MIGRATION = '1752600000000-CreateAccountGovernanceSchema.ts';
 
 interface FunctionMetadata {
   oid: number;
@@ -174,14 +176,21 @@ async function main(): Promise<void> {
     assert(before.owning_extension === 'uuid-ossp', `owning extension = uuid-ossp (got ${before.owning_extension})`);
     assert(before.dependency_type === 'e', `dependency type = 'e' extension-owned (got ${before.dependency_type})`);
 
-    // ─── 4. Run all 16 migrations via real TypeORM ─────────────────────────
-    console.log('\n=== 4. Run all 16 iRexPro migrations ===');
+    // ─── 4. Run every discovered migration via the real QueryRunner surface ─
+    console.log('\n=== 4. Run the complete discovered iRexPro migration chain ===');
     const migrationFiles = fs
       .readdirSync(MIGRATIONS_DIR)
-      .filter((f) => f.endsWith('.ts'))
+      .filter((f) => f.endsWith('.ts') && !f.endsWith('.spec.ts') && /^\d/.test(f))
       .sort();
     console.log(`     ${migrationFiles.length} migration files found`);
-    assert(migrationFiles.length === 19, `expected 19 migrations, found ${migrationFiles.length}`);
+    assert(
+      migrationFiles.length >= MINIMUM_MIGRATION_COUNT,
+      `at least ${MINIMUM_MIGRATION_COUNT} migrations are present (found ${migrationFiles.length})`,
+    );
+    assert(
+      migrationFiles.includes(LATEST_REQUIRED_MIGRATION),
+      `required migration ${LATEST_REQUIRED_MIGRATION} is present`,
+    );
 
     // Create a migrations_table for TypeORM-style tracking (the real
     // migration:run command does this automatically, but since we're invoking
@@ -213,7 +222,7 @@ async function main(): Promise<void> {
         throw err;
       }
     }
-    console.log(`     all 16 migrations applied`);
+    console.log(`     all ${migrationFiles.length} discovered migrations applied`);
 
     // ─── 5. Bridge NO-OP proof ─────────────────────────────────────────────
     console.log('\n=== 5. Bridge NO-OP proof — function metadata unchanged ===');
