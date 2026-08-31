@@ -236,6 +236,90 @@ const strategySnapshot = {
   disclaimer: 'Strategy Lab is advisory only.',
 };
 
+const copilotSnapshot = {
+  generatedAt: '2026-08-31T01:02:30.000Z',
+  instrument: 'EURUSD',
+  timeframe: 'H1',
+  status: 'READY',
+  posture: 'NORMAL',
+  headline: 'Authoritative context is aligned',
+  explanation:
+    'The current read models are available and fresh enough for explanation. Any future execution still requires the live Risk Engine and Execution Engine gates.',
+  market: {
+    freshness: 'FRESH',
+    bid: '1.17001',
+    ask: '1.17013',
+    spread: '0.00012',
+    quoteAt: '2026-08-31T01:00:15.000Z',
+    retrievedAt: '2026-08-31T01:00:30.000Z',
+  },
+  risk: {
+    killSwitchActive: false,
+    brokerConnected: true,
+    riskAcknowledgementAccepted: true,
+    openPositionSlotsRemaining: 2,
+    dailyTradeSlotsRemaining: 6,
+    stalePortfolioSnapshots: 0,
+    unavailablePortfolioSnapshots: 0,
+    recentViolationCount: 0,
+  },
+  decision: {
+    signalId: '11111111-1111-4111-8111-111111111111',
+    outcome: 'EXECUTION_SUCCEEDED',
+    direction: 'BUY',
+    confidenceScore: 0.82,
+    strategyCode: 'TREND_H1',
+    modelVersion: 'ensemble-v2.3',
+    marketRegime: 'trending',
+    receivedAt: '2026-08-31T01:01:00.000Z',
+    riskDecision: 'APPROVED',
+    executionStatus: 'OPEN',
+  },
+  strategyResearch: {
+    datasetId: 'strategy-lab-core',
+    datasetVersion: '1.0.0',
+    asOf: '2026-08-29T00:00:00.000Z',
+    scenarioId: 'trend-expansion',
+    marketRegime: 'TRENDING',
+    strategyCode: 'TREND_H1',
+    eligible: true,
+    score: 72.5,
+    advisoryOnly: true,
+  },
+  evidence: [
+    {
+      source: 'MARKET',
+      state: 'FRESH',
+      summary: 'Provider-backed EURUSD/H1 market evidence is fresh.',
+    },
+    {
+      source: 'RISK',
+      state: 'AVAILABLE',
+      summary: 'Risk policy, capacity, and portfolio freshness are available.',
+    },
+    {
+      source: 'AI_DECISION',
+      state: 'AVAILABLE',
+      summary: 'Latest matching persisted AI decision is EXECUTION_SUCCEEDED.',
+    },
+    {
+      source: 'STRATEGY_RESEARCH',
+      state: 'AVAILABLE',
+      summary:
+        'The persisted AI strategy has a matching deterministic historical research fixture. The fixture remains advisory only.',
+    },
+  ],
+  nextChecks: [
+    'Continue to use the live Risk Engine and Execution Engine as the only execution authority.',
+  ],
+  policy: {
+    explanationOnly: true,
+    noTradeInstruction: true,
+    hiddenReasoningExposed: false,
+    strategyResearchAdvisoryOnly: true,
+  },
+};
+
 const openPosition = {
   id: '55555555-5555-4555-8555-555555555555',
   instrument: 'EURUSD',
@@ -255,9 +339,16 @@ const openPosition = {
   updatedAt: '2026-08-31T00:45:00.000Z',
 };
 
-async function gotoCockpit(page: Parameters<typeof setupErrorCollectors>[0]) {
+type CopilotResponse = { status: number; body: unknown; delayMs?: number };
+type CopilotResponder = (call: number) => CopilotResponse;
+
+async function gotoCockpit(
+  page: Parameters<typeof setupErrorCollectors>[0],
+  copilotResponder: CopilotResponder = () => ({ status: 200, body: copilotSnapshot }),
+) {
   setupErrorCollectors(page);
-  await page.route('**/api/v1/**', (route) => {
+  let copilotCalls = 0;
+  await page.route('**/api/v1/**', async (route) => {
     const url = new URL(route.request().url());
     const apiPath = url.pathname.split('/api/v1/')[1] ?? '';
     const fulfill = (status: number, body: unknown) =>
@@ -303,6 +394,14 @@ async function gotoCockpit(page: Parameters<typeof setupErrorCollectors>[0]) {
     if (apiPath === 'risk/intelligence') return fulfill(200, riskSnapshot);
     if (apiPath === 'ai/decisions') return fulfill(200, decisionSnapshot);
     if (apiPath === 'strategy/lab') return fulfill(200, strategySnapshot);
+    if (apiPath === 'ai/copilot/context') {
+      copilotCalls += 1;
+      const response = copilotResponder(copilotCalls);
+      if (response.delayMs) {
+        await new Promise((resolve) => setTimeout(resolve, response.delayMs));
+      }
+      return fulfill(response.status, response.body);
+    }
     return fulfill(200, {});
   });
 
@@ -312,7 +411,7 @@ async function gotoCockpit(page: Parameters<typeof setupErrorCollectors>[0]) {
 }
 
 test.describe('Dynamic Trader Cockpit', () => {
-  test('composes authoritative market, AI, risk, strategy, broker, and execution state', async ({
+  test('composes authoritative market, AI, risk, strategy, Copilot, broker, and execution state', async ({
     page,
   }) => {
     await gotoCockpit(page);
@@ -337,14 +436,32 @@ test.describe('Dynamic Trader Cockpit', () => {
     await expect(strategyCard.getByText('TREND_H1', { exact: true })).toBeVisible();
     await expect(strategyCard.getByText('Advisory only', { exact: true })).toBeVisible();
 
+    await expect(page.getByRole('heading', { level: 2, name: 'Contextual AI Copilot' })).toBeVisible();
+    await expect(
+      page.getByText('Evidence-based explanation · No hidden reasoning exposed', { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByText('Authoritative context is aligned', { exact: true })).toBeVisible();
+    await expect(page.getByText('NORMAL', { exact: true })).toBeVisible();
+    await expect(page.getByText('Persisted AI decision evidence', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('Historical research · Advisory only', { exact: true })).toBeVisible();
+    await expect(page.getByText('Market', { exact: true }).last()).toBeVisible();
+    await expect(page.getByText('Strategy Research', { exact: true })).toBeVisible();
+
     await expect(page.getByRole('heading', { level: 2, name: 'Open Positions (1)' })).toBeVisible();
     await expect(page.getByText(/authoritative data only/i)).toBeVisible();
     await expect(page.getByText(/browser exposes no direct broker order control/i)).toBeVisible();
 
-    await expect(page.getByText('brokerConnectionId', { exact: false })).toHaveCount(0);
-    await expect(page.getByText('providerAccountId', { exact: false })).toHaveCount(0);
-    await expect(page.getByText('idempotencyKey', { exact: false })).toHaveCount(0);
-    await expect(page.getByText('placeOrder', { exact: false })).toHaveCount(0);
+    for (const marker of [
+      'brokerConnectionId',
+      'providerAccountId',
+      'encryptedCredentials',
+      'credentialIv',
+      'credentialTag',
+      'idempotencyKey',
+      'placeOrder',
+    ]) {
+      await expect(page.getByText(marker, { exact: false })).toHaveCount(0);
+    }
 
     await assertNoHorizontalOverflow(page);
     assertNoConsoleErrors(page);
@@ -369,11 +486,61 @@ test.describe('Dynamic Trader Cockpit', () => {
     for (const viewport of viewports) {
       await page.setViewportSize(viewport);
       await expect(page.getByTestId('dynamic-trader-cockpit')).toBeVisible();
+      await expect(page.getByRole('heading', { level: 2, name: 'Contextual AI Copilot' })).toBeVisible();
       await assertNoHorizontalOverflow(page);
     }
 
     assertNoConsoleErrors(page);
     assertNoFailedRequests(page);
+    assertNoExternalRequests(page);
+  });
+
+  test('rejects broadened Copilot payloads and clears unsafe evidence', async ({ page }) => {
+    await gotoCockpit(page, () => ({
+      status: 200,
+      body: { ...copilotSnapshot, providerAccountId: 'provider-account-forbidden' },
+    }));
+
+    await expect(page.getByText(/Contextual AI Copilot evidence is unavailable or failed verification/i)).toBeVisible();
+    await expect(page.getByText('Authoritative context is aligned', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('providerAccountId', { exact: false })).toHaveCount(0);
+    await assertNoHorizontalOverflow(page);
+    assertNoConsoleErrors(page);
+    assertNoFailedRequests(page);
+    assertNoExternalRequests(page);
+  });
+
+  test('rejects Copilot responses that weaken the explanation-only policy', async ({ page }) => {
+    await gotoCockpit(page, () => ({
+      status: 200,
+      body: {
+        ...copilotSnapshot,
+        policy: { ...copilotSnapshot.policy, noTradeInstruction: false },
+      },
+    }));
+
+    await expect(page.getByText(/Contextual AI Copilot evidence is unavailable or failed verification/i)).toBeVisible();
+    await expect(page.getByText('Authoritative context is aligned', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Historical research · Advisory only', { exact: true })).toHaveCount(0);
+    await assertNoHorizontalOverflow(page);
+    assertNoConsoleErrors(page);
+    assertNoFailedRequests(page);
+    assertNoExternalRequests(page);
+  });
+
+  test('clears previous Copilot evidence immediately when refresh fails', async ({ page }) => {
+    await gotoCockpit(page, (call) =>
+      call === 1
+        ? { status: 200, body: copilotSnapshot }
+        : { status: 503, body: { message: 'Copilot unavailable' }, delayMs: 250 },
+    );
+
+    await expect(page.getByText('Authoritative context is aligned', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Refresh cockpit' }).click();
+    await expect(page.getByText('Authoritative context is aligned', { exact: true })).toHaveCount(0);
+    await expect(page.getByText(/Contextual AI Copilot evidence is unavailable or failed verification/i)).toBeVisible();
+    await expect(page.getByText('providerAccountId', { exact: false })).toHaveCount(0);
+    await assertNoHorizontalOverflow(page);
     assertNoExternalRequests(page);
   });
 });
