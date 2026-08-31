@@ -97,7 +97,11 @@ export class PasswordResetService {
     }
 
     // Suspended/closed accounts cannot reset password via this flow.
-    if (user.status === UserStatus.SUSPENDED || user.status === UserStatus.CLOSED) {
+    if (
+      user.status === UserStatus.SUSPENDED ||
+      user.status === UserStatus.PERMANENTLY_LOCKED ||
+      user.status === UserStatus.CLOSED
+    ) {
       this.logger.log(
         `Password reset requested for ${user.status} user — returning generic response`,
       );

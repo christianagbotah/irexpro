@@ -76,6 +76,9 @@ export default function LoginPage() {
           {loading ? 'Logging in…' : 'Log in'}
         </Button>
       </form>
+      <div className="auth-links" style={{ marginTop: '1rem' }}>
+        Can&apos;t access your account? <Link href="/account-appeal">Request a review</Link>
+      </div>
       <div className="auth-divider">or</div>
       <div className="auth-links">
         Don&apos;t have an account? <Link href="/register">Create one</Link>

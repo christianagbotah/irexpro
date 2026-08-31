@@ -162,7 +162,11 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    if (user.status === UserStatus.SUSPENDED || user.status === UserStatus.CLOSED) {
+    if (
+      user.status === UserStatus.SUSPENDED ||
+      user.status === UserStatus.PERMANENTLY_LOCKED ||
+      user.status === UserStatus.CLOSED
+    ) {
       await this.auditService.log({
         actorUserId: user.id,
         action: AuditAction.USER_LOGIN_FAILED,
@@ -223,7 +227,12 @@ export class AuthService {
     // (`user.status !== ACTIVE`) rejected every newly registered user because
     // register() created them as PENDING_VERIFICATION and no activation flow
     // existed. If you can login, you should be able to refresh.
-    if (!user || user.status === UserStatus.SUSPENDED || user.status === UserStatus.CLOSED) {
+    if (
+      !user ||
+      user.status === UserStatus.SUSPENDED ||
+      user.status === UserStatus.PERMANENTLY_LOCKED ||
+      user.status === UserStatus.CLOSED
+    ) {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 

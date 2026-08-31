@@ -137,6 +137,21 @@ describe('PasswordResetService', () => {
       expect(mockDeliveryService.deliver).not.toHaveBeenCalled();
     });
 
+    it('should return generic result for a PERMANENTLY_LOCKED user (no delivery, no audit)', async () => {
+      mockUserRepo.findOne.mockResolvedValueOnce({
+        id: 'user-locked',
+        email: 'locked@example.com',
+        status: UserStatus.PERMANENTLY_LOCKED,
+      });
+
+      const result = await service.requestReset('locked@example.com');
+
+      expect(result.delivered).toBe(false);
+      expect(result.channel).toBeNull();
+      expect(mockDeliveryService.deliver).not.toHaveBeenCalled();
+      expect(mockAuditService.log).not.toHaveBeenCalled();
+    });
+
     it('should use PHONE channel for a phone-only user', async () => {
       mockUserRepo.findOne.mockResolvedValueOnce({
         id: 'phone-user',

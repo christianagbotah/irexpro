@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { Alert, Badge } from '@/components/ui';
 import { CloseIcon } from '@/components/icons';
 import { formatEnumLabel } from '@irexpro/types';
@@ -139,6 +139,8 @@ interface AdminUserOnboardingModalProps {
   onClose: () => void;
   /** Ref to the trigger card so focus can be restored after close. */
   triggerRef: React.RefObject<HTMLElement | null>;
+  /** Optional account-access controls supplied by the parent page. */
+  accountAccessControls?: ReactNode;
 }
 
 export default function AdminUserOnboardingModal({
@@ -149,6 +151,7 @@ export default function AdminUserOnboardingModal({
   error,
   onClose,
   triggerRef,
+  accountAccessControls,
 }: AdminUserOnboardingModalProps) {
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const closeBtnRef = useRef<HTMLButtonElement | null>(null);
@@ -261,6 +264,7 @@ export default function AdminUserOnboardingModal({
             loading={loading}
             error={error}
           />
+          {accountAccessControls}
         </div>
       </div>
     </div>

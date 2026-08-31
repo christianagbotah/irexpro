@@ -57,7 +57,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       select: ['id', 'email', 'phone', 'status'],
     });
 
-    if (!user || user.status === UserStatus.SUSPENDED || user.status === UserStatus.CLOSED) {
+    if (
+      !user ||
+      user.status === UserStatus.SUSPENDED ||
+      user.status === UserStatus.PERMANENTLY_LOCKED ||
+      user.status === UserStatus.CLOSED
+    ) {
       throw new UnauthorizedException('User account is not active');
     }
 

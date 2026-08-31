@@ -16,11 +16,10 @@
  *            two trades (BUY + SELL), a reconciliation run + a reconciled
  *            trade (direction='BUY'). Capture IDs, direction values,
  *            account_type values, and row counts.
- *   Stage 3: Create a NEW DataSource with ALL 19 migration classes.
- *            showMigrations() returns true (1 pending).
- *            runMigrations() — TypeORM detects 18 as applied, executes
- *            only migration 19 (AddStableDomainCheckConstraints).
- *   Stage 4: Verify 19 migration records, all existing rows/values
+ *   Stage 3: Create a NEW DataSource with every currently discovered migration
+ *            class. showMigrations() returns true. runMigrations() executes
+ *            Phase 2A first, followed by any later additive migrations.
+ *   Stage 4: Verify every discovered migration is recorded, all existing rows/values
  *            unchanged (exact string comparison), 3 CHECK constraints
  *            exist via pg_constraint + pg_get_constraintdef, and are
  *            validated (convalidated = true).
@@ -34,9 +33,9 @@
  *            chk_broker_connections_account_type.
  *   Stage 7: Fail-closed test (separate disposable DB) — apply migrations
  *            1-18, insert a trade with direction='HOLD', attempt
- *            migration 19 via TypeORM runMigrations() — must fail; verify
- *            the 'HOLD' row still exists unchanged; verify migration 19 is
- *            NOT recorded in the migrations table.
+ *            all pending migrations via TypeORM runMigrations() — Phase 2A
+ *            must fail first; verify the 'HOLD' row still exists unchanged
+ *            and no pending migration is recorded in the migrations table.
  *
  * Usage (inside the db-migration-compat GitHub Actions workflow):
  *   DB_HOST=localhost DB_PORT=5432 DB_NAME=irexpro_scenario_f \
@@ -56,6 +55,7 @@ const MIGRATIONS_DIR = path.resolve(__dirname, '../src/database/migrations');
 // The timestamp boundary between the 18 pre-Phase-2A migrations and the
 // new Phase 2A migration (1752500000000).
 const PHASE2A_BOUNDARY = 1752400000000;
+const PHASE2A_MIGRATION_FILE = '1752500000000-AddStableDomainCheckConstraints.ts';
 
 // The separate disposable DB used for the Stage 7 fail-closed test.
 const ORPHAN_DB_NAME = 'irexpro_scenario_f_orphan';
@@ -201,26 +201,26 @@ async function main(): Promise<void> {
   const user = process.env.DB_USER ?? 'postgres';
   const password = process.env.DB_PASSWORD ?? '';
 
-  // Load migration class constructors and split into the 18-migration
-  // pre-Phase-2A subset and the full 19-migration set.
+  // Load migration class constructors and split into the fixed 18-migration
+  // pre-Phase-2A subset and every additive migration that follows it.
   const allFiles = getMigrationFiles();
   const allMigrationClasses = allFiles.map(loadMigrationClass);
   const originalFiles = allFiles.filter(
     (f) => parseInt(f.split('-')[0], 10) <= PHASE2A_BOUNDARY,
   );
   const originalMigrationClasses = originalFiles.map(loadMigrationClass);
-  const newFiles = allFiles.filter(
+  const pendingFiles = allFiles.filter(
     (f) => parseInt(f.split('-')[0], 10) > PHASE2A_BOUNDARY,
   );
 
   console.log(
-    `  ${allFiles.length} total migration files (${originalFiles.length} original + ${newFiles.length} new)`,
+    `  ${allFiles.length} total migration files (${originalFiles.length} original + ${pendingFiles.length} pending)`,
   );
   assert(originalFiles.length === 18, `expected 18 original migrations, found ${originalFiles.length}`);
-  assert(newFiles.length === 1, `expected 1 new Phase 2A migration, found ${newFiles.length}`);
+  assert(pendingFiles.length >= 1, 'at least 1 post-boundary migration is present');
   assert(
-    newFiles[0] === '1752500000000-AddStableDomainCheckConstraints.ts',
-    `new migration filename correct (got ${newFiles[0]})`,
+    pendingFiles[0] === PHASE2A_MIGRATION_FILE,
+    `Phase 2A remains the first post-boundary migration (got ${pendingFiles[0]})`,
   );
 
   // ─── Stage 1: Apply original 18 migrations via real TypeORM ────────────
@@ -425,17 +425,24 @@ async function main(): Promise<void> {
     await seedClient.end();
   }
 
-  // ─── Stage 3: Apply Phase 2A migration via real TypeORM ───────────────
-  console.log('\n=== Stage 3: Apply Phase 2A migration via TypeORM runMigrations() ===');
+  // ─── Stage 3: Apply Phase 2A and later migrations via real TypeORM ────
+  console.log('\n=== Stage 3: Apply pending migrations via TypeORM runMigrations() ===');
 
   const ds2 = createDataSource(host, port, database, user, password, allMigrationClasses);
   await ds2.initialize();
 
   const hasPending = await ds2.showMigrations();
-  assert(hasPending === true, 'TypeORM detects 1 pending migration (Phase 2A)');
+  assert(
+    hasPending === true,
+    `TypeORM detects ${pendingFiles.length} pending migration(s), beginning with Phase 2A`,
+  );
 
-  await ds2.runMigrations();
-  console.log('  TypeORM runMigrations() completed for all 19 migrations');
+  const appliedMigrations = await ds2.runMigrations();
+  assert(
+    appliedMigrations.length === pendingFiles.length,
+    `TypeORM applied all ${pendingFiles.length} pending migration(s)`,
+  );
+  console.log(`  TypeORM runMigrations() completed for all ${allFiles.length} migrations`);
   await ds2.destroy();
 
   // ─── Stage 4: Verify migration count, data preservation, constraint catalog
@@ -444,9 +451,12 @@ async function main(): Promise<void> {
   const verifyClient = new Client({ host, port, database, user, password });
   await verifyClient.connect();
   try {
-    // 4a. 19 migration records
+    // 4a. Every discovered migration has a tracking record
     const migrationCount = await countMigrations(verifyClient);
-    assert(migrationCount === 19, `TypeORM migrations table has 19 entries (got ${migrationCount})`);
+    assert(
+      migrationCount === allFiles.length,
+      `TypeORM migrations table has ${allFiles.length} entries (got ${migrationCount})`,
+    );
 
     // 4b. Row counts unchanged
     const rowCountsAfter = (
@@ -768,9 +778,9 @@ async function main(): Promise<void> {
       `orphan trade direction is 'HOLD' before migration attempt`,
     );
 
-    // Attempt to run ALL 19 migrations via TypeORM — migration 19's
-    // preflight must detect the invalid 'HOLD' value and throw, causing
-    // TypeORM to roll back the migration transaction.
+    // Attempt to run every pending migration via TypeORM. Phase 2A is first,
+    // so its preflight must detect the invalid 'HOLD' value and throw before
+    // any later additive migration can run.
     const orphanDs2 = createDataSource(host, port, ORPHAN_DB_NAME, user, password, allMigrationClasses);
     await orphanDs2.initialize();
     try {
@@ -815,11 +825,11 @@ async function main(): Promise<void> {
       'orphan HOLD trade id unchanged after failed migration',
     );
 
-    // Verify migration 19 is NOT recorded
+    // Verify Phase 2A and every later migration are NOT recorded
     const orphanCount = await countMigrations(orphanSeedClient);
     assert(
       orphanCount === 18,
-      `migration 19 NOT recorded in orphan DB (migrations table has ${orphanCount} entries, expected 18)`,
+      `no pending migration recorded in orphan DB (migrations table has ${orphanCount} entries, expected 18)`,
     );
 
     // Verify the CHECK constraint was NOT created (rollback worked)
