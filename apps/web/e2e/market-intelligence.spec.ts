@@ -94,6 +94,56 @@ test.describe('Market Intelligence', () => {
     assertNoExternalRequests(page);
   });
 
+  test('clears previous quote and chart while a refresh is still pending', async ({ page }) => {
+    let marketRequests = 0;
+    let releaseRefresh!: () => void;
+    const refreshGate = new Promise<void>((resolve) => {
+      releaseRefresh = resolve;
+    });
+    const refreshedSnapshot = {
+      ...freshSnapshot,
+      timeframe: 'M15',
+      quote: {
+        ...freshSnapshot.quote,
+        bid: '1.17101',
+        ask: '1.17113',
+      },
+    };
+
+    setupErrorCollectors(page);
+    await page.route('**/api/v1/**', async (route) => {
+      const url = new URL(route.request().url());
+      const apiPath = url.pathname.split('/api/v1/')[1] ?? '';
+      const fulfill = (status: number, responseBody: unknown) =>
+        route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(responseBody) });
+      if (apiPath === 'auth/refresh') return fulfill(200, mockAuthTokens);
+      if (apiPath === 'auth/me') return fulfill(200, mockAuthUser);
+      if (apiPath === 'auth/logout') return fulfill(200, { message: 'Logged out' });
+      if (apiPath === 'market-data/intelligence') {
+        marketRequests += 1;
+        if (marketRequests === 1) return fulfill(200, freshSnapshot);
+        await refreshGate;
+        return fulfill(200, refreshedSnapshot);
+      }
+      return fulfill(200, {});
+    });
+
+    await page.goto('/market');
+    await expect(page.getByText('1.17001', { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'M15' }).click();
+    await expect(page.getByText('Loading broker market data', { exact: true })).toBeVisible();
+    await expect(page.getByText('1.17001', { exact: true })).toHaveCount(0);
+    await expect(page.getByRole('img', { name: /candlestick chart/i })).toHaveCount(0);
+
+    releaseRefresh();
+    await expect(page.getByText('1.17101', { exact: true })).toBeVisible();
+    await expect(page.getByRole('img', { name: /candlestick chart with 4 broker candles/i })).toBeVisible();
+    assertNoConsoleErrors(page);
+    assertNoFailedRequests(page);
+    assertNoExternalRequests(page);
+  });
+
   test('supports instrument and timeframe refresh without preserving old data on failure', async ({ page }) => {
     let marketRequests = 0;
     setupErrorCollectors(page);
