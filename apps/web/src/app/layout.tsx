@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import './terminal.css';
+import './cockpit.css';
 import './terminal-mobile.css';
 import { AuthProvider } from '@/context/auth-context';
 import { NotificationProvider } from '@/components/notifications/NotificationProvider';
