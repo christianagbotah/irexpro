@@ -13,7 +13,7 @@
     "test:e2e": "npx playwright test",
     "test:e2e:ui": "npx playwright test --ui",
     "test:e2e:report": "npx playwright show-report",
-    "test:e2e:evidence": "cross-env E2E_CAPTURE_EVIDENCE=1 playwright test e2e/evidence.spec.ts --project=mobile-standard --project=tablet-portrait --project=desktop"
+    "test:e2e:evidence": "cross-env E2E_CAPTURE_EVIDENCE=1 playwright test e2e/evidence.spec.ts e2e/cockpit-evidence.spec.ts --project=mobile-standard --project=tablet-portrait --project=desktop"
   },
   "dependencies": {
     "@irexpro/api-client": "workspace:*",
@@ -27,8 +27,8 @@
     "@axe-core/playwright": "^4.12.1",
     "@playwright/test": "^1.62.1",
     "@testing-library/jest-dom": "^6.9.1",
-    "@testing-library/react": "^16.3.2",
-    "@testing-library/user-event": "^14.6.1",
+    "@testing-library/react": "^16.3.1",
+    "@testing-library/user-event": "^14.6.0",
     "@types/jest": "^29.5.14",
     "@types/node": "20.14.10",
     "@types/react": "18.3.3",
