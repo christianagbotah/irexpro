@@ -8,25 +8,22 @@ import { BrokerConnection } from '../broker/entities/broker-connection.entity';
 import { BrokerConnectionStatus } from '../broker/interfaces/broker-adapter.interface';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../../common/enums/audit-action.enum';
+import { EligibilityService } from './eligibility.service';
 
 /**
- * OnboardingService — Sprint 29 trader onboarding aggregator.
- *
- * Centralizes the logic for determining a user's onboarding progress and
- * trading readiness. Used by:
- *   - GET /users/me/onboarding-status (frontend onboarding wizard)
- *   - Admin user detail (onboarding visibility)
- *   - canStartTrading gate (called before any automated trading session)
+ * OnboardingService — centralized trader onboarding/readiness aggregator.
  *
  * canStartTrading requires ALL of:
- *   1. User is ACTIVE (not SUSPENDED/CLOSED)
- *   2. Profile is complete (firstName + lastName + countryCode + timezone + preferredCurrency + tradingExperienceLevel)
- *   3. Risk profile exists AND risk acknowledgement is accepted
- *   4. Kill switch is NOT active
- *   5. Broker connection is CONNECTED (healthy)
+ *   1. User is ACTIVE (not SUSPENDED/PERMANENTLY_LOCKED/CLOSED)
+ *   2. Profile is complete
+ *   3. Sprint 44 eligibility gate is complete: jurisdiction ELIGIBLE and every
+ *      exact current disclosure version/hash has immutable consent evidence
+ *   4. Risk profile exists AND risk acknowledgement is accepted
+ *   5. Kill switch is NOT active
+ *   6. Broker connection is CONNECTED (healthy)
  *
- * If any step is missing, `missingSteps` lists what's needed and `nextStep`
- * points to the first incomplete step.
+ * The service is the first hard gate inside TradingService.startTradingSession.
+ * Eligibility never bypasses or replaces broker, Risk Engine, or Execution Engine gates.
  */
 @Injectable()
 export class OnboardingService {
@@ -42,6 +39,7 @@ export class OnboardingService {
     @InjectRepository(BrokerConnection)
     private brokerConnectionRepo: Repository<BrokerConnection>,
     private auditService: AuditService,
+    private eligibilityService: EligibilityService,
   ) {}
 
   /**
@@ -56,14 +54,14 @@ export class OnboardingService {
     });
 
     if (!user) {
-      // Should not happen (JWT auth ensures the user exists), but handle safely
       return {
         profileCompleted: false,
+        eligibilityCompleted: false,
         riskProfileCompleted: false,
         brokerConnected: false,
         brokerConnectionStatus: 'NONE' as const,
         canStartTrading: false,
-        missingSteps: ['PROFILE', 'RISK_PROFILE', 'BROKER_CONNECTION'],
+        missingSteps: ['PROFILE', 'ELIGIBILITY', 'RISK_PROFILE', 'BROKER_CONNECTION'],
         nextStep: 'PROFILE',
       };
     }
@@ -71,40 +69,45 @@ export class OnboardingService {
     // 1. Profile completion
     const profileCompleted = this.isProfileComplete(user);
 
-    // 2. Risk profile completion (exists + acknowledgement accepted)
+    // 2. Eligibility + exact current disclosure evidence (Sprint 44)
+    // Fail closed: a missing/unknown jurisdiction, required review, denial, or
+    // missing disclosure evidence all keep canStartTrading=false.
+    const eligibility = await this.eligibilityService.getStatus(userId);
+    const eligibilityCompleted = eligibility.canProceed;
+
+    // 3. Risk profile completion (exists + acknowledgement accepted)
     const riskProfile = await this.riskProfileRepo.findOne({ where: { userId } });
     const riskProfileCompleted = this.isRiskProfileComplete(riskProfile);
 
-    // 3. Broker connection
+    // 4. Broker connection
     const activeConnection = await this.findActiveBrokerConnection(userId);
     const brokerConnected = !!activeConnection;
     const brokerConnectionStatus: BrokerConnectionStatus | 'NONE' = activeConnection
       ? activeConnection.status
       : 'NONE';
 
-    // 4. Kill switch (if risk profile exists)
+    // 5. Kill switch (if risk profile exists)
     const killSwitchActive = riskProfile?.killSwitchActive ?? false;
 
-    // 5. User status
+    // 6. User status
     const userActive = user.status === UserStatus.ACTIVE;
 
-    // Aggregate missing steps
     const missingSteps: OnboardingStep[] = [];
     if (!profileCompleted) missingSteps.push('PROFILE');
+    if (!eligibilityCompleted) missingSteps.push('ELIGIBILITY');
     if (!riskProfileCompleted) missingSteps.push('RISK_PROFILE');
     if (!brokerConnected) missingSteps.push('BROKER_CONNECTION');
 
     const canStartTrading =
       userActive &&
       profileCompleted &&
+      eligibilityCompleted &&
       riskProfileCompleted &&
       brokerConnected &&
       !killSwitchActive;
 
-    // Determine next step (first incomplete step)
     const nextStep: OnboardingNextStep = canStartTrading ? 'READY' : (missingSteps[0] ?? 'READY');
 
-    // Audit only when the user is fully ready (avoids spam on every dashboard poll)
     if (canStartTrading) {
       await this.auditService
         .log({
@@ -112,7 +115,11 @@ export class OnboardingService {
           action: AuditAction.TRADING_READINESS_CHECKED,
           resourceType: 'User',
           resourceId: userId,
-          metadata: { canStartTrading: true, brokerConnectionId: activeConnection?.id },
+          metadata: {
+            canStartTrading: true,
+            eligibilityPolicyVersion: eligibility.policyVersion,
+            brokerConnectionId: activeConnection?.id,
+          },
         })
         .catch(() => {
           /* audit never throws */
@@ -121,6 +128,7 @@ export class OnboardingService {
 
     return {
       profileCompleted,
+      eligibilityCompleted,
       riskProfileCompleted,
       brokerConnected,
       brokerConnectionStatus,
@@ -132,8 +140,8 @@ export class OnboardingService {
 
   /**
    * Hard gate: can the user start automated trading?
-   * Returns { allowed, missingSteps } — the caller throws ForbiddenException
-   * if not allowed, with the missing steps in the message.
+   * Returns { allowed, missingSteps } — TradingService throws a structured 403
+   * before touching broker/risk/session execution when this fails.
    */
   async canStartTrading(
     userId: string,
@@ -145,17 +153,6 @@ export class OnboardingService {
     };
   }
 
-  /**
-   * Profile is complete when the user has provided the core identity fields
-   * needed for trading onboarding. Does NOT require email or phone specifically
-   * (phone-only users are valid). The required fields are:
-   *   - firstName (non-null)
-   *   - lastName (non-null)
-   *   - countryCode (non-null)
-   *   - timezone (non-null)
-   *   - preferredCurrency (non-null)
-   *   - tradingExperienceLevel (non-null)
-   */
   private isProfileComplete(user: User): boolean {
     const profile = user.profile;
     if (!profile) return false;
@@ -169,30 +166,14 @@ export class OnboardingService {
     );
   }
 
-  /**
-   * Risk profile is complete when it exists AND the user has explicitly
-   * accepted the risk acknowledgement. The profile is auto-created with
-   * conservative defaults, so the existence + acknowledgement are the gates.
-   */
   private isRiskProfileComplete(riskProfile: RiskProfile | null): boolean {
     if (!riskProfile) return false;
     return riskProfile.riskAcknowledgementAccepted === true;
   }
 
   /**
-   * Find the user's active (CONNECTED) broker connection. Returns null if none.
-   *
-   * Hotfix: selects ONLY the fields needed for onboarding readiness — never
-   * loads encrypted credentials, API keys, or sync metadata. This is
-   * defense-in-depth: even if the entity had credential fields selected by
-   * default, this query would not include them.
-   *
-   * Resilience: if the query fails (e.g. DB infrastructure error), logs the
-   * error and returns null — the caller returns `brokerConnected: false` with
-   * `brokerConnectionStatus: 'NONE'`. This prevents a 500 on the onboarding
-   * status endpoint when the broker table has a schema issue or the DB is
-   * unreachable. Database errors are NOT falsely converted into a healthy
-   * status — the user is treated as not-ready (canStartTrading = false).
+   * Select ONLY fields needed for onboarding readiness; credentials and broker
+   * provider secrets are never loaded. Query failures fail closed to no broker.
    */
   private async findActiveBrokerConnection(
     userId: string,
@@ -219,9 +200,6 @@ export class OnboardingService {
         'id' | 'status' | 'lastHealthCheckAt' | 'consecutiveFailureCount' | 'liveTradingEnabled'
       > | null;
     } catch (err) {
-      // Log the DB error (without credentials — none are in this query) and
-      // return null. The user is treated as not having a broker connection.
-      // This is a FAIL-CLOSED behavior: canStartTrading = false.
       this.logger.error(
         `Failed to query broker connection for onboarding status (user ${userId}): ${(err as Error).message}`,
       );
@@ -231,13 +209,14 @@ export class OnboardingService {
 }
 
 /** The onboarding steps a user must complete before trading. */
-export type OnboardingStep = 'PROFILE' | 'RISK_PROFILE' | 'BROKER_CONNECTION';
+export type OnboardingStep = 'PROFILE' | 'ELIGIBILITY' | 'RISK_PROFILE' | 'BROKER_CONNECTION';
 
 /** The next step the user should take, or READY if all complete. */
 export type OnboardingNextStep = OnboardingStep | 'READY';
 
 export interface OnboardingStatus {
   profileCompleted: boolean;
+  eligibilityCompleted: boolean;
   riskProfileCompleted: boolean;
   brokerConnected: boolean;
   /** 'NONE' when the user has no broker connection at all. */
