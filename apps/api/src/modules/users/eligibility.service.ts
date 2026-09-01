@@ -7,6 +7,7 @@ import { AuditAction } from '../../common/enums/audit-action.enum';
 import { AuditService } from '../audit/audit.service';
 import { AcceptEligibilityDisclosuresDto } from './dto/accept-eligibility-disclosures.dto';
 import { ReviewUserEligibilityDto } from './dto/review-user-eligibility.dto';
+import { ReviewUserKycDto } from './dto/review-user-kyc.dto';
 import {
   EligibilityDisclosureKey,
   UserDisclosureConsent,
@@ -15,6 +16,8 @@ import {
   EligibilityReviewDecision,
   UserEligibilityReview,
 } from './entities/user-eligibility-review.entity';
+import { KycReviewDecision, UserKycReview } from './entities/user-kyc-review.entity';
+import { KycStatus } from './entities/user-profile.entity';
 import { User, UserStatus } from './entities/user.entity';
 
 export type EligibilityJurisdictionStatus =
@@ -24,6 +27,7 @@ export type EligibilityJurisdictionStatus =
   | 'INELIGIBLE';
 
 export type EligibilityDecisionSource = 'POLICY' | 'ADMIN_REVIEW';
+export type EligibilityAgeStatus = 'MISSING_DOB' | 'INVALID_DOB' | 'UNDER_18' | 'ADULT';
 
 export interface EligibilityDisclosureView {
   key: EligibilityDisclosureKey;
@@ -48,6 +52,9 @@ export interface EligibilityStatusView {
   decisionSource: EligibilityDecisionSource;
   reasonCode: string;
   reviewedAt: string | null;
+  ageStatus: EligibilityAgeStatus;
+  kycStatus: KycStatus;
+  identityReasonCode: string;
   disclosures: EligibilityDisclosureView[];
   consents: EligibilityConsentEvidenceView[];
   missingConsentKeys: EligibilityDisclosureKey[];
@@ -61,6 +68,16 @@ export interface EligibilityReviewQueueItem {
   policyVersion: string;
   jurisdictionStatus: 'REVIEW_REQUIRED';
   reasonCode: string;
+}
+
+export interface KycReviewQueueItem {
+  userId: string;
+  email: string | null;
+  countryCode: string | null;
+  dateOfBirth: string;
+  ageStatus: 'ADULT';
+  kycStatus: KycStatus.NONE | KycStatus.PENDING;
+  reasonCode: 'KYC_REQUIRED' | 'KYC_PENDING';
 }
 
 interface JurisdictionDecision {
@@ -113,12 +130,14 @@ export class EligibilityService {
     private readonly consentRepo: Repository<UserDisclosureConsent>,
     @InjectRepository(UserEligibilityReview)
     private readonly reviewRepo: Repository<UserEligibilityReview>,
+    @InjectRepository(UserKycReview)
+    private readonly kycReviewRepo: Repository<UserKycReview>,
     private readonly configService: ConfigService,
     private readonly auditService: AuditService,
   ) {}
 
   async getStatus(userId: string): Promise<EligibilityStatusView> {
-    const user = await this.userRepo.findOne({ where: { id: userId } });
+    const user = await this.userRepo.findOne({ where: { id: userId }, relations: ['profile'] });
     if (!user) throw new NotFoundException('User not found.');
     return this.buildStatus(user);
   }
@@ -127,7 +146,7 @@ export class EligibilityService {
     userId: string,
     dto: AcceptEligibilityDisclosuresDto,
   ): Promise<EligibilityStatusView> {
-    const user = await this.userRepo.findOne({ where: { id: userId } });
+    const user = await this.userRepo.findOne({ where: { id: userId }, relations: ['profile'] });
     if (!user) throw new NotFoundException('User not found.');
 
     const currentDefinitions = this.currentDisclosures();
@@ -196,8 +215,6 @@ export class EligibilityService {
 
     const queue: EligibilityReviewQueueItem[] = [];
     for (const user of users) {
-      // Keep this explicit guard even though the repository query filters by
-      // ACTIVE. It is defense in depth against stale/mocked repository results.
       if (user.status !== UserStatus.ACTIVE || !user.countryCode) continue;
 
       const decision = await this.evaluateJurisdiction(user.id, user.countryCode);
@@ -215,12 +232,41 @@ export class EligibilityService {
     return queue;
   }
 
+  async listKycReviewQueue(): Promise<KycReviewQueueItem[]> {
+    const users = await this.userRepo.find({
+      where: { status: UserStatus.ACTIVE },
+      relations: ['profile'],
+      order: { createdAt: 'ASC' },
+      take: 200,
+    });
+
+    const queue: KycReviewQueueItem[] = [];
+    for (const user of users) {
+      const profile = user.profile;
+      if (user.status !== UserStatus.ACTIVE || !profile?.dateOfBirth) continue;
+      if (this.evaluateAge(profile.dateOfBirth) !== 'ADULT') continue;
+      if (profile.kycStatus !== KycStatus.NONE && profile.kycStatus !== KycStatus.PENDING) continue;
+
+      queue.push({
+        userId: user.id,
+        email: user.email,
+        countryCode: user.countryCode?.toUpperCase() ?? null,
+        dateOfBirth: profile.dateOfBirth,
+        ageStatus: 'ADULT',
+        kycStatus: profile.kycStatus,
+        reasonCode: profile.kycStatus === KycStatus.PENDING ? 'KYC_PENDING' : 'KYC_REQUIRED',
+      });
+    }
+
+    return queue;
+  }
+
   async reviewUser(
     userId: string,
     reviewerUserId: string,
     dto: ReviewUserEligibilityDto,
   ): Promise<EligibilityStatusView> {
-    const user = await this.userRepo.findOne({ where: { id: userId } });
+    const user = await this.userRepo.findOne({ where: { id: userId }, relations: ['profile'] });
     if (!user) throw new NotFoundException('User not found.');
     if (!user.countryCode) {
       throw new BadRequestException('The user must complete country information before review.');
@@ -258,6 +304,60 @@ export class EligibilityService {
         userId,
         countryCode,
         policyVersion: review.policyVersion,
+        decision: review.decision,
+        reasonCode: review.reasonCode,
+      },
+    });
+
+    return this.buildStatus(user);
+  }
+
+  async reviewKyc(
+    userId: string,
+    reviewerUserId: string,
+    dto: ReviewUserKycDto,
+  ): Promise<EligibilityStatusView> {
+    const user = await this.userRepo.findOne({ where: { id: userId }, relations: ['profile'] });
+    if (!user) throw new NotFoundException('User not found.');
+    if (!user.profile?.dateOfBirth) {
+      throw new BadRequestException('The user must provide a date of birth before KYC review.');
+    }
+
+    const ageStatus = this.evaluateAge(user.profile.dateOfBirth);
+    if (ageStatus !== 'ADULT') {
+      throw new BadRequestException('KYC approval is not available unless the adult-age requirement is met.');
+    }
+
+    const review = await this.kycReviewRepo.save(
+      this.kycReviewRepo.create({
+        userId,
+        dateOfBirth: user.profile.dateOfBirth,
+        decision: dto.decision,
+        reasonCode: dto.reasonCode.trim().toUpperCase(),
+        reviewerUserId,
+        reviewerNote: dto.reviewerNote?.trim() || null,
+      }),
+    );
+
+    const reviewedAt = review.createdAt ?? new Date();
+    user.profile.kycSubmittedAt = user.profile.kycSubmittedAt ?? reviewedAt;
+    if (dto.decision === KycReviewDecision.APPROVED) {
+      user.profile.kycStatus = KycStatus.APPROVED;
+      user.profile.kycApprovedAt = reviewedAt;
+    } else {
+      user.profile.kycStatus = KycStatus.REJECTED;
+      user.profile.kycApprovedAt = null;
+    }
+    await this.userRepo.save(user);
+
+    await this.auditService.log({
+      actorUserId: reviewerUserId,
+      action: AuditAction.ADMIN_ACTION,
+      resourceType: 'UserKycReview',
+      resourceId: review.id,
+      metadata: {
+        actionType: 'KYC_REVIEW_RECORDED',
+        userId,
         decision: review.decision,
         reasonCode: review.reasonCode,
       },
@@ -304,6 +404,10 @@ export class EligibilityService {
         : [];
     });
 
+    const ageStatus = this.evaluateAge(user.profile?.dateOfBirth ?? null);
+    const kycStatus = user.profile?.kycStatus ?? KycStatus.NONE;
+    const identityReasonCode = this.identityReason(ageStatus, kycStatus);
+
     return {
       policyVersion: this.policyVersion(),
       countryCode,
@@ -311,10 +415,17 @@ export class EligibilityService {
       decisionSource: decision.source,
       reasonCode: decision.reasonCode,
       reviewedAt: decision.reviewedAt?.toISOString() ?? null,
+      ageStatus,
+      kycStatus,
+      identityReasonCode,
       disclosures,
       consents,
       missingConsentKeys,
-      canProceed: decision.status === 'ELIGIBLE' && missingConsentKeys.length === 0,
+      canProceed:
+        decision.status === 'ELIGIBLE' &&
+        ageStatus === 'ADULT' &&
+        kycStatus === KycStatus.APPROVED &&
+        missingConsentKeys.length === 0,
     };
   }
 
@@ -390,6 +501,41 @@ export class EligibilityService {
         : 'UNCLASSIFIED_JURISDICTION',
       reviewedAt: null,
     };
+  }
+
+  private evaluateAge(dateOfBirth: string | null): EligibilityAgeStatus {
+    if (!dateOfBirth) return 'MISSING_DOB';
+
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateOfBirth);
+    if (!match) return 'INVALID_DOB';
+
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const dob = new Date(Date.UTC(year, month - 1, day));
+    if (
+      dob.getUTCFullYear() !== year ||
+      dob.getUTCMonth() !== month - 1 ||
+      dob.getUTCDate() !== day
+    ) {
+      return 'INVALID_DOB';
+    }
+
+    const now = new Date();
+    let age = now.getUTCFullYear() - year;
+    const monthDelta = now.getUTCMonth() - (month - 1);
+    if (monthDelta < 0 || (monthDelta === 0 && now.getUTCDate() < day)) age -= 1;
+    return age >= 18 ? 'ADULT' : 'UNDER_18';
+  }
+
+  private identityReason(ageStatus: EligibilityAgeStatus, kycStatus: KycStatus): string {
+    if (ageStatus === 'MISSING_DOB') return 'DOB_REQUIRED';
+    if (ageStatus === 'INVALID_DOB') return 'DOB_INVALID';
+    if (ageStatus === 'UNDER_18') return 'AGE_REQUIREMENT_NOT_MET';
+    if (kycStatus === KycStatus.APPROVED) return 'IDENTITY_APPROVED';
+    if (kycStatus === KycStatus.PENDING) return 'KYC_PENDING';
+    if (kycStatus === KycStatus.REJECTED) return 'KYC_REJECTED';
+    return 'KYC_REQUIRED';
   }
 
   private currentDisclosures(): EligibilityDisclosureView[] {
