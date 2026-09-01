@@ -117,7 +117,7 @@ test.describe('Sprint 44 eligibility onboarding gate', () => {
 
     await expect(page.getByRole('heading', { level: 1, name: 'Eligibility & disclosures' })).toBeVisible();
     await expect(page.getByText('Step 2 of 4', { exact: true })).toBeVisible();
-    await expect(page.getByText('eligibility.2026-09', { exact: true })).toBeVisible();
+    await expect(page.getByText(/eligibility\.2026-09/)).toBeVisible();
     await expect(page.getByText('4 disclosures outstanding', { exact: true })).toBeVisible();
 
     for (const disclosure of disclosureDefinitions) {
@@ -181,9 +181,10 @@ test.describe('Sprint 44 eligibility onboarding gate', () => {
     await page.goto('/onboarding/eligibility');
 
     await expect(page.getByRole('heading', { level: 2, name: 'Eligibility unavailable' })).toBeVisible();
-    await expect(page.getByText(/failed frontend-safe contract verification/i)).toBeVisible();
+    await expect(page.getByRole('alert').filter({ hasText: /something went wrong/i })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Accept required disclosures' })).toHaveCount(0);
     await expect(page.getByText('must-never-reach-the-browser-contract', { exact: false })).toHaveCount(0);
+    await expect(page.getByText(/frontend-safe contract verification/i)).toHaveCount(0);
 
     assertNoConsoleErrors(page);
     assertNoFailedRequests(page);
