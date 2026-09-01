@@ -174,6 +174,8 @@ export default function EligibilityOnboardingPage() {
     setSaving(true);
     try {
       const next = await eligibilityApi.acceptDisclosures({
+        policyVersion: status.policyVersion,
+        policyFingerprint: status.policyFingerprint,
         acceptances: missing.map((item) => ({
           key: item.key,
           version: item.version,
@@ -258,6 +260,7 @@ export default function EligibilityOnboardingPage() {
               <dl style={{ display: 'grid', gap: 'var(--space-2)', marginTop: 'var(--space-4)' }}>
                 <div><strong>Country:</strong> {status.countryCode ?? 'Not provided'}</div>
                 <div><strong>Policy:</strong> {status.policyVersion}</div>
+                <div><strong>Policy fingerprint:</strong> {status.policyFingerprint.slice(0, 12)}…</div>
                 <div><strong>Decision source:</strong> {status.decisionSource.replaceAll('_', ' ')}</div>
                 <div><strong>Reason:</strong> {status.reasonCode.replaceAll('_', ' ')}</div>
               </dl>
@@ -292,7 +295,7 @@ export default function EligibilityOnboardingPage() {
                   : `${status.missingConsentKeys.length} disclosures outstanding`}
               </h2>
               <p className="muted" style={{ lineHeight: 1.6 }}>
-                Acceptance is versioned and bound to the SHA-256 digest of the exact disclosure copy.
+                Acceptance is bound to the active policy fingerprint and the SHA-256 digest of each exact disclosure copy. A policy change requires fresh evidence.
               </p>
               <div style={{ marginTop: 'var(--space-4)' }}>
                 <Badge variant={status.canProceed ? 'success' : 'warning'}>
