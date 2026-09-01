@@ -14,7 +14,7 @@ describe('Sprint 44 — eligibility disclosure migration contract', () => {
   );
   const downSource = source.slice(source.indexOf('public async down'));
 
-  it('creates append-only disclosure evidence bound to exact version and content hash', () => {
+  it('creates disclosure evidence bound to exact version and content hash', () => {
     expect(upSource).toContain('identity.user_disclosure_consents');
     expect(upSource).toContain('disclosure_version');
     expect(upSource).toContain('content_sha256');
@@ -35,7 +35,7 @@ describe('Sprint 44 — eligibility disclosure migration contract', () => {
     }
   });
 
-  it('creates immutable jurisdiction review evidence tied to country and policy version', () => {
+  it('creates jurisdiction review evidence tied to country and policy version', () => {
     expect(upSource).toContain('identity.user_eligibility_reviews');
     expect(upSource).toContain('country_code');
     expect(upSource).toContain('policy_version');
@@ -44,9 +44,21 @@ describe('Sprint 44 — eligibility disclosure migration contract', () => {
     expect(upSource).toContain('idx_user_eligibility_reviews_lookup');
   });
 
+  it('enforces append-only evidence at PostgreSQL for update, delete, and truncate', () => {
+    expect(upSource).toContain('identity.reject_eligibility_evidence_mutation');
+    expect(upSource).toContain('trg_user_disclosure_consents_immutable');
+    expect(upSource).toContain('trg_user_eligibility_reviews_immutable');
+    expect(upSource.match(/BEFORE UPDATE OR DELETE OR TRUNCATE/g)).toHaveLength(2);
+    expect(upSource.match(/FOR EACH STATEMENT/g)).toHaveLength(2);
+    expect(upSource).toContain("ERRCODE = '55000'");
+  });
+
   it('uses non-cascading reversible cleanup without mutating identity.users', () => {
     expect(downSource).toContain('DROP TABLE IF EXISTS identity.user_eligibility_reviews');
     expect(downSource).toContain('DROP TABLE IF EXISTS identity.user_disclosure_consents');
+    expect(downSource).toContain(
+      'DROP FUNCTION IF EXISTS identity.reject_eligibility_evidence_mutation()',
+    );
     expect(downSource).not.toMatch(/CASCADE/i);
     expect(upSource).not.toMatch(/ALTER TABLE identity\.users/i);
   });
