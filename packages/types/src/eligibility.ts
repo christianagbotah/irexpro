@@ -40,6 +40,7 @@ export interface EligibilityStatusView {
   reasonCode: string;
   reviewedAt: string | null;
   ageStatus: EligibilityAgeStatus;
+  /** Effective KYC state resolved from current-DOB immutable review evidence. */
   kycStatus: KycStatus;
   identityReasonCode: string;
   disclosures: EligibilityDisclosureView[];
