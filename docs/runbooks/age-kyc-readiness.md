@@ -12,11 +12,13 @@ A user cannot complete the eligibility/readiness gate unless all of the followin
 
 - a valid date of birth is stored;
 - the server evaluates the account holder as at least 18 years old;
-- KYC state is `APPROVED`;
+- the latest immutable KYC review for the user and **current DOB** is `APPROVED`;
 - the jurisdiction gate is `ELIGIBLE`;
 - every current required disclosure has exact version/hash consent evidence.
 
-Missing DOB, invalid DOB, under-18 age, KYC `NONE`, `PENDING`, or `REJECTED` all keep readiness blocked.
+The mutable profile `kyc_status` is not sufficient evidence of approval. A legacy or stale `APPROVED` flag without a matching append-only approval row for the current DOB is treated as KYC required and remains blocked.
+
+Missing DOB, invalid DOB, under-18 age, KYC `NONE`, `PENDING`, `REJECTED`, or missing current-DOB approval evidence all keep readiness blocked.
 
 ## DOB changes
 
@@ -26,7 +28,7 @@ A date-of-birth change is treated as an identity-evidence change. When DOB chang
 - `kyc_submitted_at` to `NULL`;
 - `kyc_approved_at` to `NULL`.
 
-Previous immutable KYC review rows remain in the evidence ledger for audit but no longer establish the current mutable KYC state.
+Previous immutable KYC review rows remain in the evidence ledger for audit but are bound to the DOB that was reviewed. They do not establish approval for a different current DOB.
 
 ## Admin review procedure
 
@@ -38,11 +40,15 @@ Previous immutable KYC review rows remain in the evidence ledger for audit but n
 6. Check the explicit confirmation that the approved compliance process was completed.
 7. Submit the decision.
 
-The API independently refuses KYC approval unless the current stored DOB satisfies the adult-age rule.
+The API independently refuses KYC approval unless the current stored DOB satisfies the adult-age rule. The resulting review evidence is bound to that exact DOB. If DOB later changes, a new approved review is required.
 
-## Evidence immutability
+## Evidence authority and immutability
 
-`identity.user_kyc_reviews` is append-only. PostgreSQL blocks `UPDATE`, `DELETE`, and `TRUNCATE` with SQLSTATE `55000`. Corrections are made by appending a new review after the underlying current profile information is valid; prior evidence is never rewritten.
+`identity.user_kyc_reviews` is the authoritative approval evidence for readiness. Readiness resolves the latest review matching both `user_id` and the current `date_of_birth`; an `APPROVED` mutable profile flag without that evidence is never trusted.
+
+The ledger is append-only. PostgreSQL blocks `UPDATE`, `DELETE`, and `TRUNCATE` with SQLSTATE `55000`. Corrections are made by appending a new review after the underlying current profile information is valid; prior evidence is never rewritten.
+
+The authoritative lookup is indexed by `(user_id, date_of_birth, created_at DESC)` so current-DOB evidence checks do not scan unrelated review history.
 
 ## Data minimisation
 
@@ -53,5 +59,7 @@ No identity-document bytes are accepted or stored by Sprint 45.
 ## Rollback
 
 Rolling back the Sprint 45 migration removes only the append-only `identity.user_kyc_reviews` ledger and its mutation-rejection function. It does not drop or alter the pre-existing `identity.user_profiles` DOB/KYC columns.
+
+Because readiness requires matching immutable approval evidence, removing the ledger causes KYC approval to fail closed until valid evidence is restored through the approved process.
 
 Before any production rollback, preserve required audit evidence according to the organisation's retention and legal obligations. Do not use rollback as a way to erase review history.
