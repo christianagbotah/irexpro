@@ -51,6 +51,9 @@ const eligibleStatus = {
   decisionSource: 'POLICY',
   reasonCode: 'POLICY_ALLOWED',
   reviewedAt: null,
+  ageStatus: 'ADULT',
+  kycStatus: 'APPROVED',
+  identityReasonCode: 'IDENTITY_APPROVED',
   disclosures: disclosureDefinitions,
   consents: [],
   missingConsentKeys: disclosureDefinitions.map((item) => item.key),
@@ -108,8 +111,8 @@ async function installEligibilityRoutes(
   });
 }
 
-test.describe('Sprint 44 eligibility onboarding gate', () => {
-  test('renders policy and all exact required disclosures without internal identifiers', async ({ page }) => {
+test.describe('Sprint 45 age, KYC, and eligibility onboarding gate', () => {
+  test('renders server-authoritative identity and jurisdiction readiness without internal identifiers', async ({ page }) => {
     setupErrorCollectors(page);
     await installEligibilityRoutes(page);
 
@@ -118,6 +121,7 @@ test.describe('Sprint 44 eligibility onboarding gate', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Eligibility & disclosures' })).toBeVisible();
     await expect(page.getByText('Step 2 of 4', { exact: true })).toBeVisible();
     await expect(page.getByText(/eligibility\.2026-09/)).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: 'Identity review approved' })).toBeVisible();
     await expect(page.getByText('4 disclosures outstanding', { exact: true })).toBeVisible();
 
     for (const disclosure of disclosureDefinitions) {
@@ -125,6 +129,7 @@ test.describe('Sprint 44 eligibility onboarding gate', () => {
     }
     await expect(page.getByText(/at least 18 years old/i)).toBeVisible();
 
+    await expect(page.getByText('reviewerNote', { exact: false })).toHaveCount(0);
     await expect(page.getByText('brokerConnectionId', { exact: false })).toHaveCount(0);
     await expect(page.getByText('providerAccountId', { exact: false })).toHaveCount(0);
     await expect(page.getByText('passwordHash', { exact: false })).toHaveCount(0);
@@ -135,11 +140,16 @@ test.describe('Sprint 44 eligibility onboarding gate', () => {
     assertNoExternalRequests(page);
   });
 
-  test('submits exact version and digest evidence and stays blocked when jurisdiction review remains', async ({ page }) => {
+  test('submits exact disclosure evidence but remains blocked when jurisdiction review remains', async ({ page }) => {
     setupErrorCollectors(page);
     let submittedBody: unknown;
     await installEligibilityRoutes(page, {
-      initialStatus: { ...eligibleStatus, countryCode: 'NG', jurisdictionStatus: 'REVIEW_REQUIRED', reasonCode: 'POLICY_REVIEW_REQUIRED' },
+      initialStatus: {
+        ...eligibleStatus,
+        countryCode: 'NG',
+        jurisdictionStatus: 'REVIEW_REQUIRED',
+        reasonCode: 'POLICY_REVIEW_REQUIRED',
+      },
       acceptedStatus: reviewRequiredAfterConsent,
       onAcceptance: (body) => {
         submittedBody = body;
@@ -156,7 +166,7 @@ test.describe('Sprint 44 eligibility onboarding gate', () => {
     await page.getByRole('button', { name: 'Accept required disclosures' }).click();
 
     await expect(page.getByText('Disclosures complete', { exact: true })).toBeVisible();
-    await expect(page.getByText('Trading gate blocked', { exact: true })).toBeVisible();
+    await expect(page.getByText('Readiness blocked', { exact: true })).toBeVisible();
     await expect(page.getByText(/jurisdiction review is still required/i)).toBeVisible();
     await expect(page).toHaveURL(/\/onboarding\/eligibility$/);
 
@@ -173,10 +183,67 @@ test.describe('Sprint 44 eligibility onboarding gate', () => {
     assertNoExternalRequests(page);
   });
 
+  test('blocks an under-18 status and disables disclosure acceptance', async ({ page }) => {
+    setupErrorCollectors(page);
+    await installEligibilityRoutes(page, {
+      initialStatus: {
+        ...eligibleStatus,
+        ageStatus: 'UNDER_18',
+        kycStatus: 'NONE',
+        identityReasonCode: 'AGE_REQUIREMENT_NOT_MET',
+        canProceed: false,
+      },
+    });
+
+    await page.goto('/onboarding/eligibility');
+
+    await expect(page.getByRole('heading', { level: 2, name: 'Adult-age requirement not met' })).toBeVisible();
+    await expect(page.getByText(/restricted to adults age 18 or older/i)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Accept required disclosures' })).toHaveCount(0);
+    for (const checkbox of await page.getByRole('checkbox').all()) {
+      await expect(checkbox).toBeDisabled();
+    }
+    await expect(page.getByRole('button', { name: 'Continue to next step' })).toHaveCount(0);
+
+    assertNoConsoleErrors(page);
+    assertNoFailedRequests(page);
+    assertNoExternalRequests(page);
+  });
+
+  test('keeps an adult account blocked while KYC is pending even with all disclosures accepted', async ({ page }) => {
+    setupErrorCollectors(page);
+    await installEligibilityRoutes(page, {
+      initialStatus: {
+        ...eligibleStatus,
+        kycStatus: 'PENDING',
+        identityReasonCode: 'KYC_PENDING',
+        consents: disclosureDefinitions.map((item, index) => ({
+          key: item.key,
+          version: item.version,
+          contentSha256: item.contentSha256,
+          acceptedAt: `2026-09-01T10:0${index}:00.000Z`,
+        })),
+        missingConsentKeys: [],
+        canProceed: false,
+      },
+    });
+
+    await page.goto('/onboarding/eligibility');
+
+    await expect(page.getByRole('heading', { level: 2, name: 'KYC review pending' })).toBeVisible();
+    await expect(page.getByText('Disclosures complete', { exact: true })).toBeVisible();
+    await expect(page.getByText('Readiness blocked', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Continue to next step' })).toHaveCount(0);
+
+    assertNoConsoleErrors(page);
+    assertNoFailedRequests(page);
+    assertNoExternalRequests(page);
+  });
+
   test('fails closed when the browser contract unexpectedly broadens', async ({ page }) => {
     setupErrorCollectors(page);
     await installEligibilityRoutes(page, {
-      initialStatus: { ...eligibleStatus, brokerConnectionId: 'must-never-reach-the-browser-contract' },
+      initialStatus: { ...eligibleStatus, reviewerNote: 'must-never-reach-the-browser-contract' },
     });
 
     await page.goto('/onboarding/eligibility');
