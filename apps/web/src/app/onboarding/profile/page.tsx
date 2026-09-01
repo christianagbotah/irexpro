@@ -14,9 +14,9 @@ import type { TradingExperienceLevel } from '@irexpro/types';
 /**
  * Onboarding step 1: Profile completion.
  *
- * Collects the profile and jurisdiction fields required by the server-side
- * onboarding readiness contract. A successful save continues to the
- * eligibility/disclosure gate; it never skips directly to later steps.
+ * Collects the profile, DOB, and jurisdiction fields required by the
+ * server-authoritative readiness contract. The backend independently evaluates
+ * adult age and resets KYC whenever a reviewed DOB changes.
  */
 export default function OnboardingProfilePage() {
   const router = useRouter();
@@ -28,6 +28,7 @@ export default function OnboardingProfilePage() {
 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
+  const [dateOfBirth, setDateOfBirth] = useState('');
   const [countryCode, setCountryCode] = useState('');
   const [timezone, setTimezone] = useState('');
   const [preferredCurrency, setPreferredCurrency] = useState('USD');
@@ -48,10 +49,14 @@ export default function OnboardingProfilePage() {
         const profile = profileResponse as {
           timezone?: string;
           preferredCurrency?: string;
-          profile?: { tradingExperienceLevel?: TradingExperienceLevel };
+          profile?: {
+            dateOfBirth?: string | null;
+            tradingExperienceLevel?: TradingExperienceLevel;
+          };
         };
         if (profile.timezone) setTimezone(profile.timezone);
         if (profile.preferredCurrency) setPreferredCurrency(profile.preferredCurrency);
+        if (profile.profile?.dateOfBirth) setDateOfBirth(profile.profile.dateOfBirth);
         if (profile.profile?.tradingExperienceLevel) {
           setTradingExperienceLevel(profile.profile.tradingExperienceLevel);
         }
@@ -89,6 +94,10 @@ export default function OnboardingProfilePage() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    if (!dateOfBirth) {
+      setError('Please provide your date of birth.');
+      return;
+    }
     if (!tradingExperienceLevel) {
       setError('Please select your trading experience level.');
       return;
@@ -96,13 +105,17 @@ export default function OnboardingProfilePage() {
 
     setLoading(true);
     try {
-      await api.updateMyProfile({
-        firstName: firstName || undefined,
-        lastName: lastName || undefined,
-        countryCode: countryCode.toUpperCase() || undefined,
-        timezone: timezone || undefined,
-        preferredCurrency: preferredCurrency.toUpperCase() || undefined,
-        tradingExperienceLevel,
+      await api.request('/users/me', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          firstName: firstName || undefined,
+          lastName: lastName || undefined,
+          dateOfBirth,
+          countryCode: countryCode.toUpperCase() || undefined,
+          timezone: timezone || undefined,
+          preferredCurrency: preferredCurrency.toUpperCase() || undefined,
+          tradingExperienceLevel,
+        }),
       });
       setSuccess(true);
       notify.success('Profile updated successfully.');
@@ -128,16 +141,16 @@ export default function OnboardingProfilePage() {
           <Badge variant="info">Step 1 of 4</Badge>
         </div>
         <h1 style={{ marginBottom: 'var(--space-2)' }}>Trader profile</h1>
-        <p className="muted" style={{ maxWidth: '640px', lineHeight: 1.6 }}>
-          Complete your profile and jurisdiction details first. Your country is used by the next
-          eligibility step to apply the active availability policy and required disclosures.
+        <p className="muted" style={{ maxWidth: '680px', lineHeight: 1.6 }}>
+          Complete your profile, date of birth, and jurisdiction details. The next step applies
+          independent adult-age, KYC, jurisdiction, and disclosure readiness checks.
         </p>
       </div>
 
       <Card>
         <h2 className="card__title">Profile details</h2>
         <p className="card__subtitle">
-          These details must be saved before the eligibility and disclosure review can be completed.
+          A changed date of birth invalidates any previous KYC approval and requires a new review.
         </p>
 
         {success && (
@@ -169,8 +182,18 @@ export default function OnboardingProfilePage() {
                 disabled={loading}
                 placeholder="Doe"
               />
+              <Input
+                label="Date of birth"
+                type="date"
+                value={dateOfBirth}
+                onChange={(e) => setDateOfBirth(e.target.value)}
+                disabled={loading}
+                required
+              />
             </div>
-            <p className="helper-text">Used to personalize communications and account records.</p>
+            <p className="helper-text">
+              Date of birth is evaluated by the server for the adult-age requirement and KYC state.
+            </p>
           </section>
 
           <hr className="form-section__divider" />
@@ -213,9 +236,6 @@ export default function OnboardingProfilePage() {
                 <p className="helper-text">ISO 4217 code — e.g. USD, GHS, EUR.</p>
               </div>
             </div>
-            <p className="helper-text">
-              Country, timezone, and currency support policy checks and reporting.
-            </p>
           </section>
 
           <hr className="form-section__divider" />
@@ -241,7 +261,7 @@ export default function OnboardingProfilePage() {
                 <option value="PROFESSIONAL">Professional — full-time trader</option>
               </select>
               <p className="helper-text">
-                This profile field remains editable later and does not bypass eligibility controls.
+                This self-reported field does not bypass age, KYC, or jurisdiction controls.
               </p>
             </div>
           </section>
