@@ -245,7 +245,13 @@ export class EligibilityService {
       const profile = user.profile;
       if (user.status !== UserStatus.ACTIVE || !profile?.dateOfBirth) continue;
       if (this.evaluateAge(profile.dateOfBirth) !== 'ADULT') continue;
-      if (profile.kycStatus !== KycStatus.NONE && profile.kycStatus !== KycStatus.PENDING) continue;
+
+      const kycStatus = await this.resolveKycStatus(
+        user.id,
+        profile.dateOfBirth,
+        profile.kycStatus,
+      );
+      if (kycStatus !== KycStatus.NONE && kycStatus !== KycStatus.PENDING) continue;
 
       queue.push({
         userId: user.id,
@@ -253,8 +259,8 @@ export class EligibilityService {
         countryCode: user.countryCode?.toUpperCase() ?? null,
         dateOfBirth: profile.dateOfBirth,
         ageStatus: 'ADULT',
-        kycStatus: profile.kycStatus,
-        reasonCode: profile.kycStatus === KycStatus.PENDING ? 'KYC_PENDING' : 'KYC_REQUIRED',
+        kycStatus,
+        reasonCode: kycStatus === KycStatus.PENDING ? 'KYC_PENDING' : 'KYC_REQUIRED',
       });
     }
 
@@ -325,7 +331,9 @@ export class EligibilityService {
 
     const ageStatus = this.evaluateAge(user.profile.dateOfBirth);
     if (ageStatus !== 'ADULT') {
-      throw new BadRequestException('KYC approval is not available unless the adult-age requirement is met.');
+      throw new BadRequestException(
+        'KYC approval is not available unless the adult-age requirement is met.',
+      );
     }
 
     const review = await this.kycReviewRepo.save(
@@ -404,8 +412,13 @@ export class EligibilityService {
         : [];
     });
 
-    const ageStatus = this.evaluateAge(user.profile?.dateOfBirth ?? null);
-    const kycStatus = user.profile?.kycStatus ?? KycStatus.NONE;
+    const dateOfBirth = user.profile?.dateOfBirth ?? null;
+    const ageStatus = this.evaluateAge(dateOfBirth);
+    const kycStatus = await this.resolveKycStatus(
+      user.id,
+      dateOfBirth,
+      user.profile?.kycStatus ?? KycStatus.NONE,
+    );
     const identityReasonCode = this.identityReason(ageStatus, kycStatus);
 
     return {
@@ -427,6 +440,30 @@ export class EligibilityService {
         kycStatus === KycStatus.APPROVED &&
         missingConsentKeys.length === 0,
     };
+  }
+
+  private async resolveKycStatus(
+    userId: string,
+    dateOfBirth: string | null,
+    profileStatus: KycStatus,
+  ): Promise<KycStatus> {
+    if (!dateOfBirth) return KycStatus.NONE;
+
+    const review = await this.kycReviewRepo.findOne({
+      where: { userId, dateOfBirth },
+      order: { createdAt: 'DESC' },
+    });
+
+    if (!review) {
+      // A mutable APPROVED flag without immutable evidence is never trusted.
+      // Other non-approved states remain fail-closed and may continue through
+      // the normal review workflow.
+      return profileStatus === KycStatus.APPROVED ? KycStatus.NONE : profileStatus;
+    }
+
+    return review.decision === KycReviewDecision.APPROVED
+      ? KycStatus.APPROVED
+      : KycStatus.REJECTED;
   }
 
   private async evaluateJurisdiction(
