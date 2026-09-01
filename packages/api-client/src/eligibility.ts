@@ -125,44 +125,86 @@ export function isEligibilityStatusView(value: unknown): value is EligibilitySta
     (typeof value.countryCode === 'string' && COUNTRY.test(value.countryCode));
   const reviewedAtValid = value.reviewedAt === null || isIso(value.reviewedAt);
 
+  if (
+    typeof value.policyVersion !== 'string' ||
+    value.policyVersion.length === 0 ||
+    typeof value.policyFingerprint !== 'string' ||
+    !SHA256.test(value.policyFingerprint) ||
+    !countryValid ||
+    typeof value.jurisdictionStatus !== 'string' ||
+    !JURISDICTION_STATUSES.has(value.jurisdictionStatus) ||
+    typeof value.decisionSource !== 'string' ||
+    !DECISION_SOURCES.has(value.decisionSource) ||
+    typeof value.reasonCode !== 'string' ||
+    value.reasonCode.length === 0 ||
+    !reviewedAtValid ||
+    typeof value.ageStatus !== 'string' ||
+    !AGE_STATUSES.has(value.ageStatus) ||
+    typeof value.kycStatus !== 'string' ||
+    !KYC_STATUSES.has(value.kycStatus) ||
+    typeof value.identityReasonCode !== 'string' ||
+    value.identityReasonCode.length === 0 ||
+    typeof value.canProceed !== 'boolean'
+  ) {
+    return false;
+  }
+
+  if (
+    !Array.isArray(value.disclosures) ||
+    value.disclosures.length !== DISCLOSURE_KEYS.size ||
+    !value.disclosures.every(isDisclosure) ||
+    new Set(value.disclosures.map((item) => item.key)).size !== DISCLOSURE_KEYS.size
+  ) {
+    return false;
+  }
+  const disclosures = value.disclosures as EligibilityDisclosureView[];
+  const disclosureByKey = new Map(disclosures.map((item) => [item.key, item]));
+
+  if (!Array.isArray(value.consents) || !value.consents.every(isConsent)) return false;
+  const consents = value.consents as EligibilityConsentEvidenceView[];
+  const consentKeys = new Set<EligibilityDisclosureKey>();
+  for (const consent of consents) {
+    if (consent.policyVersion !== value.policyVersion) return false;
+    if (consent.policyFingerprint !== value.policyFingerprint) return false;
+    if (consentKeys.has(consent.key)) return false;
+
+    const disclosure = disclosureByKey.get(consent.key);
+    if (
+      !disclosure ||
+      consent.version !== disclosure.version ||
+      consent.contentSha256 !== disclosure.contentSha256
+    ) {
+      return false;
+    }
+    consentKeys.add(consent.key);
+  }
+
+  if (
+    !Array.isArray(value.missingConsentKeys) ||
+    !value.missingConsentKeys.every(isDisclosureKey) ||
+    new Set(value.missingConsentKeys).size !== value.missingConsentKeys.length
+  ) {
+    return false;
+  }
+  const missingConsentKeys = value.missingConsentKeys as EligibilityDisclosureKey[];
+  const expectedMissing = disclosures
+    .filter((item) => !consentKeys.has(item.key))
+    .map((item) => item.key)
+    .sort();
+  const reportedMissing = [...missingConsentKeys].sort();
+  if (
+    expectedMissing.length !== reportedMissing.length ||
+    expectedMissing.some((key, index) => key !== reportedMissing[index])
+  ) {
+    return false;
+  }
+
   return (
-    typeof value.policyVersion === 'string' &&
-    value.policyVersion.length > 0 &&
-    typeof value.policyFingerprint === 'string' &&
-    SHA256.test(value.policyFingerprint) &&
-    countryValid &&
-    typeof value.jurisdictionStatus === 'string' &&
-    JURISDICTION_STATUSES.has(value.jurisdictionStatus) &&
-    typeof value.decisionSource === 'string' &&
-    DECISION_SOURCES.has(value.decisionSource) &&
-    typeof value.reasonCode === 'string' &&
-    value.reasonCode.length > 0 &&
-    reviewedAtValid &&
-    typeof value.ageStatus === 'string' &&
-    AGE_STATUSES.has(value.ageStatus) &&
-    typeof value.kycStatus === 'string' &&
-    KYC_STATUSES.has(value.kycStatus) &&
-    typeof value.identityReasonCode === 'string' &&
-    value.identityReasonCode.length > 0 &&
-    Array.isArray(value.disclosures) &&
-    value.disclosures.length === DISCLOSURE_KEYS.size &&
-    value.disclosures.every(isDisclosure) &&
-    new Set(value.disclosures.map((item) => item.key)).size === DISCLOSURE_KEYS.size &&
-    Array.isArray(value.consents) &&
-    value.consents.every(isConsent) &&
-    value.consents.every(
-      (item) =>
-        item.policyVersion === value.policyVersion &&
-        item.policyFingerprint === value.policyFingerprint,
-    ) &&
-    Array.isArray(value.missingConsentKeys) &&
-    value.missingConsentKeys.every(isDisclosureKey) &&
-    typeof value.canProceed === 'boolean' &&
     value.canProceed ===
-      (value.jurisdictionStatus === 'ELIGIBLE' &&
-        value.ageStatus === 'ADULT' &&
-        value.kycStatus === 'APPROVED' &&
-        value.missingConsentKeys.length === 0)
+    (value.jurisdictionStatus === 'ELIGIBLE' &&
+      value.ageStatus === 'ADULT' &&
+      value.kycStatus === 'APPROVED' &&
+      expectedMissing.length === 0)
   );
 }
 
