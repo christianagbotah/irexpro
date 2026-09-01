@@ -148,6 +148,18 @@ describe('EligibilityService', () => {
     );
   });
 
+  it('requires an explicit 18+ age and legal eligibility attestation', async () => {
+    const status = await service.getStatus(user.id);
+    const attestation = status.disclosures.find(
+      (item) => item.key === EligibilityDisclosureKey.LEGAL_ELIGIBILITY_ATTESTATION,
+    );
+
+    expect(attestation).toBeDefined();
+    expect(attestation?.title).toMatch(/age and legal eligibility/i);
+    expect(attestation?.body).toMatch(/at least 18 years old/i);
+    expect(attestation?.body).toMatch(/legally permitted/i);
+  });
+
   it('rejects a stale, modified, or fabricated disclosure hash', async () => {
     const status = await service.getStatus(user.id);
     const disclosure = status.disclosures[0];
