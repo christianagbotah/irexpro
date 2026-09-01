@@ -1,0 +1,52 @@
+/* Authenticated workspace scroll isolation.
+ *
+ * Desktop/tablet (>700px): the viewport is the outer frame and must not
+ * become the scroll owner. The sidebar and main content are independent
+ * vertical scroll containers. The header remains fixed because it is a
+ * sibling of the scrolling content region.
+ *
+ * Mobile keeps the existing document-flow + bottom-navigation behaviour.
+ */
+@media (min-width: 701px) {
+  .dashboard-shell.terminal-shell {
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .dashboard-shell.terminal-shell > .dashboard-sidebar.terminal-sidebar {
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    max-height: none;
+    position: relative;
+    top: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    scrollbar-gutter: stable;
+  }
+
+  .dashboard-shell.terminal-shell > .dashboard-main.terminal-main {
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .dashboard-main.terminal-main > .dashboard-header.terminal-header {
+    flex: 0 0 auto;
+    position: relative;
+    top: auto;
+  }
+
+  .dashboard-main.terminal-main > .dashboard-content.terminal-content {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: clip;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    scrollbar-gutter: stable;
+  }
+}
