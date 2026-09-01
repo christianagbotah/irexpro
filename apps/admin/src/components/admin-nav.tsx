@@ -25,6 +25,7 @@ const NAV: Array<{ href: string; label: string; Icon: ComponentType<IconProps> }
   { href: '/admin/users', label: 'Users', Icon: UsersIcon },
   { href: '/admin/account-appeals', label: 'Account Reviews', Icon: UsersIcon },
   { href: '/admin/eligibility-reviews', label: 'Eligibility Reviews', Icon: AuditIcon },
+  { href: '/admin/kyc-reviews', label: 'KYC Reviews', Icon: UsersIcon },
   { href: '/admin/payments', label: 'Payments', Icon: PaymentsIcon },
   { href: '/admin/brokers', label: 'Brokers', Icon: PlugIcon },
   { href: '/admin/audit', label: 'Audit Log', Icon: AuditIcon },
