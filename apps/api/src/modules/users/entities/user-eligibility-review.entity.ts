@@ -10,6 +10,7 @@ export enum EligibilityReviewDecision {
   'userId',
   'countryCode',
   'policyVersion',
+  'policyFingerprint',
   'createdAt',
 ])
 export class UserEligibilityReview {
@@ -24,6 +25,9 @@ export class UserEligibilityReview {
 
   @Column({ name: 'policy_version', type: 'varchar', length: 64 })
   policyVersion: string;
+
+  @Column({ name: 'policy_fingerprint', type: 'varchar', length: 64 })
+  policyFingerprint: string;
 
   @Column({ type: 'varchar', length: 20 })
   decision: EligibilityReviewDecision;

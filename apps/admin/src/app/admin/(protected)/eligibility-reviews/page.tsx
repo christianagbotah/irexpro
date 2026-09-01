@@ -21,13 +21,13 @@ const DECISIONS: Array<{
     value: "APPROVED",
     label: "Approve eligibility",
     description:
-      "Records an approval for this country and the currently active policy version.",
+      "Records an approval for this country and the exact active policy snapshot shown below.",
   },
   {
     value: "DENIED",
     label: "Deny eligibility",
     description:
-      "Records a denial for this country and the currently active policy version.",
+      "Records a denial for this country and the exact active policy snapshot shown below.",
   },
 ];
 
@@ -97,6 +97,8 @@ export default function EligibilityReviewsPage() {
     setSubmitting(true);
     try {
       await eligibilityApi.reviewUser(selected.userId, {
+        policyVersion: selected.policyVersion,
+        policyFingerprint: selected.policyFingerprint,
         decision,
         reasonCode: normalizedReason,
         ...(reviewerNote.trim() ? { reviewerNote: reviewerNote.trim() } : {}),
@@ -133,7 +135,7 @@ export default function EligibilityReviewsPage() {
       <p className="muted" style={{ marginBottom: "1.5rem" }}>
         Review jurisdictions that are not explicitly classified by policy. Explicitly blocked
         jurisdictions cannot be overridden here, and every decision is recorded as immutable
-        evidence.
+        evidence tied to the exact active policy snapshot.
       </p>
 
       {error && <Alert variant="error">{error}</Alert>}
@@ -193,6 +195,9 @@ export default function EligibilityReviewsPage() {
                 <p>
                   Country <strong>{selected.countryCode}</strong> · Policy{" "}
                   <strong>{selected.policyVersion}</strong>
+                </p>
+                <p className="text-sm muted break-long" style={{ marginTop: "0.35rem" }}>
+                  Fingerprint: {selected.policyFingerprint}
                 </p>
                 <p className="text-sm muted" style={{ marginTop: "0.35rem" }}>
                   Current reason: {selected.reasonCode}
@@ -265,7 +270,7 @@ export default function EligibilityReviewsPage() {
                     disabled={submitting}
                     onChange={(event) => setConfirmed(event.target.checked)}
                   />
-                  <span>I confirm this reviewed jurisdiction decision.</span>
+                  <span>I confirm this reviewed jurisdiction decision for the policy snapshot shown above.</span>
                 </label>
 
                 <div className="admin-account-access__actions">

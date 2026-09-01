@@ -39,6 +39,8 @@ export interface EligibilityDisclosureView {
 }
 
 export interface EligibilityConsentEvidenceView {
+  policyVersion: string;
+  policyFingerprint: string;
   key: EligibilityDisclosureKey;
   version: string;
   contentSha256: string;
@@ -47,6 +49,7 @@ export interface EligibilityConsentEvidenceView {
 
 export interface EligibilityStatusView {
   policyVersion: string;
+  policyFingerprint: string;
   countryCode: string | null;
   jurisdictionStatus: EligibilityJurisdictionStatus;
   decisionSource: EligibilityDecisionSource;
@@ -66,6 +69,7 @@ export interface EligibilityReviewQueueItem {
   email: string | null;
   countryCode: string;
   policyVersion: string;
+  policyFingerprint: string;
   jurisdictionStatus: 'REVIEW_REQUIRED';
   reasonCode: string;
 }
@@ -92,6 +96,15 @@ interface DisclosureDefinition {
   version: string;
   title: string;
   body: string;
+}
+
+interface ActiveEligibilityPolicy {
+  version: string;
+  fingerprint: string;
+  disclosures: EligibilityDisclosureView[];
+  allowedCountries: Set<string>;
+  blockedCountries: Set<string>;
+  reviewCountries: Set<string>;
 }
 
 const DISCLOSURES: readonly DisclosureDefinition[] = [
@@ -149,8 +162,14 @@ export class EligibilityService {
     const user = await this.userRepo.findOne({ where: { id: userId }, relations: ['profile'] });
     if (!user) throw new NotFoundException('User not found.');
 
-    const currentDefinitions = this.currentDisclosures();
-    const definitionsByKey = new Map(currentDefinitions.map((item) => [item.key, item]));
+    const policy = this.currentPolicy();
+    if (dto.policyVersion !== policy.version || dto.policyFingerprint !== policy.fingerprint) {
+      throw new BadRequestException(
+        'Eligibility policy changed. Refresh the current disclosures before recording consent.',
+      );
+    }
+
+    const definitionsByKey = new Map(policy.disclosures.map((item) => [item.key, item]));
     const seen = new Set<EligibilityDisclosureKey>();
     const accepted: Array<{ key: EligibilityDisclosureKey; version: string }> = [];
 
@@ -174,6 +193,8 @@ export class EligibilityService {
       const existing = await this.consentRepo.findOne({
         where: {
           userId,
+          policyVersion: policy.version,
+          policyFingerprint: policy.fingerprint,
           disclosureKey: acceptance.key,
           disclosureVersion: acceptance.version,
           contentSha256: acceptance.contentSha256,
@@ -184,6 +205,8 @@ export class EligibilityService {
         await this.consentRepo.save(
           this.consentRepo.create({
             userId,
+            policyVersion: policy.version,
+            policyFingerprint: policy.fingerprint,
             disclosureKey: acceptance.key,
             disclosureVersion: acceptance.version,
             contentSha256: acceptance.contentSha256,
@@ -200,13 +223,18 @@ export class EligibilityService {
       action: AuditAction.ELIGIBILITY_DISCLOSURES_ACCEPTED,
       resourceType: 'UserEligibility',
       resourceId: userId,
-      metadata: { disclosures: accepted },
+      metadata: {
+        policyVersion: policy.version,
+        policyFingerprint: policy.fingerprint,
+        disclosures: accepted,
+      },
     });
 
     return this.buildStatus(user);
   }
 
   async listReviewQueue(): Promise<EligibilityReviewQueueItem[]> {
+    const policy = this.currentPolicy();
     const users = await this.userRepo.find({
       where: { status: UserStatus.ACTIVE },
       order: { createdAt: 'ASC' },
@@ -217,14 +245,15 @@ export class EligibilityService {
     for (const user of users) {
       if (user.status !== UserStatus.ACTIVE || !user.countryCode) continue;
 
-      const decision = await this.evaluateJurisdiction(user.id, user.countryCode);
+      const decision = await this.evaluateJurisdiction(user.id, user.countryCode, policy);
       if (decision.status !== 'REVIEW_REQUIRED') continue;
 
       queue.push({
         userId: user.id,
         email: user.email,
         countryCode: user.countryCode.toUpperCase(),
-        policyVersion: this.policyVersion(),
+        policyVersion: policy.version,
+        policyFingerprint: policy.fingerprint,
         jurisdictionStatus: 'REVIEW_REQUIRED',
         reasonCode: decision.reasonCode,
       });
@@ -278,8 +307,15 @@ export class EligibilityService {
       throw new BadRequestException('The user must complete country information before review.');
     }
 
+    const policy = this.currentPolicy();
+    if (dto.policyVersion !== policy.version || dto.policyFingerprint !== policy.fingerprint) {
+      throw new BadRequestException(
+        'Eligibility policy changed. Refresh the review queue before recording a jurisdiction decision.',
+      );
+    }
+
     const countryCode = user.countryCode.toUpperCase();
-    const baseDecision = this.evaluatePolicy(countryCode);
+    const baseDecision = this.evaluatePolicy(countryCode, policy);
     if (baseDecision.status === 'ELIGIBLE') {
       throw new BadRequestException('This jurisdiction is already allowed by the active policy.');
     }
@@ -293,7 +329,8 @@ export class EligibilityService {
       this.reviewRepo.create({
         userId,
         countryCode,
-        policyVersion: this.policyVersion(),
+        policyVersion: policy.version,
+        policyFingerprint: policy.fingerprint,
         decision: dto.decision,
         reasonCode: dto.reasonCode.trim().toUpperCase(),
         reviewerUserId,
@@ -310,6 +347,7 @@ export class EligibilityService {
         userId,
         countryCode,
         policyVersion: review.policyVersion,
+        policyFingerprint: review.policyFingerprint,
         decision: review.decision,
         reasonCode: review.reasonCode,
       },
@@ -375,18 +413,20 @@ export class EligibilityService {
   }
 
   private async buildStatus(user: User): Promise<EligibilityStatusView> {
+    const policy = this.currentPolicy();
     const countryCode = user.countryCode?.toUpperCase() ?? null;
-    const decision = await this.evaluateJurisdiction(user.id, countryCode);
-    const disclosures = this.currentDisclosures();
+    const decision = await this.evaluateJurisdiction(user.id, countryCode, policy);
     const consentRows = await this.consentRepo.find({
       where: { userId: user.id },
       order: { acceptedAt: 'ASC' },
     });
 
     const currentConsentByKey = new Map<EligibilityDisclosureKey, UserDisclosureConsent>();
-    for (const disclosure of disclosures) {
+    for (const disclosure of policy.disclosures) {
       const match = consentRows.find(
         (row) =>
+          row.policyVersion === policy.version &&
+          row.policyFingerprint === policy.fingerprint &&
           row.disclosureKey === disclosure.key &&
           row.disclosureVersion === disclosure.version &&
           row.contentSha256 === disclosure.contentSha256,
@@ -394,15 +434,17 @@ export class EligibilityService {
       if (match) currentConsentByKey.set(disclosure.key, match);
     }
 
-    const missingConsentKeys = disclosures
+    const missingConsentKeys = policy.disclosures
       .filter((item) => !currentConsentByKey.has(item.key))
       .map((item) => item.key);
 
-    const consents = disclosures.flatMap((item) => {
+    const consents = policy.disclosures.flatMap((item) => {
       const row = currentConsentByKey.get(item.key);
       return row
         ? [
             {
+              policyVersion: row.policyVersion,
+              policyFingerprint: row.policyFingerprint,
               key: row.disclosureKey,
               version: row.disclosureVersion,
               contentSha256: row.contentSha256,
@@ -422,7 +464,8 @@ export class EligibilityService {
     const identityReasonCode = this.identityReason(ageStatus, kycStatus);
 
     return {
-      policyVersion: this.policyVersion(),
+      policyVersion: policy.version,
+      policyFingerprint: policy.fingerprint,
       countryCode,
       jurisdictionStatus: decision.status,
       decisionSource: decision.source,
@@ -431,7 +474,7 @@ export class EligibilityService {
       ageStatus,
       kycStatus,
       identityReasonCode,
-      disclosures,
+      disclosures: policy.disclosures,
       consents,
       missingConsentKeys,
       canProceed:
@@ -467,6 +510,7 @@ export class EligibilityService {
   private async evaluateJurisdiction(
     userId: string,
     countryCode: string | null,
+    policy: ActiveEligibilityPolicy,
   ): Promise<JurisdictionDecision> {
     if (!countryCode) {
       return {
@@ -478,14 +522,15 @@ export class EligibilityService {
     }
 
     const normalized = countryCode.toUpperCase();
-    const policyDecision = this.evaluatePolicy(normalized);
+    const policyDecision = this.evaluatePolicy(normalized, policy);
     if (policyDecision.status !== 'REVIEW_REQUIRED') return policyDecision;
 
     const review = await this.reviewRepo.findOne({
       where: {
         userId,
         countryCode: normalized,
-        policyVersion: this.policyVersion(),
+        policyVersion: policy.version,
+        policyFingerprint: policy.fingerprint,
       },
       order: { createdAt: 'DESC' },
     });
@@ -506,9 +551,11 @@ export class EligibilityService {
         };
   }
 
-  private evaluatePolicy(countryCode: string): JurisdictionDecision {
-    const blocked = this.countrySet('ELIGIBILITY_BLOCKED_COUNTRY_CODES');
-    if (blocked.has(countryCode)) {
+  private evaluatePolicy(
+    countryCode: string,
+    policy: ActiveEligibilityPolicy,
+  ): JurisdictionDecision {
+    if (policy.blockedCountries.has(countryCode)) {
       return {
         status: 'INELIGIBLE',
         source: 'POLICY',
@@ -517,8 +564,7 @@ export class EligibilityService {
       };
     }
 
-    const allowed = this.countrySet('ELIGIBILITY_ALLOWED_COUNTRY_CODES');
-    if (allowed.has(countryCode)) {
+    if (policy.allowedCountries.has(countryCode)) {
       return {
         status: 'ELIGIBLE',
         source: 'POLICY',
@@ -527,11 +573,10 @@ export class EligibilityService {
       };
     }
 
-    const explicitlyReviewed = this.countrySet('ELIGIBILITY_REVIEW_COUNTRY_CODES');
     return {
       status: 'REVIEW_REQUIRED',
       source: 'POLICY',
-      reasonCode: explicitlyReviewed.has(countryCode)
+      reasonCode: policy.reviewCountries.has(countryCode)
         ? 'POLICY_REVIEW_REQUIRED'
         : 'UNCLASSIFIED_JURISDICTION',
       reviewedAt: null,
@@ -579,6 +624,39 @@ export class EligibilityService {
       contentSha256: createHash('sha256').update(item.body, 'utf8').digest('hex'),
       required: true as const,
     }));
+  }
+
+  private currentPolicy(): ActiveEligibilityPolicy {
+    const version = this.policyVersion();
+    const disclosures = this.currentDisclosures();
+    const allowedCountries = this.countrySet('ELIGIBILITY_ALLOWED_COUNTRY_CODES');
+    const blockedCountries = this.countrySet('ELIGIBILITY_BLOCKED_COUNTRY_CODES');
+    const reviewCountries = this.countrySet('ELIGIBILITY_REVIEW_COUNTRY_CODES');
+
+    const fingerprintPayload = {
+      version,
+      allowedCountryCodes: [...allowedCountries].sort(),
+      blockedCountryCodes: [...blockedCountries].sort(),
+      reviewCountryCodes: [...reviewCountries].sort(),
+      disclosures: disclosures
+        .map((item) => ({
+          key: item.key,
+          version: item.version,
+          contentSha256: item.contentSha256,
+        }))
+        .sort((left, right) => left.key.localeCompare(right.key)),
+    };
+
+    return {
+      version,
+      fingerprint: createHash('sha256')
+        .update(JSON.stringify(fingerprintPayload), 'utf8')
+        .digest('hex'),
+      disclosures,
+      allowedCountries,
+      blockedCountries,
+      reviewCountries,
+    };
   }
 
   private policyVersion(): string {

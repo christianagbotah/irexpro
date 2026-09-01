@@ -8,6 +8,9 @@ import {
   setupErrorCollectors,
 } from './fixtures';
 
+const POLICY_VERSION = 'eligibility.2026-09';
+const POLICY_FINGERPRINT = 'f'.repeat(64);
+
 const disclosureDefinitions = [
   {
     key: 'AUTOMATED_TRADING_RISK',
@@ -56,7 +59,8 @@ const kycQueue = [
 ];
 
 const approvedStatus = {
-  policyVersion: 'eligibility.2026-09',
+  policyVersion: POLICY_VERSION,
+  policyFingerprint: POLICY_FINGERPRINT,
   countryCode: 'GH',
   jurisdictionStatus: 'ELIGIBLE',
   decisionSource: 'POLICY',
@@ -110,7 +114,7 @@ async function installKycRoutes(
   });
 }
 
-test.describe('Sprint 45 admin KYC reviews', () => {
+test.describe('Sprint 46 admin KYC reviews', () => {
   test('renders only frontend-safe adult KYC review context', async ({ page }) => {
     setupErrorCollectors(page);
     await installKycRoutes(page);

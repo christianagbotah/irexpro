@@ -9,6 +9,9 @@ import {
   setupErrorCollectors,
 } from './fixtures';
 
+const POLICY_VERSION = 'eligibility.2026-09';
+const POLICY_FINGERPRINT = 'f'.repeat(64);
+
 const disclosureDefinitions = [
   {
     key: 'AUTOMATED_TRADING_RISK',
@@ -44,8 +47,20 @@ const disclosureDefinitions = [
   },
 ] as const;
 
+function consentRows(prefix = '09') {
+  return disclosureDefinitions.map((item, index) => ({
+    policyVersion: POLICY_VERSION,
+    policyFingerprint: POLICY_FINGERPRINT,
+    key: item.key,
+    version: item.version,
+    contentSha256: item.contentSha256,
+    acceptedAt: `2026-09-01T${prefix}:0${index}:00.000Z`,
+  }));
+}
+
 const eligibleStatus = {
-  policyVersion: 'eligibility.2026-09',
+  policyVersion: POLICY_VERSION,
+  policyFingerprint: POLICY_FINGERPRINT,
   countryCode: 'GH',
   jurisdictionStatus: 'ELIGIBLE',
   decisionSource: 'POLICY',
@@ -65,12 +80,7 @@ const reviewRequiredAfterConsent = {
   countryCode: 'NG',
   jurisdictionStatus: 'REVIEW_REQUIRED',
   reasonCode: 'POLICY_REVIEW_REQUIRED',
-  consents: disclosureDefinitions.map((item, index) => ({
-    key: item.key,
-    version: item.version,
-    contentSha256: item.contentSha256,
-    acceptedAt: `2026-09-01T09:0${index}:00.000Z`,
-  })),
+  consents: consentRows(),
   missingConsentKeys: [],
   canProceed: false,
 };
@@ -88,6 +98,7 @@ async function installEligibilityRoutes(
   options: {
     initialStatus?: unknown;
     acceptedStatus?: unknown;
+    acceptanceStatusCode?: number;
     onAcceptance?: (body: unknown) => void;
   } = {},
 ) {
@@ -105,14 +116,18 @@ async function installEligibilityRoutes(
     if (apiPath === 'users/me/eligibility/disclosures' && request.method() === 'POST') {
       const body = request.postDataJSON();
       options.onAcceptance?.(body);
-      return fulfill(route, 200, options.acceptedStatus ?? reviewRequiredAfterConsent);
+      return fulfill(
+        route,
+        options.acceptanceStatusCode ?? 200,
+        options.acceptedStatus ?? reviewRequiredAfterConsent,
+      );
     }
     return fulfill(route, 200, {});
   });
 }
 
-test.describe('Sprint 45 age, KYC, and eligibility onboarding gate', () => {
-  test('renders server-authoritative identity and jurisdiction readiness without internal identifiers', async ({ page }) => {
+test.describe('Sprint 46 policy-bound eligibility onboarding gate', () => {
+  test('renders server-authoritative policy, identity, and jurisdiction readiness without internal identifiers', async ({ page }) => {
     setupErrorCollectors(page);
     await installEligibilityRoutes(page);
 
@@ -121,8 +136,11 @@ test.describe('Sprint 45 age, KYC, and eligibility onboarding gate', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Eligibility & disclosures' })).toBeVisible();
     await expect(page.getByText('Step 2 of 4', { exact: true })).toBeVisible();
     await expect(page.getByText(/eligibility\.2026-09/)).toBeVisible();
+    await expect(page.getByText(/Policy fingerprint:/)).toBeVisible();
+    await expect(page.getByText(new RegExp(`${POLICY_FINGERPRINT.slice(0, 12)}…`))).toBeVisible();
     await expect(page.getByRole('heading', { level: 2, name: 'Identity review approved' })).toBeVisible();
     await expect(page.getByText('4 disclosures outstanding', { exact: true })).toBeVisible();
+    await expect(page.getByText(/policy change requires fresh evidence/i)).toBeVisible();
 
     for (const disclosure of disclosureDefinitions) {
       await expect(page.getByText(disclosure.title, { exact: true })).toBeVisible();
@@ -140,7 +158,7 @@ test.describe('Sprint 45 age, KYC, and eligibility onboarding gate', () => {
     assertNoExternalRequests(page);
   });
 
-  test('submits exact disclosure evidence but remains blocked when jurisdiction review remains', async ({ page }) => {
+  test('submits exact policy fingerprint and disclosure evidence but remains blocked when jurisdiction review remains', async ({ page }) => {
     setupErrorCollectors(page);
     let submittedBody: unknown;
     await installEligibilityRoutes(page, {
@@ -171,6 +189,8 @@ test.describe('Sprint 45 age, KYC, and eligibility onboarding gate', () => {
     await expect(page).toHaveURL(/\/onboarding\/eligibility$/);
 
     expect(submittedBody).toEqual({
+      policyVersion: POLICY_VERSION,
+      policyFingerprint: POLICY_FINGERPRINT,
       acceptances: disclosureDefinitions.map((item) => ({
         key: item.key,
         version: item.version,
@@ -180,6 +200,39 @@ test.describe('Sprint 45 age, KYC, and eligibility onboarding gate', () => {
 
     assertNoConsoleErrors(page);
     assertNoFailedRequests(page);
+    assertNoExternalRequests(page);
+  });
+
+  test('shows a safe error and keeps evidence unaccepted when the server rejects a stale policy snapshot', async ({ page }) => {
+    setupErrorCollectors(page);
+    const stalePolicyMessage =
+      'Eligibility policy changed. Refresh the current disclosures before recording consent.';
+    await installEligibilityRoutes(page, {
+      acceptanceStatusCode: 400,
+      acceptedStatus: {
+        statusCode: 400,
+        message: stalePolicyMessage,
+        error: 'Bad Request',
+      },
+    });
+
+    await page.goto('/onboarding/eligibility');
+    const checkboxes = page.getByRole('checkbox');
+    for (let index = 0; index < 4; index += 1) {
+      await checkboxes.nth(index).check();
+    }
+    await page.getByRole('button', { name: 'Accept required disclosures' }).click();
+
+    await expect(page.getByRole('alert').filter({ hasText: /something went wrong/i })).toBeVisible();
+    await expect(page.getByText(stalePolicyMessage, { exact: false })).toHaveCount(0);
+    await expect(page.getByText('4 disclosures outstanding', { exact: true })).toBeVisible();
+    await expect(page.getByText('Disclosures complete', { exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Continue to next step' })).toHaveCount(0);
+
+    // The mocked HTTP 400 is the expected fail-closed behavior for this test.
+    // Chromium logs the intentional rejected request as a console error, so
+    // this scenario verifies the rendered safe error instead of requiring a
+    // zero-error network console.
     assertNoExternalRequests(page);
   });
 
@@ -210,19 +263,14 @@ test.describe('Sprint 45 age, KYC, and eligibility onboarding gate', () => {
     assertNoExternalRequests(page);
   });
 
-  test('keeps an adult account blocked while KYC is pending even with all disclosures accepted', async ({ page }) => {
+  test('keeps an adult account blocked while KYC is pending even with all policy-bound disclosures accepted', async ({ page }) => {
     setupErrorCollectors(page);
     await installEligibilityRoutes(page, {
       initialStatus: {
         ...eligibleStatus,
         kycStatus: 'PENDING',
         identityReasonCode: 'KYC_PENDING',
-        consents: disclosureDefinitions.map((item, index) => ({
-          key: item.key,
-          version: item.version,
-          contentSha256: item.contentSha256,
-          acceptedAt: `2026-09-01T10:0${index}:00.000Z`,
-        })),
+        consents: consentRows('10'),
         missingConsentKeys: [],
         canProceed: false,
       },
@@ -234,6 +282,28 @@ test.describe('Sprint 45 age, KYC, and eligibility onboarding gate', () => {
     await expect(page.getByText('Disclosures complete', { exact: true })).toBeVisible();
     await expect(page.getByText('Readiness blocked', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Continue to next step' })).toHaveCount(0);
+
+    assertNoConsoleErrors(page);
+    assertNoFailedRequests(page);
+    assertNoExternalRequests(page);
+  });
+
+  test('fails closed when consent evidence is bound to a different policy fingerprint', async ({ page }) => {
+    setupErrorCollectors(page);
+    await installEligibilityRoutes(page, {
+      initialStatus: {
+        ...eligibleStatus,
+        consents: consentRows().map((item) => ({ ...item, policyFingerprint: 'e'.repeat(64) })),
+        missingConsentKeys: [],
+        canProceed: true,
+      },
+    });
+
+    await page.goto('/onboarding/eligibility');
+
+    await expect(page.getByRole('heading', { level: 2, name: 'Eligibility unavailable' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Continue to next step' })).toHaveCount(0);
+    await expect(page.getByText(/frontend-safe contract verification/i)).toHaveCount(0);
 
     assertNoConsoleErrors(page);
     assertNoFailedRequests(page);
