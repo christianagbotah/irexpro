@@ -27,7 +27,7 @@ export class CreateAgeKycReadinessGate1752800000000 implements MigrationInterfac
 
     await queryRunner.query(`
       CREATE INDEX IF NOT EXISTS idx_user_kyc_reviews_lookup
-      ON identity.user_kyc_reviews (user_id, created_at DESC)
+      ON identity.user_kyc_reviews (user_id, date_of_birth, created_at DESC)
     `);
 
     await queryRunner.query(`
