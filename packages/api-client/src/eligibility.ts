@@ -72,11 +72,22 @@ function isDisclosure(value: unknown): value is EligibilityDisclosureView {
 function isConsent(value: unknown): value is EligibilityConsentEvidenceView {
   if (
     !isRecord(value) ||
-    !hasExactKeys(value, ['key', 'version', 'contentSha256', 'acceptedAt'])
+    !hasExactKeys(value, [
+      'policyVersion',
+      'policyFingerprint',
+      'key',
+      'version',
+      'contentSha256',
+      'acceptedAt',
+    ])
   ) {
     return false;
   }
   return (
+    typeof value.policyVersion === 'string' &&
+    value.policyVersion.length > 0 &&
+    typeof value.policyFingerprint === 'string' &&
+    SHA256.test(value.policyFingerprint) &&
     isDisclosureKey(value.key) &&
     typeof value.version === 'string' &&
     value.version.length > 0 &&
@@ -91,6 +102,7 @@ export function isEligibilityStatusView(value: unknown): value is EligibilitySta
     !isRecord(value) ||
     !hasExactKeys(value, [
       'policyVersion',
+      'policyFingerprint',
       'countryCode',
       'jurisdictionStatus',
       'decisionSource',
@@ -116,6 +128,8 @@ export function isEligibilityStatusView(value: unknown): value is EligibilitySta
   return (
     typeof value.policyVersion === 'string' &&
     value.policyVersion.length > 0 &&
+    typeof value.policyFingerprint === 'string' &&
+    SHA256.test(value.policyFingerprint) &&
     countryValid &&
     typeof value.jurisdictionStatus === 'string' &&
     JURISDICTION_STATUSES.has(value.jurisdictionStatus) &&
@@ -136,6 +150,11 @@ export function isEligibilityStatusView(value: unknown): value is EligibilitySta
     new Set(value.disclosures.map((item) => item.key)).size === DISCLOSURE_KEYS.size &&
     Array.isArray(value.consents) &&
     value.consents.every(isConsent) &&
+    value.consents.every(
+      (item) =>
+        item.policyVersion === value.policyVersion &&
+        item.policyFingerprint === value.policyFingerprint,
+    ) &&
     Array.isArray(value.missingConsentKeys) &&
     value.missingConsentKeys.every(isDisclosureKey) &&
     typeof value.canProceed === 'boolean' &&
@@ -155,6 +174,7 @@ export function isEligibilityReviewQueueItem(value: unknown): value is Eligibili
       'email',
       'countryCode',
       'policyVersion',
+      'policyFingerprint',
       'jurisdictionStatus',
       'reasonCode',
     ]) &&
@@ -165,6 +185,8 @@ export function isEligibilityReviewQueueItem(value: unknown): value is Eligibili
     COUNTRY.test(value.countryCode) &&
     typeof value.policyVersion === 'string' &&
     value.policyVersion.length > 0 &&
+    typeof value.policyFingerprint === 'string' &&
+    SHA256.test(value.policyFingerprint) &&
     value.jurisdictionStatus === 'REVIEW_REQUIRED' &&
     typeof value.reasonCode === 'string' &&
     value.reasonCode.length > 0
