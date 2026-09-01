@@ -8,6 +8,9 @@ import {
   setupErrorCollectors,
 } from './fixtures';
 
+const POLICY_VERSION = 'eligibility.2026-09';
+const POLICY_FINGERPRINT = 'f'.repeat(64);
+
 const disclosureDefinitions = [
   {
     key: 'AUTOMATED_TRADING_RISK',
@@ -48,14 +51,16 @@ const reviewQueue = [
     userId: 'usr_review_00000000-0000-0000-0000-000000000001',
     email: 'review.candidate.with.a.long.address@example.com',
     countryCode: 'NG',
-    policyVersion: 'eligibility.2026-09',
+    policyVersion: POLICY_VERSION,
+    policyFingerprint: POLICY_FINGERPRINT,
     jurisdictionStatus: 'REVIEW_REQUIRED',
     reasonCode: 'POLICY_REVIEW_REQUIRED',
   },
 ];
 
 const deniedStatus = {
-  policyVersion: 'eligibility.2026-09',
+  policyVersion: POLICY_VERSION,
+  policyFingerprint: POLICY_FINGERPRINT,
   countryCode: 'NG',
   jurisdictionStatus: 'INELIGIBLE',
   decisionSource: 'ADMIN_REVIEW',
@@ -109,8 +114,8 @@ async function installAdminRoutes(
   });
 }
 
-test.describe('Sprint 45 admin jurisdiction reviews', () => {
-  test('renders only frontend-safe review evidence and policy context', async ({ page }) => {
+test.describe('Sprint 46 admin jurisdiction reviews', () => {
+  test('renders only frontend-safe review evidence and exact policy context', async ({ page }) => {
     setupErrorCollectors(page);
     await installAdminRoutes(page);
 
@@ -119,7 +124,7 @@ test.describe('Sprint 45 admin jurisdiction reviews', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Eligibility reviews' })).toBeVisible();
     await expect(page.getByText(reviewQueue[0].email, { exact: true })).toBeVisible();
     await page.getByText(reviewQueue[0].email, { exact: true }).click();
-    await expect(page.getByText('eligibility.2026-09', { exact: true })).toBeVisible();
+    await expect(page.getByText(POLICY_VERSION, { exact: true })).toBeVisible();
     await expect(page.getByText(/POLICY_REVIEW_REQUIRED/)).toBeVisible();
 
     await expect(page.getByText('passwordHash', { exact: false })).toHaveCount(0);
