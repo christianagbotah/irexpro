@@ -30,10 +30,7 @@ export class EligibilityController {
 
   @Post('users/me/eligibility/disclosures')
   @ApiOperation({ summary: 'Accept exact current disclosure versions with immutable evidence' })
-  acceptDisclosures(
-    @CurrentUserId() userId: string,
-    @Body() dto: AcceptEligibilityDisclosuresDto,
-  ) {
+  acceptDisclosures(@CurrentUserId() userId: string, @Body() dto: AcceptEligibilityDisclosuresDto) {
     return this.eligibilityService.acceptDisclosures(userId, dto);
   }
 
