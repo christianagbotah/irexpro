@@ -177,6 +177,19 @@ describe('EligibilityService', () => {
     };
   }
 
+  function reviewRequest(
+    status: Awaited<ReturnType<EligibilityService['getStatus']>>,
+    decision: EligibilityReviewDecision,
+    reasonCode: string,
+  ) {
+    return {
+      policyVersion: status.policyVersion,
+      policyFingerprint: status.policyFingerprint,
+      decision,
+      reasonCode,
+    };
+  }
+
   it('allows a policy-allowed adult with approved KYC only after every exact disclosure is accepted', async () => {
     const initial = await service.getStatus(user.id);
 
@@ -467,39 +480,62 @@ describe('EligibilityService', () => {
 
   it('never permits an admin review to override an explicitly blocked jurisdiction', async () => {
     userRepo.findOne.mockResolvedValue({ ...user, countryCode: 'XX' });
+    const status = await service.getStatus(user.id);
 
     await expect(
-      service.reviewUser(user.id, 'admin-1', {
-        decision: EligibilityReviewDecision.APPROVED,
-        reasonCode: 'OVERRIDE_ATTEMPT',
-      }),
+      service.reviewUser(
+        user.id,
+        'admin-1',
+        reviewRequest(status, EligibilityReviewDecision.APPROVED, 'OVERRIDE_ATTEMPT'),
+      ),
     ).rejects.toThrow(/cannot be overridden/);
 
     expect(reviewRows).toHaveLength(0);
   });
 
   it('does not create redundant review evidence for policy-allowed countries', async () => {
+    const status = await service.getStatus(user.id);
+
     await expect(
-      service.reviewUser(user.id, 'admin-1', {
-        decision: EligibilityReviewDecision.APPROVED,
-        reasonCode: 'NOT_NEEDED',
-      }),
+      service.reviewUser(
+        user.id,
+        'admin-1',
+        reviewRequest(status, EligibilityReviewDecision.APPROVED, 'NOT_NEEDED'),
+      ),
     ).rejects.toThrow(/already allowed/);
+  });
+
+  it('rejects a stale jurisdiction review when policy changes after the queue snapshot was rendered', async () => {
+    userRepo.findOne.mockResolvedValue({ ...user, countryCode: 'NG' });
+    const rendered = await service.getStatus(user.id);
+    config.ELIGIBILITY_REVIEW_COUNTRY_CODES = 'NG,ZA';
+
+    await expect(
+      service.reviewUser(
+        user.id,
+        'admin-1',
+        reviewRequest(rendered, EligibilityReviewDecision.APPROVED, 'REVIEW_APPROVED'),
+      ),
+    ).rejects.toThrow(/policy changed/i);
+    expect(reviewRows).toHaveLength(0);
   });
 
   it('applies the latest matching immutable admin review only to the exact policy fingerprint', async () => {
     userRepo.findOne.mockResolvedValue({ ...user, countryCode: 'NG' });
+    const reviewContext = await service.getStatus(user.id);
 
-    await service.reviewUser(user.id, 'admin-1', {
-      decision: EligibilityReviewDecision.DENIED,
-      reasonCode: 'REVIEW_DENIED',
-    });
+    await service.reviewUser(
+      user.id,
+      'admin-1',
+      reviewRequest(reviewContext, EligibilityReviewDecision.DENIED, 'REVIEW_DENIED'),
+    );
     expect((await service.getStatus(user.id)).jurisdictionStatus).toBe('INELIGIBLE');
 
-    await service.reviewUser(user.id, 'admin-2', {
-      decision: EligibilityReviewDecision.APPROVED,
-      reasonCode: 'REVIEW_APPROVED',
-    });
+    await service.reviewUser(
+      user.id,
+      'admin-2',
+      reviewRequest(reviewContext, EligibilityReviewDecision.APPROVED, 'REVIEW_APPROVED'),
+    );
     const approved = await service.getStatus(user.id);
     expect(approved.jurisdictionStatus).toBe('ELIGIBLE');
     expect(approved.decisionSource).toBe('ADMIN_REVIEW');
