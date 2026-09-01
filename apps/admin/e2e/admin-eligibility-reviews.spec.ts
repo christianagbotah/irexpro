@@ -144,7 +144,11 @@ test.describe('Sprint 44 admin eligibility reviews', () => {
     await page.locator('#eligibility-review-note').fill('Reviewed against the current jurisdiction policy.');
 
     await page.getByRole('button', { name: 'Deny eligibility' }).click();
-    await expect(page.getByRole('alert')).toContainText(/confirm the reviewed eligibility decision/i);
+    await expect(
+      page
+        .getByRole('alert')
+        .filter({ hasText: /confirm the reviewed eligibility decision/i }),
+    ).toContainText(/confirm the reviewed eligibility decision/i);
     expect(submittedBody).toBeUndefined();
 
     await page.getByRole('checkbox', { name: /I confirm this reviewed jurisdiction decision/i }).check();
