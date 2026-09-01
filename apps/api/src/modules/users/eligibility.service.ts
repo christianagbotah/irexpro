@@ -99,8 +99,8 @@ const DISCLOSURES: readonly DisclosureDefinition[] = [
   {
     key: EligibilityDisclosureKey.LEGAL_ELIGIBILITY_ATTESTATION,
     version: '1.0',
-    title: 'Legal eligibility attestation',
-    body: 'I confirm that I have the legal capacity and am legally permitted to use automated trading services in the jurisdiction associated with my account.',
+    title: 'Age and legal eligibility attestation',
+    body: 'I confirm that I am at least 18 years old, have the legal capacity to enter into this agreement, and am legally permitted to use automated trading services in the jurisdiction associated with my account.',
   },
 ] as const;
 
