@@ -75,6 +75,8 @@ export interface EligibilityReviewQueueItem {
 }
 
 export interface ReviewUserEligibilityRequest {
+  policyVersion: string;
+  policyFingerprint: string;
   decision: EligibilityReviewDecision;
   reasonCode: string;
   reviewerNote?: string;
