@@ -96,6 +96,8 @@ describe('EligibilityService', () => {
         consentRows.find(
           (row) =>
             row.userId === where.userId &&
+            row.policyVersion === where.policyVersion &&
+            row.policyFingerprint === where.policyFingerprint &&
             row.disclosureKey === where.disclosureKey &&
             row.disclosureVersion === where.disclosureVersion &&
             row.contentSha256 === where.contentSha256,
@@ -116,7 +118,8 @@ describe('EligibilityService', () => {
         (row) =>
           row.userId === where.userId &&
           row.countryCode === where.countryCode &&
-          row.policyVersion === where.policyVersion,
+          row.policyVersion === where.policyVersion &&
+          row.policyFingerprint === where.policyFingerprint,
       );
       return matches.at(-1) ?? null;
     });
@@ -162,6 +165,18 @@ describe('EligibilityService', () => {
 
   afterEach(async () => module.close());
 
+  function acceptanceRequest(status: Awaited<ReturnType<EligibilityService['getStatus']>>) {
+    return {
+      policyVersion: status.policyVersion,
+      policyFingerprint: status.policyFingerprint,
+      acceptances: status.disclosures.map((item) => ({
+        key: item.key,
+        version: item.version,
+        contentSha256: item.contentSha256,
+      })),
+    };
+  }
+
   it('allows a policy-allowed adult with approved KYC only after every exact disclosure is accepted', async () => {
     const initial = await service.getStatus(user.id);
 
@@ -169,6 +184,7 @@ describe('EligibilityService', () => {
     expect(initial.ageStatus).toBe('ADULT');
     expect(initial.kycStatus).toBe('APPROVED');
     expect(initial.identityReasonCode).toBe('IDENTITY_APPROVED');
+    expect(initial.policyFingerprint).toMatch(/^[a-f0-9]{64}$/);
     expect(initial.disclosures).toHaveLength(4);
     expect(initial.missingConsentKeys).toEqual([
       EligibilityDisclosureKey.AUTOMATED_TRADING_RISK,
@@ -178,20 +194,59 @@ describe('EligibilityService', () => {
     ]);
     expect(initial.canProceed).toBe(false);
 
-    const accepted = await service.acceptDisclosures(user.id, {
-      acceptances: initial.disclosures.map((item) => ({
-        key: item.key,
-        version: item.version,
-        contentSha256: item.contentSha256,
-      })),
-    });
+    const accepted = await service.acceptDisclosures(user.id, acceptanceRequest(initial));
 
     expect(accepted.missingConsentKeys).toEqual([]);
     expect(accepted.consents).toHaveLength(4);
+    expect(accepted.consents.every((item) => item.policyFingerprint === initial.policyFingerprint)).toBe(
+      true,
+    );
     expect(accepted.canProceed).toBe(true);
     expect(auditService.log).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'ELIGIBILITY_DISCLOSURES_ACCEPTED' }),
+      expect.objectContaining({
+        action: 'ELIGIBILITY_DISCLOSURES_ACCEPTED',
+        metadata: expect.objectContaining({
+          policyVersion: initial.policyVersion,
+          policyFingerprint: initial.policyFingerprint,
+        }),
+      }),
     );
+  });
+
+  it('normalizes policy inputs before fingerprinting', async () => {
+    const first = await service.getStatus(user.id);
+    config.ELIGIBILITY_ALLOWED_COUNTRY_CODES = ' gb , GH,GH ';
+    config.ELIGIBILITY_BLOCKED_COUNTRY_CODES = 'xx';
+    config.ELIGIBILITY_REVIEW_COUNTRY_CODES = ' ng ';
+
+    const second = await service.getStatus(user.id);
+
+    expect(second.policyFingerprint).toBe(first.policyFingerprint);
+  });
+
+  it('invalidates consent when policy configuration changes without a version bump', async () => {
+    const initial = await service.getStatus(user.id);
+    const accepted = await service.acceptDisclosures(user.id, acceptanceRequest(initial));
+    expect(accepted.canProceed).toBe(true);
+
+    config.ELIGIBILITY_ALLOWED_COUNTRY_CODES = 'GH,GB,CA';
+    const changed = await service.getStatus(user.id);
+
+    expect(changed.policyVersion).toBe(initial.policyVersion);
+    expect(changed.policyFingerprint).not.toBe(initial.policyFingerprint);
+    expect(changed.missingConsentKeys).toHaveLength(4);
+    expect(changed.consents).toEqual([]);
+    expect(changed.canProceed).toBe(false);
+  });
+
+  it('rejects a stale consent submission when policy configuration changes after rendering', async () => {
+    const rendered = await service.getStatus(user.id);
+    config.ELIGIBILITY_REVIEW_COUNTRY_CODES = 'NG,ZA';
+
+    await expect(service.acceptDisclosures(user.id, acceptanceRequest(rendered))).rejects.toThrow(
+      /policy changed/i,
+    );
+    expect(consentRows).toHaveLength(0);
   });
 
   it('requires an explicit 18+ age and legal eligibility attestation', async () => {
@@ -336,6 +391,8 @@ describe('EligibilityService', () => {
 
     await expect(
       service.acceptDisclosures(user.id, {
+        policyVersion: status.policyVersion,
+        policyFingerprint: status.policyFingerprint,
         acceptances: [
           {
             key: disclosure.key,
@@ -350,7 +407,8 @@ describe('EligibilityService', () => {
   });
 
   it('rejects duplicate keys inside one consent submission', async () => {
-    const disclosure = (await service.getStatus(user.id)).disclosures[0];
+    const status = await service.getStatus(user.id);
+    const disclosure = status.disclosures[0];
     const acceptance = {
       key: disclosure.key,
       version: disclosure.version,
@@ -358,13 +416,20 @@ describe('EligibilityService', () => {
     };
 
     await expect(
-      service.acceptDisclosures(user.id, { acceptances: [acceptance, acceptance] }),
+      service.acceptDisclosures(user.id, {
+        policyVersion: status.policyVersion,
+        policyFingerprint: status.policyFingerprint,
+        acceptances: [acceptance, acceptance],
+      }),
     ).rejects.toThrow(/Duplicate disclosure acceptance/);
   });
 
   it('is idempotent for already-recorded exact consent evidence', async () => {
-    const disclosure = (await service.getStatus(user.id)).disclosures[0];
+    const status = await service.getStatus(user.id);
+    const disclosure = status.disclosures[0];
     const dto = {
+      policyVersion: status.policyVersion,
+      policyFingerprint: status.policyFingerprint,
       acceptances: [
         {
           key: disclosure.key,
@@ -422,7 +487,7 @@ describe('EligibilityService', () => {
     ).rejects.toThrow(/already allowed/);
   });
 
-  it('applies the latest matching immutable admin review only to the exact country and policy version', async () => {
+  it('applies the latest matching immutable admin review only to the exact policy fingerprint', async () => {
     userRepo.findOne.mockResolvedValue({ ...user, countryCode: 'NG' });
 
     await service.reviewUser(user.id, 'admin-1', {
@@ -439,11 +504,19 @@ describe('EligibilityService', () => {
     expect(approved.jurisdictionStatus).toBe('ELIGIBLE');
     expect(approved.decisionSource).toBe('ADMIN_REVIEW');
     expect(approved.reasonCode).toBe('REVIEW_APPROVED');
+    expect(reviewRows.at(-1)?.policyFingerprint).toBe(approved.policyFingerprint);
+
+    config.ELIGIBILITY_REVIEW_COUNTRY_CODES = 'NG,ZA';
+    const afterSameVersionPolicyChange = await service.getStatus(user.id);
+    expect(afterSameVersionPolicyChange.policyVersion).toBe(approved.policyVersion);
+    expect(afterSameVersionPolicyChange.policyFingerprint).not.toBe(approved.policyFingerprint);
+    expect(afterSameVersionPolicyChange.jurisdictionStatus).toBe('REVIEW_REQUIRED');
+    expect(afterSameVersionPolicyChange.decisionSource).toBe('POLICY');
 
     config.ELIGIBILITY_POLICY_VERSION = 'eligibility.2026-09';
-    const afterPolicyChange = await service.getStatus(user.id);
-    expect(afterPolicyChange.jurisdictionStatus).toBe('REVIEW_REQUIRED');
-    expect(afterPolicyChange.decisionSource).toBe('POLICY');
+    const afterPolicyVersionChange = await service.getStatus(user.id);
+    expect(afterPolicyVersionChange.jurisdictionStatus).toBe('REVIEW_REQUIRED');
+    expect(afterPolicyVersionChange.decisionSource).toBe('POLICY');
   });
 
   it('queues only active users whose current jurisdiction requires review', async () => {
@@ -461,6 +534,7 @@ describe('EligibilityService', () => {
     const queue = await service.listReviewQueue();
 
     expect(queue.map((item) => item.userId)).toEqual(['review', 'unknown']);
+    expect(queue.every((item) => /^[a-f0-9]{64}$/.test(item.policyFingerprint))).toBe(true);
     expect(JSON.stringify(queue)).not.toMatch(/passwordHash|brokerConnectionId|providerAccountId/);
   });
 });
