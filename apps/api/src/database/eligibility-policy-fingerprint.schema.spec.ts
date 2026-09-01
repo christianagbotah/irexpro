@@ -19,7 +19,7 @@ describe('Sprint 46 — eligibility policy fingerprint migration contract', () =
     expect(upSource).toContain('policy_version');
     expect(upSource).toContain('policy_fingerprint');
     expect(upSource).toContain("DEFAULT 'legacy.unbound'");
-    expect(upSource).toContain(`DEFAULT '${'0'.repeat(64)}'`);
+    expect(upSource).toContain("DEFAULT '${'0'.repeat(64)}'");
     expect(upSource).toContain("CHECK (policy_fingerprint ~ '^[a-f0-9]{64}$')");
     expect(upSource).toContain('ALTER COLUMN policy_version DROP DEFAULT');
     expect(upSource).toContain('ALTER COLUMN policy_fingerprint DROP DEFAULT');
@@ -41,9 +41,15 @@ describe('Sprint 46 — eligibility policy fingerprint migration contract', () =
   });
 
   it('preserves append-only evidence without bypassing mutation triggers', () => {
-    expect(upSource).not.toMatch(/\bUPDATE\s+identity\.user_(?:disclosure_consents|eligibility_reviews)\b/i);
-    expect(upSource).not.toMatch(/\bDELETE\s+FROM\s+identity\.user_(?:disclosure_consents|eligibility_reviews)\b/i);
-    expect(upSource).not.toMatch(/\bTRUNCATE\s+identity\.user_(?:disclosure_consents|eligibility_reviews)\b/i);
+    expect(upSource).not.toMatch(
+      /\bUPDATE\s+identity\.user_(?:disclosure_consents|eligibility_reviews)\b/i,
+    );
+    expect(upSource).not.toMatch(
+      /\bDELETE\s+FROM\s+identity\.user_(?:disclosure_consents|eligibility_reviews)\b/i,
+    );
+    expect(upSource).not.toMatch(
+      /\bTRUNCATE\s+identity\.user_(?:disclosure_consents|eligibility_reviews)\b/i,
+    );
     expect(upSource).not.toMatch(/DISABLE\s+TRIGGER/i);
     expect(upSource).not.toMatch(/DROP\s+TRIGGER/i);
   });
