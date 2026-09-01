@@ -308,6 +308,12 @@ export class EligibilityService {
     }
 
     const policy = this.currentPolicy();
+    if (dto.policyVersion !== policy.version || dto.policyFingerprint !== policy.fingerprint) {
+      throw new BadRequestException(
+        'Eligibility policy changed. Refresh the review queue before recording a jurisdiction decision.',
+      );
+    }
+
     const countryCode = user.countryCode.toUpperCase();
     const baseDecision = this.evaluatePolicy(countryCode, policy);
     if (baseDecision.status === 'ELIGIBLE') {
