@@ -42,9 +42,9 @@ jobs:
         run: node scripts/security/scan-tracked-secrets.mjs
 
   node-dependency-audit:
-    name: Node Dependency Audit
+    name: VPS Production Dependency Audit
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -64,25 +64,60 @@ jobs:
       - name: Install dependencies from frozen lockfile
         run: pnpm install --frozen-lockfile
 
-      - name: Audit Node dependency graph at high severity threshold
+      - name: Materialize isolated production dependency graphs
         shell: bash
         run: |
-          mkdir -p security-artifacts
+          rm -rf security-artifacts/deploy
+          mkdir -p security-artifacts/deploy
+          pnpm --filter @irexpro/api --prod deploy --legacy security-artifacts/deploy/api
+          pnpm --filter @irexpro/web --prod deploy --legacy security-artifacts/deploy/web
+          pnpm --filter @irexpro/admin --prod deploy --legacy security-artifacts/deploy/admin
+
+      - name: Audit API production graph at high severity threshold
+        shell: bash
+        run: |
           set +e
-          pnpm audit --audit-level=high --json > security-artifacts/pnpm-audit.json
+          pnpm --dir security-artifacts/deploy/api audit --prod --audit-level=high --json > security-artifacts/api-pnpm-audit.json
           audit_status=$?
           set -e
           if [ "$audit_status" -ne 0 ]; then
-            echo "Node dependency audit found high/critical vulnerabilities or could not complete."
+            echo "API production dependency audit found high/critical vulnerabilities or could not complete."
             exit "$audit_status"
           fi
 
-      - name: Upload Node audit evidence
+      - name: Audit Web production graph at high severity threshold
+        shell: bash
+        run: |
+          set +e
+          pnpm --dir security-artifacts/deploy/web audit --prod --audit-level=high --json > security-artifacts/web-pnpm-audit.json
+          audit_status=$?
+          set -e
+          if [ "$audit_status" -ne 0 ]; then
+            echo "Web production dependency audit found high/critical vulnerabilities or could not complete."
+            exit "$audit_status"
+          fi
+
+      - name: Audit Admin production graph at high severity threshold
+        shell: bash
+        run: |
+          set +e
+          pnpm --dir security-artifacts/deploy/admin audit --prod --audit-level=high --json > security-artifacts/admin-pnpm-audit.json
+          audit_status=$?
+          set -e
+          if [ "$audit_status" -ne 0 ]; then
+            echo "Admin production dependency audit found high/critical vulnerabilities or could not complete."
+            exit "$audit_status"
+          fi
+
+      - name: Upload deployable dependency audit evidence
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: node-dependency-audit
-          path: security-artifacts/pnpm-audit.json
+          name: vps-production-dependency-audit
+          path: |
+            security-artifacts/api-pnpm-audit.json
+            security-artifacts/web-pnpm-audit.json
+            security-artifacts/admin-pnpm-audit.json
           if-no-files-found: warn
           retention-days: 30
 
