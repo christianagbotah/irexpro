@@ -6,7 +6,7 @@ export enum KycReviewDecision {
 }
 
 @Entity({ name: 'user_kyc_reviews', schema: 'identity' })
-@Index('idx_user_kyc_reviews_lookup', ['userId', 'createdAt'])
+@Index('idx_user_kyc_reviews_lookup', ['userId', 'dateOfBirth', 'createdAt'])
 export class UserKycReview {
   @PrimaryGeneratedColumn('uuid')
   id: string;
