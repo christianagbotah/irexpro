@@ -205,11 +205,13 @@ test.describe('Sprint 46 policy-bound eligibility onboarding gate', () => {
 
   test('shows a safe error and keeps evidence unaccepted when the server rejects a stale policy snapshot', async ({ page }) => {
     setupErrorCollectors(page);
+    const stalePolicyMessage =
+      'Eligibility policy changed. Refresh the current disclosures before recording consent.';
     await installEligibilityRoutes(page, {
       acceptanceStatusCode: 400,
       acceptedStatus: {
         statusCode: 400,
-        message: 'Eligibility policy changed. Refresh the current disclosures before recording consent.',
+        message: stalePolicyMessage,
         error: 'Bad Request',
       },
     });
@@ -221,9 +223,8 @@ test.describe('Sprint 46 policy-bound eligibility onboarding gate', () => {
     }
     await page.getByRole('button', { name: 'Accept required disclosures' }).click();
 
-    await expect(
-      page.getByRole('alert').filter({ hasText: /policy changed|refresh/i }),
-    ).toBeVisible();
+    await expect(page.getByRole('alert').filter({ hasText: /something went wrong/i })).toBeVisible();
+    await expect(page.getByText(stalePolicyMessage, { exact: false })).toHaveCount(0);
     await expect(page.getByText('4 disclosures outstanding', { exact: true })).toBeVisible();
     await expect(page.getByText('Disclosures complete', { exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Continue to next step' })).toHaveCount(0);
