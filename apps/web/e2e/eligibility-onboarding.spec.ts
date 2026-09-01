@@ -37,8 +37,8 @@ const disclosureDefinitions = [
   {
     key: 'LEGAL_ELIGIBILITY_ATTESTATION',
     version: '1.0',
-    title: 'Legal eligibility attestation',
-    body: 'The account holder confirms legal capacity and jurisdictional eligibility for the service.',
+    title: 'Age and legal eligibility attestation',
+    body: 'I confirm that I am at least 18 years old, have the legal capacity to enter into this agreement, and am legally permitted to use automated trading services in the jurisdiction associated with my account.',
     contentSha256: 'd'.repeat(64),
     required: true,
   },
@@ -123,6 +123,7 @@ test.describe('Sprint 44 eligibility onboarding gate', () => {
     for (const disclosure of disclosureDefinitions) {
       await expect(page.getByText(disclosure.title, { exact: true })).toBeVisible();
     }
+    await expect(page.getByText(/at least 18 years old/i)).toBeVisible();
 
     await expect(page.getByText('brokerConnectionId', { exact: false })).toHaveCount(0);
     await expect(page.getByText('providerAccountId', { exact: false })).toHaveCount(0);
