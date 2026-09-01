@@ -36,8 +36,8 @@ const disclosureDefinitions = [
   {
     key: 'LEGAL_ELIGIBILITY_ATTESTATION',
     version: '1.0',
-    title: 'Legal eligibility attestation',
-    body: 'The account holder confirms legal capacity and jurisdictional eligibility for the service.',
+    title: 'Age and legal eligibility attestation',
+    body: 'The adult account holder confirms legal capacity and jurisdictional eligibility for the service.',
     contentSha256: 'd'.repeat(64),
     required: true,
   },
@@ -61,6 +61,9 @@ const deniedStatus = {
   decisionSource: 'ADMIN_REVIEW',
   reasonCode: 'JURISDICTION_REVIEW_DENIED',
   reviewedAt: '2026-09-01T09:15:00.000Z',
+  ageStatus: 'ADULT',
+  kycStatus: 'APPROVED',
+  identityReasonCode: 'IDENTITY_APPROVED',
   disclosures: disclosureDefinitions,
   consents: [],
   missingConsentKeys: disclosureDefinitions.map((item) => item.key),
@@ -106,7 +109,7 @@ async function installAdminRoutes(
   });
 }
 
-test.describe('Sprint 44 admin eligibility reviews', () => {
+test.describe('Sprint 45 admin jurisdiction reviews', () => {
   test('renders only frontend-safe review evidence and policy context', async ({ page }) => {
     setupErrorCollectors(page);
     await installAdminRoutes(page);
