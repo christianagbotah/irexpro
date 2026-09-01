@@ -125,6 +125,7 @@ test.describe('Sprint 46 admin jurisdiction reviews', () => {
     await expect(page.getByText(reviewQueue[0].email, { exact: true })).toBeVisible();
     await page.getByText(reviewQueue[0].email, { exact: true }).click();
     await expect(page.getByText(POLICY_VERSION, { exact: true })).toBeVisible();
+    await expect(page.getByText(new RegExp(POLICY_FINGERPRINT))).toBeVisible();
     await expect(page.getByText(/POLICY_REVIEW_REQUIRED/)).toBeVisible();
 
     await expect(page.getByText('passwordHash', { exact: false })).toHaveCount(0);
@@ -136,7 +137,7 @@ test.describe('Sprint 46 admin jurisdiction reviews', () => {
     assertNoFailedRequests(page);
   });
 
-  test('requires explicit confirmation and posts the reviewed evidence payload', async ({ page }) => {
+  test('requires explicit confirmation and posts the exact reviewed policy snapshot', async ({ page }) => {
     setupErrorCollectors(page);
     let submittedBody: unknown;
     await installAdminRoutes(page, {
@@ -163,6 +164,8 @@ test.describe('Sprint 46 admin jurisdiction reviews', () => {
     await page.getByRole('button', { name: 'Deny eligibility' }).click();
 
     expect(submittedBody).toEqual({
+      policyVersion: POLICY_VERSION,
+      policyFingerprint: POLICY_FINGERPRINT,
       decision: 'DENIED',
       reasonCode: 'JURISDICTION_REVIEW_DENIED',
       reviewerNote: 'Reviewed against the current jurisdiction policy.',
