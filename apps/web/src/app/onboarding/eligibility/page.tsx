@@ -235,7 +235,7 @@ export default function EligibilityOnboardingPage() {
                     <span>
                       <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
                         <strong>{item.title}</strong>
-                        <Badge variant={accepted ? 'success' : 'neutral'}>{accepted ? 'Accepted' : `Version ${item.version}`}</Badge>
+                        <Badge variant={accepted ? 'success' : 'info'}>{accepted ? 'Accepted' : `Version ${item.version}`}</Badge>
                       </span>
                       <span className="muted" style={{ display: 'block', marginTop: 'var(--space-2)', lineHeight: 1.65 }}>{item.body}</span>
                     </span>
