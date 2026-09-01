@@ -23,64 +23,6 @@ env:
   SYFT_VERSION: 'v1.51.0'
 
 jobs:
-  # Sprint 47 bootstrap only. This job is deliberately restricted to the
-  # repository-owned Sprint 47 branch and will be removed before release.
-  # It gives CI write permission only long enough to commit the deterministic
-  # pip-compile lock generated from pyproject.toml.
-  bootstrap-python-lock:
-    name: Bootstrap Python Runtime Lock
-    if: >-
-      github.event_name == 'pull_request' &&
-      github.head_ref == 'feat/production-release-security-health' &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      github.actor == 'christianagbotah'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: write
-
-    steps:
-      - name: Checkout Sprint 47 branch head
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          ref: ${{ github.head_ref }}
-          fetch-depth: 0
-
-      - name: Setup Python
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
-
-      - name: Install pinned lock compiler
-        run: python -m pip install --disable-pip-version-check "pip-tools==${PIP_TOOLS_VERSION}"
-
-      - name: Generate repository-controlled runtime lock
-        env:
-          CUSTOM_COMPILE_COMMAND: "python -m piptools compile services/ai-engine/pyproject.toml --generate-hashes"
-        run: |
-          python -m piptools compile \
-            services/ai-engine/pyproject.toml \
-            --generate-hashes \
-            --strip-extras \
-            --no-emit-index-url \
-            --no-emit-trusted-host \
-            --output-file services/ai-engine/requirements.lock
-
-      - name: Commit lock only when generated content changed
-        shell: bash
-        run: |
-          if git diff --quiet -- services/ai-engine/requirements.lock && git ls-files --error-unmatch services/ai-engine/requirements.lock >/dev/null 2>&1; then
-            echo "Python runtime lock already matches the deterministic compiler output."
-            exit 0
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add services/ai-engine/requirements.lock
-          git commit -m "chore(ai): lock production runtime dependencies"
-          git push origin "HEAD:${GITHUB_HEAD_REF}"
-
   tracked-secret-scan:
     name: Tracked Source Secret Scan
     runs-on: ubuntu-latest
@@ -122,50 +64,25 @@ jobs:
       - name: Install dependencies from frozen lockfile
         run: pnpm install --frozen-lockfile
 
-      - name: Materialize isolated production dependency graphs
+      - name: Capture full production dependency audit
         shell: bash
         run: |
-          rm -rf security-artifacts/deploy
-          mkdir -p security-artifacts/deploy
-          pnpm --filter @irexpro/api --prod deploy --legacy security-artifacts/deploy/api
-          pnpm --filter @irexpro/web --prod deploy --legacy security-artifacts/deploy/web
-          pnpm --filter @irexpro/admin --prod deploy --legacy security-artifacts/deploy/admin
-
-      - name: Audit API production graph at high severity threshold
-        shell: bash
-        run: |
+          mkdir -p security-artifacts
           set +e
-          pnpm --dir security-artifacts/deploy/api audit --prod --audit-level=high --json > security-artifacts/api-pnpm-audit.json
+          pnpm audit --prod --json > security-artifacts/pnpm-audit-full.json
           audit_status=$?
           set -e
-          if [ "$audit_status" -ne 0 ]; then
-            echo "API production dependency audit found high/critical vulnerabilities or could not complete."
-            exit "$audit_status"
+          if [ ! -s security-artifacts/pnpm-audit-full.json ]; then
+            echo "pnpm audit did not produce machine-readable evidence."
+            exit 2
           fi
+          echo "pnpm audit exit status: ${audit_status}; VPS scope is evaluated in the next step."
 
-      - name: Audit Web production graph at high severity threshold
-        shell: bash
-        run: |
-          set +e
-          pnpm --dir security-artifacts/deploy/web audit --prod --audit-level=high --json > security-artifacts/web-pnpm-audit.json
-          audit_status=$?
-          set -e
-          if [ "$audit_status" -ne 0 ]; then
-            echo "Web production dependency audit found high/critical vulnerabilities or could not complete."
-            exit "$audit_status"
-          fi
-
-      - name: Audit Admin production graph at high severity threshold
-        shell: bash
-        run: |
-          set +e
-          pnpm --dir security-artifacts/deploy/admin audit --prod --audit-level=high --json > security-artifacts/admin-pnpm-audit.json
-          audit_status=$?
-          set -e
-          if [ "$audit_status" -ne 0 ]; then
-            echo "Admin production dependency audit found high/critical vulnerabilities or could not complete."
-            exit "$audit_status"
-          fi
+      - name: Enforce high/critical policy for VPS deployables
+        run: >-
+          node scripts/security/filter-vps-production-audit.mjs
+          security-artifacts/pnpm-audit-full.json
+          security-artifacts/vps-pnpm-audit.json
 
       - name: Upload deployable dependency audit evidence
         if: always()
@@ -173,9 +90,8 @@ jobs:
         with:
           name: vps-production-dependency-audit
           path: |
-            security-artifacts/api-pnpm-audit.json
-            security-artifacts/web-pnpm-audit.json
-            security-artifacts/admin-pnpm-audit.json
+            security-artifacts/vps-pnpm-audit.json
+            security-artifacts/pnpm-audit-full.json
           if-no-files-found: warn
           retention-days: 30
 
@@ -220,7 +136,6 @@ jobs:
         run: |
           if [ ! -f services/ai-engine/requirements.lock ]; then
             echo "services/ai-engine/requirements.lock is missing."
-            echo "Use the generated lock artifact from this run and commit it."
             exit 1
           fi
           cmp services/ai-engine/requirements.lock security-artifacts/ai-engine-requirements.lock
