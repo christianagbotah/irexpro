@@ -26,6 +26,14 @@ export class AddEligibilityPolicyFingerprint1752900000000 implements MigrationIn
     `);
     await queryRunner.query(`
       ALTER TABLE identity.user_disclosure_consents
+      ALTER COLUMN policy_version DROP DEFAULT
+    `);
+    await queryRunner.query(`
+      ALTER TABLE identity.user_disclosure_consents
+      ALTER COLUMN policy_fingerprint DROP DEFAULT
+    `);
+    await queryRunner.query(`
+      ALTER TABLE identity.user_disclosure_consents
       DROP CONSTRAINT IF EXISTS chk_user_disclosure_consents_policy_fingerprint
     `);
     await queryRunner.query(`
@@ -50,6 +58,10 @@ export class AddEligibilityPolicyFingerprint1752900000000 implements MigrationIn
     await queryRunner.query(`
       ALTER TABLE identity.user_eligibility_reviews
       ADD COLUMN IF NOT EXISTS policy_fingerprint varchar(64) NOT NULL DEFAULT '${'0'.repeat(64)}'
+    `);
+    await queryRunner.query(`
+      ALTER TABLE identity.user_eligibility_reviews
+      ALTER COLUMN policy_fingerprint DROP DEFAULT
     `);
     await queryRunner.query(`
       ALTER TABLE identity.user_eligibility_reviews
