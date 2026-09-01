@@ -77,10 +77,37 @@ export class CreateEligibilityDisclosureGate1752700000000 implements MigrationIn
       CREATE INDEX IF NOT EXISTS idx_user_eligibility_reviews_reviewer
       ON identity.user_eligibility_reviews (reviewer_user_id, created_at DESC)
     `);
+
+    await queryRunner.query(`
+      CREATE OR REPLACE FUNCTION identity.reject_eligibility_evidence_mutation()
+      RETURNS trigger
+      LANGUAGE plpgsql
+      AS $$
+      BEGIN
+        RAISE EXCEPTION 'eligibility evidence is append-only and cannot be mutated'
+          USING ERRCODE = '55000';
+      END;
+      $$
+    `);
+
+    await queryRunner.query(`
+      CREATE TRIGGER trg_user_disclosure_consents_immutable
+      BEFORE UPDATE OR DELETE OR TRUNCATE ON identity.user_disclosure_consents
+      FOR EACH STATEMENT
+      EXECUTE FUNCTION identity.reject_eligibility_evidence_mutation()
+    `);
+
+    await queryRunner.query(`
+      CREATE TRIGGER trg_user_eligibility_reviews_immutable
+      BEFORE UPDATE OR DELETE OR TRUNCATE ON identity.user_eligibility_reviews
+      FOR EACH STATEMENT
+      EXECUTE FUNCTION identity.reject_eligibility_evidence_mutation()
+    `);
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`DROP TABLE IF EXISTS identity.user_eligibility_reviews`);
     await queryRunner.query(`DROP TABLE IF EXISTS identity.user_disclosure_consents`);
+    await queryRunner.query(`DROP FUNCTION IF EXISTS identity.reject_eligibility_evidence_mutation()`);
   }
 }
