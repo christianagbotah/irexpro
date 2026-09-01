@@ -63,14 +63,15 @@ describe('EligibilityService', () => {
     userRepo.findOne.mockResolvedValue(user);
     userRepo.find.mockResolvedValue([user]);
     consentRepo.find.mockImplementation(async () => [...consentRows]);
-    consentRepo.findOne.mockImplementation(async ({ where }) =>
-      consentRows.find(
-        (row) =>
-          row.userId === where.userId &&
-          row.disclosureKey === where.disclosureKey &&
-          row.disclosureVersion === where.disclosureVersion &&
-          row.contentSha256 === where.contentSha256,
-      ) ?? null,
+    consentRepo.findOne.mockImplementation(
+      async ({ where }) =>
+        consentRows.find(
+          (row) =>
+            row.userId === where.userId &&
+            row.disclosureKey === where.disclosureKey &&
+            row.disclosureVersion === where.disclosureVersion &&
+            row.contentSha256 === where.contentSha256,
+        ) ?? null,
     );
     consentRepo.save.mockImplementation(async (row) => {
       const saved = {
