@@ -42,8 +42,8 @@ services:
 
   api:
     build:
-      context: ./apps/api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/api/Dockerfile
       target: development
     container_name: irexpro_api
     restart: unless-stopped
@@ -60,7 +60,7 @@ services:
     ports:
       - '3000:3000'
     volumes:
-      - ./apps/api/src:/app/src:ro
+      - ./apps/api/src:/workspace/apps/api/src:ro
     command: pnpm start:dev
 
   ai-engine:
