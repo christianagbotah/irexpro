@@ -56,6 +56,7 @@ describe('EligibilityService', () => {
     save: jest.fn(),
   };
   const kycReviewRepo = {
+    findOne: jest.fn(),
     create: jest.fn((value) => value),
     save: jest.fn(),
   };
@@ -68,7 +69,18 @@ describe('EligibilityService', () => {
     jest.clearAllMocks();
     consentRows = [];
     reviewRows = [];
-    kycReviewRows = [];
+    kycReviewRows = [
+      {
+        id: 'kyc-review-seed',
+        userId: user.id,
+        dateOfBirth: '1990-01-01',
+        decision: KycReviewDecision.APPROVED,
+        reasonCode: 'MANUAL_IDENTITY_VERIFIED',
+        reviewerUserId: 'admin-seed',
+        reviewerNote: null,
+        createdAt: new Date('2026-08-31T00:30:00Z'),
+      } as UserKycReview,
+    ];
     config = {
       ELIGIBILITY_POLICY_VERSION: 'eligibility.2026-08',
       ELIGIBILITY_ALLOWED_COUNTRY_CODES: 'GH,GB',
@@ -116,6 +128,12 @@ describe('EligibilityService', () => {
       } as UserEligibilityReview;
       reviewRows.push(saved);
       return saved;
+    });
+    kycReviewRepo.findOne.mockImplementation(async ({ where }) => {
+      const matches = kycReviewRows.filter(
+        (row) => row.userId === where.userId && row.dateOfBirth === where.dateOfBirth,
+      );
+      return matches.at(-1) ?? null;
     });
     kycReviewRepo.save.mockImplementation(async (row) => {
       const saved = {
@@ -201,6 +219,22 @@ describe('EligibilityService', () => {
     expect(status.canProceed).toBe(false);
   });
 
+  it('does not trust a mutable APPROVED flag without immutable evidence for the current DOB', async () => {
+    kycReviewRows = [
+      {
+        ...kycReviewRows[0],
+        dateOfBirth: '1980-01-01',
+      },
+    ];
+
+    const status = await service.getStatus(user.id);
+
+    expect(user.profile.kycStatus).toBe(KycStatus.APPROVED);
+    expect(status.kycStatus).toBe(KycStatus.NONE);
+    expect(status.identityReasonCode).toBe('KYC_REQUIRED');
+    expect(status.canProceed).toBe(false);
+  });
+
   it('fails closed for an under-18 profile and refuses KYC approval', async () => {
     const year = new Date().getUTCFullYear() - 10;
     const underage = {
@@ -226,10 +260,10 @@ describe('EligibilityService', () => {
         reasonCode: 'MANUAL_IDENTITY_VERIFIED',
       }),
     ).rejects.toThrow(/adult-age requirement/i);
-    expect(kycReviewRows).toHaveLength(0);
+    expect(kycReviewRepo.save).not.toHaveBeenCalled();
   });
 
-  it('queues only adult active users awaiting KYC and records immutable approval evidence', async () => {
+  it('queues adult users without current approval evidence and records immutable approval evidence', async () => {
     const awaiting = {
       ...user,
       id: 'awaiting-kyc',
@@ -252,15 +286,26 @@ describe('EligibilityService', () => {
         kycStatus: KycStatus.PENDING,
       },
     } as User;
-    const approved = {
+    const legacyApprovedWithoutEvidence = {
       ...user,
       id: 'approved-kyc',
       profile: { ...user.profile, userId: 'approved-kyc' },
     } as User;
-    userRepo.find.mockResolvedValue([awaiting, pending, approved]);
+    userRepo.find.mockResolvedValue([awaiting, pending, legacyApprovedWithoutEvidence]);
 
     const queue = await service.listKycReviewQueue();
-    expect(queue.map((item) => item.userId)).toEqual(['awaiting-kyc', 'pending-kyc']);
+    expect(queue.map((item) => item.userId)).toEqual([
+      'awaiting-kyc',
+      'pending-kyc',
+      'approved-kyc',
+    ]);
+    expect(queue.at(-1)).toEqual(
+      expect.objectContaining({
+        userId: 'approved-kyc',
+        kycStatus: KycStatus.NONE,
+        reasonCode: 'KYC_REQUIRED',
+      }),
+    );
     expect(JSON.stringify(queue)).not.toMatch(/passwordHash|reviewerNote|brokerConnectionId/);
 
     userRepo.findOne.mockResolvedValue(awaiting);
@@ -270,8 +315,8 @@ describe('EligibilityService', () => {
       reviewerNote: 'Verified through the approved compliance process.',
     });
 
-    expect(kycReviewRows).toHaveLength(1);
-    expect(kycReviewRows[0]).toEqual(
+    const recorded = kycReviewRows.find((row) => row.userId === awaiting.id);
+    expect(recorded).toEqual(
       expect.objectContaining({
         userId: awaiting.id,
         dateOfBirth: '1992-05-15',
