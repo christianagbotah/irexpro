@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "iRexPro — Global Fully Autonomous AI Forex Trading Platform",
   "private": true,
+  "packageManager": "pnpm@10.34.5",
   "scripts": {
     "api:dev": "pnpm --filter @irexpro/api start:dev",
     "api:build": "pnpm --filter @irexpro/api build",
