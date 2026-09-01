@@ -67,6 +67,7 @@ test.describe('Trader workspace independent scrolling', () => {
     await sidebar.evaluate((el) => {
       const spacer = document.createElement('div');
       spacer.setAttribute('data-scroll-test', 'sidebar');
+      spacer.style.flex = '0 0 1400px';
       spacer.style.height = '1400px';
       spacer.style.pointerEvents = 'none';
       el.appendChild(spacer);
