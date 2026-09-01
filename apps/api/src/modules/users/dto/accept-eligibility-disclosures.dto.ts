@@ -29,6 +29,16 @@ export class EligibilityDisclosureAcceptanceDto {
 }
 
 export class AcceptEligibilityDisclosuresDto {
+  @ApiProperty({ example: 'eligibility.2026-09' })
+  @IsString()
+  @Length(1, 64)
+  policyVersion: string;
+
+  @ApiProperty({ description: 'Lowercase SHA-256 fingerprint of the active eligibility policy.' })
+  @IsString()
+  @Matches(/^[a-f0-9]{64}$/)
+  policyFingerprint: string;
+
   @ApiProperty({ type: [EligibilityDisclosureAcceptanceDto] })
   @IsArray()
   @ArrayMinSize(1)
