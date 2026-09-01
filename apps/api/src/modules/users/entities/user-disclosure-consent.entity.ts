@@ -11,7 +11,14 @@ export enum EligibilityDisclosureKey {
 @Index('idx_user_disclosure_consents_user', ['userId', 'acceptedAt'])
 @Index(
   'uq_user_disclosure_consents_evidence',
-  ['userId', 'disclosureKey', 'disclosureVersion', 'contentSha256'],
+  [
+    'userId',
+    'policyVersion',
+    'policyFingerprint',
+    'disclosureKey',
+    'disclosureVersion',
+    'contentSha256',
+  ],
   { unique: true },
 )
 export class UserDisclosureConsent {
@@ -20,6 +27,12 @@ export class UserDisclosureConsent {
 
   @Column({ name: 'user_id', type: 'uuid' })
   userId: string;
+
+  @Column({ name: 'policy_version', type: 'varchar', length: 64 })
+  policyVersion: string;
+
+  @Column({ name: 'policy_fingerprint', type: 'varchar', length: 64 })
+  policyFingerprint: string;
 
   @Column({ name: 'disclosure_key', type: 'varchar', length: 64 })
   disclosureKey: EligibilityDisclosureKey;
