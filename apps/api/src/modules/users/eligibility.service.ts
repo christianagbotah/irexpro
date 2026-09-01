@@ -1,9 +1,5 @@
 import { createHash } from 'crypto';
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -86,29 +82,25 @@ const DISCLOSURES: readonly DisclosureDefinition[] = [
     key: EligibilityDisclosureKey.AUTOMATED_TRADING_RISK,
     version: '1.0',
     title: 'Automated trading risk',
-    body:
-      'Automated trading can result in financial loss. Market conditions, broker availability, model errors, slippage, and execution failures can affect outcomes. Risk controls reduce exposure but cannot eliminate risk.',
+    body: 'Automated trading can result in financial loss. Market conditions, broker availability, model errors, slippage, and execution failures can affect outcomes. Risk controls reduce exposure but cannot eliminate risk.',
   },
   {
     key: EligibilityDisclosureKey.NO_PROFIT_GUARANTEE,
     version: '1.0',
     title: 'No profit guarantee',
-    body:
-      'Historical research, simulations, AI confidence scores, and prior trading results do not guarantee future profits or prevent future losses.',
+    body: 'Historical research, simulations, AI confidence scores, and prior trading results do not guarantee future profits or prevent future losses.',
   },
   {
     key: EligibilityDisclosureKey.BROKER_EXECUTION_AUTHORITY,
     version: '1.0',
     title: 'Broker execution authority',
-    body:
-      'When live automated trading is separately enabled, approved signals may be submitted to the connected broker only through the platform risk and execution controls. The broker remains the venue that accepts or rejects orders.',
+    body: 'When live automated trading is separately enabled, approved signals may be submitted to the connected broker only through the platform risk and execution controls. The broker remains the venue that accepts or rejects orders.',
   },
   {
     key: EligibilityDisclosureKey.LEGAL_ELIGIBILITY_ATTESTATION,
     version: '1.0',
     title: 'Legal eligibility attestation',
-    body:
-      'I confirm that I have the legal capacity and am legally permitted to use automated trading services in the jurisdiction associated with my account.',
+    body: 'I confirm that I have the legal capacity and am legally permitted to use automated trading services in the jurisdiction associated with my account.',
   },
 ] as const;
 
@@ -204,9 +196,13 @@ export class EligibilityService {
 
     const queue: EligibilityReviewQueueItem[] = [];
     for (const user of users) {
-      if (!user.countryCode) continue;
+      // Keep this explicit guard even though the repository query filters by
+      // ACTIVE. It is defense in depth against stale/mocked repository results.
+      if (user.status !== UserStatus.ACTIVE || !user.countryCode) continue;
+
       const decision = await this.evaluateJurisdiction(user.id, user.countryCode);
       if (decision.status !== 'REVIEW_REQUIRED') continue;
+
       queue.push({
         userId: user.id,
         email: user.email,
