@@ -97,6 +97,8 @@ export default function EligibilityReviewsPage() {
     setSubmitting(true);
     try {
       await eligibilityApi.reviewUser(selected.userId, {
+        policyVersion: selected.policyVersion,
+        policyFingerprint: selected.policyFingerprint,
         decision,
         reasonCode: normalizedReason,
         ...(reviewerNote.trim() ? { reviewerNote: reviewerNote.trim() } : {}),
