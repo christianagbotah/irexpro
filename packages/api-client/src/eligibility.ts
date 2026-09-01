@@ -5,7 +5,9 @@ import type {
   EligibilityDisclosureView,
   EligibilityReviewQueueItem,
   EligibilityStatusView,
+  KycReviewQueueItem,
   ReviewUserEligibilityRequest,
+  ReviewUserKycRequest,
 } from '@irexpro/types/eligibility';
 import type { ApiClient } from './index';
 
@@ -22,8 +24,11 @@ const JURISDICTION_STATUSES = new Set([
   'INELIGIBLE',
 ]);
 const DECISION_SOURCES = new Set(['POLICY', 'ADMIN_REVIEW']);
+const AGE_STATUSES = new Set(['MISSING_DOB', 'INVALID_DOB', 'UNDER_18', 'ADULT']);
+const KYC_STATUSES = new Set(['NONE', 'PENDING', 'APPROVED', 'REJECTED']);
 const SHA256 = /^[a-f0-9]{64}$/;
 const COUNTRY = /^[A-Z]{2}$/;
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -46,14 +51,7 @@ function isDisclosureKey(value: unknown): value is EligibilityDisclosureKey {
 function isDisclosure(value: unknown): value is EligibilityDisclosureView {
   if (
     !isRecord(value) ||
-    !hasExactKeys(value, [
-      'key',
-      'version',
-      'title',
-      'body',
-      'contentSha256',
-      'required',
-    ])
+    !hasExactKeys(value, ['key', 'version', 'title', 'body', 'contentSha256', 'required'])
   ) {
     return false;
   }
@@ -98,6 +96,9 @@ export function isEligibilityStatusView(value: unknown): value is EligibilitySta
       'decisionSource',
       'reasonCode',
       'reviewedAt',
+      'ageStatus',
+      'kycStatus',
+      'identityReasonCode',
       'disclosures',
       'consents',
       'missingConsentKeys',
@@ -107,7 +108,8 @@ export function isEligibilityStatusView(value: unknown): value is EligibilitySta
     return false;
   }
 
-  const countryValid = value.countryCode === null ||
+  const countryValid =
+    value.countryCode === null ||
     (typeof value.countryCode === 'string' && COUNTRY.test(value.countryCode));
   const reviewedAtValid = value.reviewedAt === null || isIso(value.reviewedAt);
 
@@ -122,6 +124,12 @@ export function isEligibilityStatusView(value: unknown): value is EligibilitySta
     typeof value.reasonCode === 'string' &&
     value.reasonCode.length > 0 &&
     reviewedAtValid &&
+    typeof value.ageStatus === 'string' &&
+    AGE_STATUSES.has(value.ageStatus) &&
+    typeof value.kycStatus === 'string' &&
+    KYC_STATUSES.has(value.kycStatus) &&
+    typeof value.identityReasonCode === 'string' &&
+    value.identityReasonCode.length > 0 &&
     Array.isArray(value.disclosures) &&
     value.disclosures.length === DISCLOSURE_KEYS.size &&
     value.disclosures.every(isDisclosure) &&
@@ -132,7 +140,10 @@ export function isEligibilityStatusView(value: unknown): value is EligibilitySta
     value.missingConsentKeys.every(isDisclosureKey) &&
     typeof value.canProceed === 'boolean' &&
     value.canProceed ===
-      (value.jurisdictionStatus === 'ELIGIBLE' && value.missingConsentKeys.length === 0)
+      (value.jurisdictionStatus === 'ELIGIBLE' &&
+        value.ageStatus === 'ADULT' &&
+        value.kycStatus === 'APPROVED' &&
+        value.missingConsentKeys.length === 0)
   );
 }
 
@@ -160,6 +171,31 @@ export function isEligibilityReviewQueueItem(value: unknown): value is Eligibili
   );
 }
 
+export function isKycReviewQueueItem(value: unknown): value is KycReviewQueueItem {
+  return (
+    isRecord(value) &&
+    hasExactKeys(value, [
+      'userId',
+      'email',
+      'countryCode',
+      'dateOfBirth',
+      'ageStatus',
+      'kycStatus',
+      'reasonCode',
+    ]) &&
+    typeof value.userId === 'string' &&
+    value.userId.length > 0 &&
+    (value.email === null || typeof value.email === 'string') &&
+    (value.countryCode === null ||
+      (typeof value.countryCode === 'string' && COUNTRY.test(value.countryCode))) &&
+    typeof value.dateOfBirth === 'string' &&
+    DATE_ONLY.test(value.dateOfBirth) &&
+    value.ageStatus === 'ADULT' &&
+    (value.kycStatus === 'NONE' || value.kycStatus === 'PENDING') &&
+    (value.reasonCode === 'KYC_REQUIRED' || value.reasonCode === 'KYC_PENDING')
+  );
+}
+
 function assertStatus(value: unknown): EligibilityStatusView {
   if (!isEligibilityStatusView(value)) {
     throw new Error('Eligibility response failed frontend-safe contract verification.');
@@ -174,17 +210,26 @@ function assertQueue(value: unknown): EligibilityReviewQueueItem[] {
   return value;
 }
 
+function assertKycQueue(value: unknown): KycReviewQueueItem[] {
+  if (!Array.isArray(value) || !value.every(isKycReviewQueueItem)) {
+    throw new Error('KYC review queue failed frontend-safe contract verification.');
+  }
+  return value;
+}
+
 export interface EligibilityApi {
   getMyStatus(): Promise<EligibilityStatusView>;
   acceptDisclosures(body: AcceptEligibilityDisclosuresRequest): Promise<EligibilityStatusView>;
   listReviewQueue(): Promise<EligibilityReviewQueueItem[]>;
   reviewUser(userId: string, body: ReviewUserEligibilityRequest): Promise<EligibilityStatusView>;
+  listKycReviewQueue(): Promise<KycReviewQueueItem[]>;
+  reviewKyc(userId: string, body: ReviewUserKycRequest): Promise<EligibilityStatusView>;
 }
 
 /**
  * Eligibility/readiness client. All responses are exact-key verified before
- * they reach a browser. It records disclosure/review evidence only and exposes
- * no broker, risk-override, order, or execution method.
+ * they reach a browser. It exposes evidence/readiness methods only and no
+ * broker, risk-override, order, strategy, or execution method.
  */
 export function createEligibilityApi(client: Pick<ApiClient, 'request'>): EligibilityApi {
   return {
@@ -202,6 +247,15 @@ export function createEligibilityApi(client: Pick<ApiClient, 'request'>): Eligib
       assertStatus(
         await client.request<unknown>(
           `/admin/eligibility/users/${encodeURIComponent(userId)}/review`,
+          { method: 'POST', body: JSON.stringify(body) },
+        ),
+      ),
+    listKycReviewQueue: async () =>
+      assertKycQueue(await client.request<unknown>('/admin/identity/kyc/reviews')),
+    reviewKyc: async (userId, body) =>
+      assertStatus(
+        await client.request<unknown>(
+          `/admin/identity/users/${encodeURIComponent(userId)}/kyc-review`,
           { method: 'POST', body: JSON.stringify(body) },
         ),
       ),

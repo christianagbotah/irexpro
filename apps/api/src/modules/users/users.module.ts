@@ -10,6 +10,7 @@ import { UserPaymentProfile } from './entities/user-payment-profile.entity';
 import { AccountAppeal } from './entities/account-appeal.entity';
 import { UserDisclosureConsent } from './entities/user-disclosure-consent.entity';
 import { UserEligibilityReview } from './entities/user-eligibility-review.entity';
+import { UserKycReview } from './entities/user-kyc-review.entity';
 import { RiskProfile } from '../risk/entities/risk-profile.entity';
 import { BrokerConnection } from '../broker/entities/broker-connection.entity';
 import { UsersController } from './users.controller';
@@ -23,9 +24,9 @@ import { EligibilityController } from './eligibility.controller';
 import { EligibilityService } from './eligibility.service';
 
 @Module({
-  // Sprint 29: OnboardingService needs RiskProfile + BrokerConnection repos.
-  // Sprint 44: eligibility evidence is part of the same centralized readiness gate.
-  // AuditModule is imported for audit logging in onboarding/governance/eligibility.
+  // OnboardingService needs RiskProfile + BrokerConnection repos.
+  // Sprint 44/45: eligibility, consent, age, and KYC evidence are part of the
+  // same centralized fail-closed readiness boundary.
   imports: [
     TypeOrmModule.forFeature([
       User,
@@ -36,12 +37,11 @@ import { EligibilityService } from './eligibility.service';
       AccountAppeal,
       UserDisclosureConsent,
       UserEligibilityReview,
+      UserKycReview,
       RiskProfile,
       BrokerConnection,
     ]),
     AuditModule,
-    // The public appeal endpoint is deliberately rate limited. Keep this
-    // module-local configuration aligned with auth's general API throttling.
     ThrottlerModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

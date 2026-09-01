@@ -32,6 +32,7 @@ const PRIMARY_NAV: NavDestination[] = [
 const SECONDARY_NAV: NavDestination[] = [
   { href: '/admin/account-appeals', label: 'Account reviews', Icon: UsersIcon },
   { href: '/admin/eligibility-reviews', label: 'Eligibility reviews', Icon: AuditIcon },
+  { href: '/admin/kyc-reviews', label: 'KYC reviews', Icon: UsersIcon },
   { href: '/admin/audit', label: 'Audit log', Icon: AuditIcon },
 ];
 

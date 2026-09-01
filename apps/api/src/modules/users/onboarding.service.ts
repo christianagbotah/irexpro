@@ -11,19 +11,11 @@ import { AuditAction } from '../../common/enums/audit-action.enum';
 import { EligibilityService } from './eligibility.service';
 
 /**
- * OnboardingService — centralized trader onboarding/readiness aggregator.
+ * OnboardingService — centralized onboarding/readiness aggregator.
  *
- * canStartTrading requires ALL of:
- *   1. User is ACTIVE (not SUSPENDED/PERMANENTLY_LOCKED/CLOSED)
- *   2. Profile is complete
- *   3. Sprint 44 eligibility gate is complete: jurisdiction ELIGIBLE and every
- *      exact current disclosure version/hash has immutable consent evidence
- *   4. Risk profile exists AND risk acknowledgement is accepted
- *   5. Kill switch is NOT active
- *   6. Broker connection is CONNECTED (healthy)
- *
- * The service is the first hard gate inside TradingService.startTradingSession.
- * Eligibility never bypasses or replaces broker, Risk Engine, or Execution Engine gates.
+ * Readiness requires all existing account gates plus the server-authoritative
+ * eligibility service. Sprint 45 extends that eligibility gate with adult-age
+ * and approved KYC state, while profile completion now requires a DOB.
  */
 @Injectable()
 export class OnboardingService {
@@ -42,11 +34,6 @@ export class OnboardingService {
     private eligibilityService: EligibilityService,
   ) {}
 
-  /**
-   * Get the full onboarding status for a user. Does NOT mutate — safe to call
-   * on every dashboard load. Audits TRADING_READINESS_CHECKED only when the
-   * user is fully ready (to avoid audit spam on every dashboard poll).
-   */
   async getOnboardingStatus(userId: string): Promise<OnboardingStatus> {
     const user = await this.userRepo.findOne({
       where: { id: userId },
@@ -66,30 +53,23 @@ export class OnboardingService {
       };
     }
 
-    // 1. Profile completion
     const profileCompleted = this.isProfileComplete(user);
 
-    // 2. Eligibility + exact current disclosure evidence (Sprint 44)
-    // Fail closed: a missing/unknown jurisdiction, required review, denial, or
-    // missing disclosure evidence all keep canStartTrading=false.
+    // Fail closed: jurisdiction, adult age, KYC, or exact disclosure evidence
+    // can independently keep eligibility incomplete.
     const eligibility = await this.eligibilityService.getStatus(userId);
     const eligibilityCompleted = eligibility.canProceed;
 
-    // 3. Risk profile completion (exists + acknowledgement accepted)
     const riskProfile = await this.riskProfileRepo.findOne({ where: { userId } });
     const riskProfileCompleted = this.isRiskProfileComplete(riskProfile);
 
-    // 4. Broker connection
     const activeConnection = await this.findActiveBrokerConnection(userId);
     const brokerConnected = !!activeConnection;
     const brokerConnectionStatus: BrokerConnectionStatus | 'NONE' = activeConnection
       ? activeConnection.status
       : 'NONE';
 
-    // 5. Kill switch (if risk profile exists)
     const killSwitchActive = riskProfile?.killSwitchActive ?? false;
-
-    // 6. User status
     const userActive = user.status === UserStatus.ACTIVE;
 
     const missingSteps: OnboardingStep[] = [];
@@ -138,11 +118,6 @@ export class OnboardingService {
     };
   }
 
-  /**
-   * Hard gate: can the user start automated trading?
-   * Returns { allowed, missingSteps } — TradingService throws a structured 403
-   * before touching broker/risk/session execution when this fails.
-   */
   async canStartTrading(
     userId: string,
   ): Promise<{ allowed: boolean; missingSteps: OnboardingStep[] }> {
@@ -159,6 +134,7 @@ export class OnboardingService {
     return !!(
       profile.firstName &&
       profile.lastName &&
+      profile.dateOfBirth &&
       user.countryCode &&
       user.timezone &&
       user.preferredCurrency &&
@@ -172,8 +148,8 @@ export class OnboardingService {
   }
 
   /**
-   * Select ONLY fields needed for onboarding readiness; credentials and broker
-   * provider secrets are never loaded. Query failures fail closed to no broker.
+   * Select only the fields needed for readiness; credentials and provider
+   * secrets are never loaded. Query failures fail closed to no connection.
    */
   private async findActiveBrokerConnection(
     userId: string,
@@ -208,10 +184,7 @@ export class OnboardingService {
   }
 }
 
-/** The onboarding steps a user must complete before trading. */
 export type OnboardingStep = 'PROFILE' | 'ELIGIBILITY' | 'RISK_PROFILE' | 'BROKER_CONNECTION';
-
-/** The next step the user should take, or READY if all complete. */
 export type OnboardingNextStep = OnboardingStep | 'READY';
 
 export interface OnboardingStatus {
@@ -219,7 +192,6 @@ export interface OnboardingStatus {
   eligibilityCompleted: boolean;
   riskProfileCompleted: boolean;
   brokerConnected: boolean;
-  /** 'NONE' when the user has no broker connection at all. */
   brokerConnectionStatus: BrokerConnectionStatus | 'NONE';
   canStartTrading: boolean;
   missingSteps: OnboardingStep[];

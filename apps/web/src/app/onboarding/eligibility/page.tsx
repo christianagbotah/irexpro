@@ -15,31 +15,81 @@ import { mapApiError } from '@/lib/error-mapping';
 
 const eligibilityApi = createEligibilityApi(api);
 
-function statusCopy(status: EligibilityStatusView) {
+function jurisdictionCopy(status: EligibilityStatusView) {
   switch (status.jurisdictionStatus) {
     case 'ELIGIBLE':
       return {
         variant: 'success' as const,
         label: 'Jurisdiction eligible',
-        text: 'Your current jurisdiction has passed the active eligibility policy or an authorised review.',
+        text: 'Your current jurisdiction has passed the active policy or an authorised review.',
       };
     case 'REVIEW_REQUIRED':
       return {
         variant: 'warning' as const,
         label: 'Review required',
-        text: 'Your jurisdiction requires an authorised review before automated trading can be enabled.',
+        text: 'Your jurisdiction requires an authorised compliance review before readiness can be completed.',
       };
     case 'INELIGIBLE':
       return {
         variant: 'error' as const,
         label: 'Not eligible',
-        text: 'Automated trading cannot be enabled for the jurisdiction currently recorded on your account.',
+        text: 'The service cannot be enabled for the jurisdiction currently recorded on your account.',
       };
     default:
       return {
         variant: 'warning' as const,
         label: 'Country required',
-        text: 'Complete your trader profile with a valid country code before eligibility can be determined.',
+        text: 'Complete your profile with a valid country code before jurisdiction eligibility can be determined.',
+      };
+  }
+}
+
+function identityCopy(status: EligibilityStatusView) {
+  if (status.ageStatus === 'UNDER_18') {
+    return {
+      variant: 'error' as const,
+      label: 'Adult-age requirement not met',
+      text: 'This account cannot complete readiness because the service is restricted to adults age 18 or older.',
+    };
+  }
+  if (status.ageStatus === 'MISSING_DOB') {
+    return {
+      variant: 'warning' as const,
+      label: 'Date of birth required',
+      text: 'Add a date of birth to your profile so the server can evaluate the adult-age requirement.',
+    };
+  }
+  if (status.ageStatus === 'INVALID_DOB') {
+    return {
+      variant: 'error' as const,
+      label: 'Date of birth needs correction',
+      text: 'The stored date of birth is not valid. Update the profile before readiness can continue.',
+    };
+  }
+  switch (status.kycStatus) {
+    case 'APPROVED':
+      return {
+        variant: 'success' as const,
+        label: 'Identity review approved',
+        text: 'The adult-age requirement and the current KYC review state are approved.',
+      };
+    case 'PENDING':
+      return {
+        variant: 'warning' as const,
+        label: 'KYC review pending',
+        text: 'An authorised compliance review is still pending. Readiness remains blocked until it is approved.',
+      };
+    case 'REJECTED':
+      return {
+        variant: 'error' as const,
+        label: 'KYC review not approved',
+        text: 'The current KYC review is not approved. Readiness remains blocked.',
+      };
+    default:
+      return {
+        variant: 'warning' as const,
+        label: 'KYC review required',
+        text: 'An authorised compliance review is required before readiness can be completed.',
       };
   }
 }
@@ -79,7 +129,11 @@ export default function EligibilityOnboardingPage() {
   );
 
   if (restoring) {
-    return <div style={{ padding: '3rem' }}><p className="muted">Restoring session…</p></div>;
+    return (
+      <div style={{ padding: '3rem' }}>
+        <p className="muted">Restoring session…</p>
+      </div>
+    );
   }
 
   if (!user) {
@@ -100,6 +154,11 @@ export default function EligibilityOnboardingPage() {
     if (!status) return;
     setError(null);
     setMessage(null);
+
+    if (status.ageStatus !== 'ADULT') {
+      setError('The adult-age requirement must be satisfied before disclosure evidence can be recorded.');
+      return;
+    }
 
     const missing = status.disclosures.filter((item) => !acceptedKeys.has(item.key));
     if (missing.some((item) => !selected.has(item.key))) {
@@ -124,12 +183,14 @@ export default function EligibilityOnboardingPage() {
       setStatus(next);
       setSelected(new Set());
       if (next.canProceed) {
-        setMessage('Eligibility and disclosure evidence recorded. Continuing to risk setup…');
+        setMessage('Eligibility evidence is complete. Continuing to the next onboarding step…');
         router.push('/onboarding/risk');
       } else if (next.jurisdictionStatus === 'REVIEW_REQUIRED') {
-        setMessage('Your disclosure evidence is recorded. Jurisdiction review is still required.');
+        setMessage('Disclosure evidence is recorded. Jurisdiction review is still required.');
+      } else if (next.kycStatus !== 'APPROVED') {
+        setMessage('Disclosure evidence is recorded. Identity/KYC review is still required.');
       } else {
-        setMessage('Your disclosure evidence is recorded. Automated trading remains unavailable.');
+        setMessage('Disclosure evidence is recorded. Readiness remains unavailable.');
       }
     } catch (err) {
       setError(mapApiError(err).message);
@@ -138,15 +199,19 @@ export default function EligibilityOnboardingPage() {
     }
   }
 
-  const copy = status ? statusCopy(status) : null;
+  const jCopy = status ? jurisdictionCopy(status) : null;
+  const iCopy = status ? identityCopy(status) : null;
+  const profileNeedsDob = status?.ageStatus === 'MISSING_DOB' || status?.ageStatus === 'INVALID_DOB';
+  const disclosuresDisabled = status?.ageStatus !== 'ADULT' || status?.jurisdictionStatus === 'INELIGIBLE';
 
   return (
     <DashboardShell user={user} onLogout={logout} activeRoute="/onboarding/eligibility">
       <div style={{ marginBottom: 'var(--space-6)' }}>
         <Badge variant="info">Step 2 of 4</Badge>
         <h1 style={{ margin: 'var(--space-3) 0 var(--space-2)' }}>Eligibility & disclosures</h1>
-        <p className="muted" style={{ maxWidth: '760px', lineHeight: 1.65 }}>
-          Before automated trading can be enabled, iRexPro verifies the active jurisdiction policy and records immutable evidence that you accepted the exact current risk disclosures.
+        <p className="muted" style={{ maxWidth: '780px', lineHeight: 1.65 }}>
+          Readiness is server-authoritative: adult age, KYC status, jurisdiction policy, and exact
+          disclosure consent must all pass. A self-attestation never overrides these checks.
         </p>
       </div>
 
@@ -155,39 +220,64 @@ export default function EligibilityOnboardingPage() {
 
       {loading && (
         <Card>
-          <p className="muted">Loading current eligibility policy and disclosure evidence…</p>
+          <p className="muted">Loading current eligibility and identity readiness…</p>
         </Card>
       )}
 
       {!loading && !status && (
         <Card>
           <h2 className="card__title">Eligibility unavailable</h2>
-          <p className="muted">The platform could not verify a safe eligibility contract. No previous status is being reused.</p>
+          <p className="muted">
+            The platform could not verify a safe eligibility contract. No previous status is being reused.
+          </p>
           <Button type="button" onClick={() => void load()} style={{ marginTop: 'var(--space-4)' }}>
             Retry
           </Button>
         </Card>
       )}
 
-      {status && copy && (
+      {status && jCopy && iCopy && (
         <form onSubmit={submit}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 'var(--space-4)', marginBottom: 'var(--space-5)' }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+              gap: 'var(--space-4)',
+              marginBottom: 'var(--space-5)',
+            }}
+          >
             <Card>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--space-3)', alignItems: 'flex-start', flexWrap: 'wrap' }}>
                 <div>
                   <p className="eyebrow">Jurisdiction gate</p>
-                  <h2 className="card__title">{copy.label}</h2>
+                  <h2 className="card__title">{jCopy.label}</h2>
                 </div>
-                <Badge variant={copy.variant}>{status.jurisdictionStatus.replaceAll('_', ' ')}</Badge>
+                <Badge variant={jCopy.variant}>{status.jurisdictionStatus.replaceAll('_', ' ')}</Badge>
               </div>
-              <p className="muted" style={{ lineHeight: 1.6 }}>{copy.text}</p>
+              <p className="muted" style={{ lineHeight: 1.6 }}>{jCopy.text}</p>
               <dl style={{ display: 'grid', gap: 'var(--space-2)', marginTop: 'var(--space-4)' }}>
                 <div><strong>Country:</strong> {status.countryCode ?? 'Not provided'}</div>
                 <div><strong>Policy:</strong> {status.policyVersion}</div>
                 <div><strong>Decision source:</strong> {status.decisionSource.replaceAll('_', ' ')}</div>
                 <div><strong>Reason:</strong> {status.reasonCode.replaceAll('_', ' ')}</div>
               </dl>
-              {status.jurisdictionStatus === 'MISSING_PROFILE' && (
+            </Card>
+
+            <Card>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--space-3)', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                <div>
+                  <p className="eyebrow">Identity gate</p>
+                  <h2 className="card__title">{iCopy.label}</h2>
+                </div>
+                <Badge variant={iCopy.variant}>{status.kycStatus.replaceAll('_', ' ')}</Badge>
+              </div>
+              <p className="muted" style={{ lineHeight: 1.6 }}>{iCopy.text}</p>
+              <dl style={{ display: 'grid', gap: 'var(--space-2)', marginTop: 'var(--space-4)' }}>
+                <div><strong>Age check:</strong> {status.ageStatus.replaceAll('_', ' ')}</div>
+                <div><strong>KYC state:</strong> {status.kycStatus.replaceAll('_', ' ')}</div>
+                <div><strong>Reason:</strong> {status.identityReasonCode.replaceAll('_', ' ')}</div>
+              </dl>
+              {profileNeedsDob && (
                 <Link href="/onboarding/profile" className="btn btn--secondary" style={{ display: 'inline-block', marginTop: 'var(--space-4)' }}>
                   Update profile
                 </Link>
@@ -196,13 +286,17 @@ export default function EligibilityOnboardingPage() {
 
             <Card>
               <p className="eyebrow">Readiness evidence</p>
-              <h2 className="card__title">{status.missingConsentKeys.length === 0 ? 'Disclosures complete' : `${status.missingConsentKeys.length} disclosures outstanding`}</h2>
+              <h2 className="card__title">
+                {status.missingConsentKeys.length === 0
+                  ? 'Disclosures complete'
+                  : `${status.missingConsentKeys.length} disclosures outstanding`}
+              </h2>
               <p className="muted" style={{ lineHeight: 1.6 }}>
-                Acceptance is versioned and bound to the SHA-256 digest of the exact disclosure copy. A changed disclosure requires fresh consent.
+                Acceptance is versioned and bound to the SHA-256 digest of the exact disclosure copy.
               </p>
               <div style={{ marginTop: 'var(--space-4)' }}>
                 <Badge variant={status.canProceed ? 'success' : 'warning'}>
-                  {status.canProceed ? 'Eligibility gate complete' : 'Trading gate blocked'}
+                  {status.canProceed ? 'Eligibility gate complete' : 'Readiness blocked'}
                 </Badge>
               </div>
             </Card>
@@ -210,18 +304,32 @@ export default function EligibilityOnboardingPage() {
 
           <Card>
             <h2 className="card__title">Required disclosures</h2>
-            <p className="card__subtitle">Read each item carefully. These disclosures do not promise returns and do not bypass the Risk Engine.</p>
+            <p className="card__subtitle">
+              Read each item carefully. Disclosure consent cannot override adult-age, KYC, or jurisdiction restrictions.
+            </p>
 
             <div style={{ display: 'grid', gap: 'var(--space-4)', marginTop: 'var(--space-5)' }}>
               {status.disclosures.map((item) => {
                 const accepted = acceptedKeys.has(item.key);
                 const checked = accepted || selected.has(item.key);
                 return (
-                  <label key={item.key} style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr)', gap: 'var(--space-3)', alignItems: 'start', padding: 'var(--space-4)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', cursor: accepted ? 'default' : 'pointer' }}>
+                  <label
+                    key={item.key}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'auto minmax(0, 1fr)',
+                      gap: 'var(--space-3)',
+                      alignItems: 'start',
+                      padding: 'var(--space-4)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 'var(--radius-lg)',
+                      cursor: accepted || disclosuresDisabled ? 'default' : 'pointer',
+                    }}
+                  >
                     <input
                       type="checkbox"
                       checked={checked}
-                      disabled={accepted || saving || status.jurisdictionStatus === 'INELIGIBLE'}
+                      disabled={accepted || saving || disclosuresDisabled}
                       onChange={(event) => {
                         setSelected((current) => {
                           const next = new Set(current);
@@ -235,9 +343,13 @@ export default function EligibilityOnboardingPage() {
                     <span>
                       <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
                         <strong>{item.title}</strong>
-                        <Badge variant={accepted ? 'success' : 'info'}>{accepted ? 'Accepted' : `Version ${item.version}`}</Badge>
+                        <Badge variant={accepted ? 'success' : 'info'}>
+                          {accepted ? 'Accepted' : `Version ${item.version}`}
+                        </Badge>
                       </span>
-                      <span className="muted" style={{ display: 'block', marginTop: 'var(--space-2)', lineHeight: 1.65 }}>{item.body}</span>
+                      <span className="muted" style={{ display: 'block', marginTop: 'var(--space-2)', lineHeight: 1.65 }}>
+                        {item.body}
+                      </span>
                     </span>
                   </label>
                 );
@@ -245,14 +357,14 @@ export default function EligibilityOnboardingPage() {
             </div>
 
             <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap', marginTop: 'var(--space-6)' }}>
-              {status.jurisdictionStatus !== 'INELIGIBLE' && status.missingConsentKeys.length > 0 && (
+              {!disclosuresDisabled && status.missingConsentKeys.length > 0 && (
                 <Button type="submit" size="lg" loading={saving}>
                   {saving ? 'Recording evidence…' : 'Accept required disclosures'}
                 </Button>
               )}
               {status.canProceed && (
                 <Button type="button" size="lg" onClick={() => router.push('/onboarding/risk')}>
-                  Continue to risk setup
+                  Continue to next step
                 </Button>
               )}
               <Button type="button" variant="secondary" onClick={() => void load()} disabled={saving}>
@@ -263,7 +375,7 @@ export default function EligibilityOnboardingPage() {
 
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--space-3)', flexWrap: 'wrap', marginTop: 'var(--space-4)' }}>
             <Link href="/onboarding/profile" className="text-sm">← Back to profile</Link>
-            <span className="muted text-sm">Eligibility must be complete before automated trading can start.</span>
+            <span className="muted text-sm">All readiness gates must be complete before the account can proceed.</span>
           </div>
         </form>
       )}

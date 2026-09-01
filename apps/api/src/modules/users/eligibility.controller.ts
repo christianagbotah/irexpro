@@ -6,14 +6,15 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { AcceptEligibilityDisclosuresDto } from './dto/accept-eligibility-disclosures.dto';
 import { ReviewUserEligibilityDto } from './dto/review-user-eligibility.dto';
+import { ReviewUserKycDto } from './dto/review-user-kyc.dto';
 import { EligibilityService } from './eligibility.service';
 import { RoleName } from './entities/role.entity';
 
 /**
- * Sprint 44 — Eligibility & Disclosure Gate.
+ * Eligibility, disclosure, age, and KYC readiness controls.
  *
- * These endpoints are evidence/readiness controls only. They do not expose
- * broker credentials, risk overrides, order submission, or execution methods.
+ * These endpoints record compliance evidence only. They do not expose broker
+ * credentials, risk overrides, order submission, strategy logic, or execution methods.
  */
 @ApiTags('Eligibility')
 @ApiBearerAuth('access-token')
@@ -23,7 +24,7 @@ export class EligibilityController {
   constructor(private readonly eligibilityService: EligibilityService) {}
 
   @Get('users/me/eligibility')
-  @ApiOperation({ summary: 'Get current eligibility, disclosure, and consent status' })
+  @ApiOperation({ summary: 'Get current eligibility, age/KYC, disclosure, and consent status' })
   getMyEligibility(@CurrentUserId() userId: string) {
     return this.eligibilityService.getStatus(userId);
   }
@@ -52,5 +53,25 @@ export class EligibilityController {
     @Body() dto: ReviewUserEligibilityDto,
   ) {
     return this.eligibilityService.reviewUser(userId, reviewerUserId, dto);
+  }
+
+  @Get('admin/identity/kyc/reviews')
+  @UseGuards(RolesGuard)
+  @Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN)
+  @ApiOperation({ summary: '[Admin] List adult users awaiting KYC review' })
+  listKycReviews() {
+    return this.eligibilityService.listKycReviewQueue();
+  }
+
+  @Post('admin/identity/users/:id/kyc-review')
+  @UseGuards(RolesGuard)
+  @Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN)
+  @ApiOperation({ summary: '[Admin] Append an immutable KYC review decision' })
+  reviewKyc(
+    @Param('id') userId: string,
+    @CurrentUserId() reviewerUserId: string,
+    @Body() dto: ReviewUserKycDto,
+  ) {
+    return this.eligibilityService.reviewKyc(userId, reviewerUserId, dto);
   }
 }
