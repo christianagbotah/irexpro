@@ -1,0 +1,212 @@
+name: Release Security
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+  PNPM_VERSION: '10.34.5'
+  PYTHON_VERSION: '3.11'
+  UV_VERSION: '0.12.8'
+  PIP_AUDIT_VERSION: '2.10.1'
+  PIP_TOOLS_VERSION: '7.6.1'
+  SYFT_VERSION: 'v1.51.0'
+
+jobs:
+  tracked-secret-scan:
+    name: Tracked Source Secret Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Setup Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Scan tracked source without printing secret values
+        run: node scripts/security/scan-tracked-secrets.mjs
+
+  node-dependency-audit:
+    name: Node Dependency Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies from frozen lockfile
+        run: pnpm install --frozen-lockfile
+
+      - name: Audit Node dependency graph at high severity threshold
+        shell: bash
+        run: |
+          mkdir -p security-artifacts
+          set +e
+          pnpm audit --audit-level=high --json > security-artifacts/pnpm-audit.json
+          audit_status=$?
+          set -e
+          if [ "$audit_status" -ne 0 ]; then
+            echo "Node dependency audit found high/critical vulnerabilities or could not complete."
+            exit "$audit_status"
+          fi
+
+      - name: Upload Node audit evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: node-dependency-audit
+          path: security-artifacts/pnpm-audit.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  python-lock-and-audit:
+    name: Python Lock Integrity & Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Setup Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install pinned dependency security tooling
+        run: |
+          python -m pip install --disable-pip-version-check \
+            "uv==${UV_VERSION}" \
+            "pip-audit==${PIP_AUDIT_VERSION}" \
+            "pip-tools==${PIP_TOOLS_VERSION}"
+
+      - name: Compile deterministic Python runtime lock
+        shell: bash
+        run: |
+          mkdir -p security-artifacts
+          python -m piptools compile \
+            services/ai-engine/pyproject.toml \
+            --python-version "${PYTHON_VERSION}" \
+            --generate-hashes \
+            --strip-extras \
+            --no-emit-index-url \
+            --no-emit-trusted-host \
+            --output-file security-artifacts/ai-engine-requirements.lock
+
+      - name: Verify committed Python lock is current
+        id: lock_check
+        shell: bash
+        run: |
+          if [ ! -f services/ai-engine/requirements.lock ]; then
+            echo "services/ai-engine/requirements.lock is missing."
+            echo "Use the generated lock artifact from this run and commit it."
+            exit 1
+          fi
+          cmp services/ai-engine/requirements.lock security-artifacts/ai-engine-requirements.lock
+
+      - name: Audit locked Python runtime dependencies
+        if: always() && steps.lock_check.outcome == 'success'
+        shell: bash
+        run: |
+          set +e
+          python -m pip_audit \
+            --requirement services/ai-engine/requirements.lock \
+            --format json \
+            --output security-artifacts/pip-audit.json
+          audit_status=$?
+          set -e
+          if [ "$audit_status" -ne 0 ]; then
+            echo "Python dependency audit found known vulnerabilities or could not complete."
+            exit "$audit_status"
+          fi
+
+      - name: Upload Python lock and audit evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: python-lock-and-audit
+          path: |
+            security-artifacts/ai-engine-requirements.lock
+            security-artifacts/pip-audit.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  sbom:
+    name: CycloneDX SBOM
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Create artifact directory
+        run: mkdir -p security-artifacts
+
+      - name: Generate repository SBOM with pinned Syft
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          path: .
+          format: cyclonedx-json
+          output-file: security-artifacts/irexpro-sbom.cdx.json
+          syft-version: ${{ env.SYFT_VERSION }}
+          upload-artifact: false
+          upload-release-assets: false
+          dependency-snapshot: false
+
+      - name: Upload SBOM evidence
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: irexpro-sbom
+          path: security-artifacts/irexpro-sbom.cdx.json
+          if-no-files-found: error
+          retention-days: 30
+
+  codeql:
+    name: CodeQL Static Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@6f5948dfacef28e207b48d0905cf90c03365536d # v3
+        with:
+          languages: javascript-typescript,python
+          queries: security-extended
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@6f5948dfacef28e207b48d0905cf90c03365536d # v3
