@@ -12,6 +12,8 @@ import {
   EligibilityReviewDecision,
   UserEligibilityReview,
 } from './entities/user-eligibility-review.entity';
+import { KycReviewDecision, UserKycReview } from './entities/user-kyc-review.entity';
+import { KycStatus } from './entities/user-profile.entity';
 import { User, UserStatus } from './entities/user.entity';
 
 describe('EligibilityService', () => {
@@ -19,6 +21,7 @@ describe('EligibilityService', () => {
   let module: TestingModule;
   let consentRows: UserDisclosureConsent[];
   let reviewRows: UserEligibilityReview[];
+  let kycReviewRows: UserKycReview[];
   let config: Record<string, string>;
 
   const user = {
@@ -27,11 +30,19 @@ describe('EligibilityService', () => {
     countryCode: 'GH',
     status: UserStatus.ACTIVE,
     createdAt: new Date('2026-08-31T00:00:00Z'),
+    profile: {
+      userId: 'user-1',
+      dateOfBirth: '1990-01-01',
+      kycStatus: KycStatus.APPROVED,
+      kycSubmittedAt: new Date('2026-08-30T00:00:00Z'),
+      kycApprovedAt: new Date('2026-08-31T00:00:00Z'),
+    },
   } as User;
 
   const userRepo = {
     findOne: jest.fn(),
     find: jest.fn(),
+    save: jest.fn(async (value) => value),
   };
   const consentRepo = {
     find: jest.fn(),
@@ -44,6 +55,10 @@ describe('EligibilityService', () => {
     create: jest.fn((value) => value),
     save: jest.fn(),
   };
+  const kycReviewRepo = {
+    create: jest.fn((value) => value),
+    save: jest.fn(),
+  };
   const configService = {
     get: jest.fn((key: string) => config[key]),
   };
@@ -53,6 +68,7 @@ describe('EligibilityService', () => {
     jest.clearAllMocks();
     consentRows = [];
     reviewRows = [];
+    kycReviewRows = [];
     config = {
       ELIGIBILITY_POLICY_VERSION: 'eligibility.2026-08',
       ELIGIBILITY_ALLOWED_COUNTRY_CODES: 'GH,GB',
@@ -101,6 +117,15 @@ describe('EligibilityService', () => {
       reviewRows.push(saved);
       return saved;
     });
+    kycReviewRepo.save.mockImplementation(async (row) => {
+      const saved = {
+        ...row,
+        id: `kyc-review-${kycReviewRows.length + 1}`,
+        createdAt: new Date(`2026-08-31T1${kycReviewRows.length}:30:00Z`),
+      } as UserKycReview;
+      kycReviewRows.push(saved);
+      return saved;
+    });
 
     module = await Test.createTestingModule({
       providers: [
@@ -108,6 +133,7 @@ describe('EligibilityService', () => {
         { provide: getRepositoryToken(User), useValue: userRepo },
         { provide: getRepositoryToken(UserDisclosureConsent), useValue: consentRepo },
         { provide: getRepositoryToken(UserEligibilityReview), useValue: reviewRepo },
+        { provide: getRepositoryToken(UserKycReview), useValue: kycReviewRepo },
         { provide: ConfigService, useValue: configService },
         { provide: AuditService, useValue: auditService },
       ],
@@ -118,11 +144,13 @@ describe('EligibilityService', () => {
 
   afterEach(async () => module.close());
 
-  it('allows a policy-allowed jurisdiction only after every exact current disclosure is accepted', async () => {
+  it('allows a policy-allowed adult with approved KYC only after every exact disclosure is accepted', async () => {
     const initial = await service.getStatus(user.id);
 
     expect(initial.jurisdictionStatus).toBe('ELIGIBLE');
-    expect(initial.decisionSource).toBe('POLICY');
+    expect(initial.ageStatus).toBe('ADULT');
+    expect(initial.kycStatus).toBe('APPROVED');
+    expect(initial.identityReasonCode).toBe('IDENTITY_APPROVED');
     expect(initial.disclosures).toHaveLength(4);
     expect(initial.missingConsentKeys).toEqual([
       EligibilityDisclosureKey.AUTOMATED_TRADING_RISK,
@@ -158,6 +186,103 @@ describe('EligibilityService', () => {
     expect(attestation?.title).toMatch(/age and legal eligibility/i);
     expect(attestation?.body).toMatch(/at least 18 years old/i);
     expect(attestation?.body).toMatch(/legally permitted/i);
+  });
+
+  it('fails closed when DOB is missing even if jurisdiction and KYC state are otherwise acceptable', async () => {
+    userRepo.findOne.mockResolvedValue({
+      ...user,
+      profile: { ...user.profile, dateOfBirth: null },
+    });
+
+    const status = await service.getStatus(user.id);
+
+    expect(status.ageStatus).toBe('MISSING_DOB');
+    expect(status.identityReasonCode).toBe('DOB_REQUIRED');
+    expect(status.canProceed).toBe(false);
+  });
+
+  it('fails closed for an under-18 profile and refuses KYC approval', async () => {
+    const year = new Date().getUTCFullYear() - 10;
+    const underage = {
+      ...user,
+      profile: {
+        ...user.profile,
+        dateOfBirth: `${year}-01-01`,
+        kycStatus: KycStatus.NONE,
+        kycSubmittedAt: null,
+        kycApprovedAt: null,
+      },
+    } as User;
+    userRepo.findOne.mockResolvedValue(underage);
+
+    const status = await service.getStatus(user.id);
+    expect(status.ageStatus).toBe('UNDER_18');
+    expect(status.identityReasonCode).toBe('AGE_REQUIREMENT_NOT_MET');
+    expect(status.canProceed).toBe(false);
+
+    await expect(
+      service.reviewKyc(user.id, 'admin-1', {
+        decision: KycReviewDecision.APPROVED,
+        reasonCode: 'MANUAL_IDENTITY_VERIFIED',
+      }),
+    ).rejects.toThrow(/adult-age requirement/i);
+    expect(kycReviewRows).toHaveLength(0);
+  });
+
+  it('queues only adult active users awaiting KYC and records immutable approval evidence', async () => {
+    const awaiting = {
+      ...user,
+      id: 'awaiting-kyc',
+      profile: {
+        ...user.profile,
+        userId: 'awaiting-kyc',
+        dateOfBirth: '1992-05-15',
+        kycStatus: KycStatus.NONE,
+        kycSubmittedAt: null,
+        kycApprovedAt: null,
+      },
+    } as User;
+    const pending = {
+      ...user,
+      id: 'pending-kyc',
+      profile: {
+        ...user.profile,
+        userId: 'pending-kyc',
+        dateOfBirth: '1988-09-10',
+        kycStatus: KycStatus.PENDING,
+      },
+    } as User;
+    const approved = {
+      ...user,
+      id: 'approved-kyc',
+      profile: { ...user.profile, userId: 'approved-kyc' },
+    } as User;
+    userRepo.find.mockResolvedValue([awaiting, pending, approved]);
+
+    const queue = await service.listKycReviewQueue();
+    expect(queue.map((item) => item.userId)).toEqual(['awaiting-kyc', 'pending-kyc']);
+    expect(JSON.stringify(queue)).not.toMatch(/passwordHash|reviewerNote|brokerConnectionId/);
+
+    userRepo.findOne.mockResolvedValue(awaiting);
+    const reviewed = await service.reviewKyc(awaiting.id, 'admin-1', {
+      decision: KycReviewDecision.APPROVED,
+      reasonCode: 'manual identity verified',
+      reviewerNote: 'Verified through the approved compliance process.',
+    });
+
+    expect(kycReviewRows).toHaveLength(1);
+    expect(kycReviewRows[0]).toEqual(
+      expect.objectContaining({
+        userId: awaiting.id,
+        dateOfBirth: '1992-05-15',
+        decision: KycReviewDecision.APPROVED,
+        reasonCode: 'MANUAL IDENTITY VERIFIED',
+      }),
+    );
+    expect(awaiting.profile.kycStatus).toBe(KycStatus.APPROVED);
+    expect(reviewed.ageStatus).toBe('ADULT');
+    expect(reviewed.kycStatus).toBe('APPROVED');
+    expect(reviewed.identityReasonCode).toBe('IDENTITY_APPROVED');
   });
 
   it('rejects a stale, modified, or fabricated disclosure hash', async () => {
