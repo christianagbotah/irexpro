@@ -1,14 +1,13 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsOptional, IsString, Length, MaxLength } from 'class-validator';
+import { IsEnum, IsOptional, IsString, Length, Matches, MaxLength } from 'class-validator';
 import { TradingExperienceLevel } from '../entities/user-profile.entity';
 
 /**
- * UpdateMyProfileDto — Sprint 29.
+ * UpdateMyProfileDto — onboarding profile contract.
  *
- * Allows the authenticated user to update their profile fields for onboarding.
- * Supports BOTH UserProfile fields (firstName, lastName, tradingExperienceLevel)
- * AND User-level fields (countryCode, timezone, preferredCurrency) that the
- * previous PATCH /users/me could not update.
+ * Supports UserProfile fields plus the User-level regional fields required by
+ * readiness checks. Date of birth is collected for the independent Sprint 45
+ * adult-age gate. Changing an already-reviewed DOB resets KYC state server-side.
  *
  * Email and phone are NOT updateable here (they require separate verification
  * flows). Password is NOT updateable here (use /auth/reset-password).
@@ -25,6 +24,15 @@ export class UpdateMyProfileDto {
   @IsString()
   @MaxLength(100)
   lastName?: string;
+
+  @ApiPropertyOptional({
+    example: '1990-01-31',
+    description: 'Date of birth in ISO calendar format YYYY-MM-DD',
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  dateOfBirth?: string;
 
   @ApiPropertyOptional({ example: 'GH', description: 'ISO 3166-1 alpha-2 country code' })
   @IsOptional()
