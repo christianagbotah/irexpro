@@ -13,7 +13,8 @@ export class ReviewUserKycDto {
   reasonCode: string;
 
   @ApiPropertyOptional({
-    description: 'Optional internal reviewer note. Never returned to the user-facing eligibility screen.',
+    description:
+      'Optional internal reviewer note. Never returned to the user-facing eligibility screen.',
   })
   @IsOptional()
   @IsString()
