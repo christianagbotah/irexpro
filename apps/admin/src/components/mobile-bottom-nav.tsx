@@ -15,37 +15,6 @@ import {
   type IconProps,
 } from '@/components/icons';
 
-/**
- * Admin mobile bottom navigation — Sprint 31 (remediated).
- *
- * Primary (5): Dashboard, Users, Brokers, Payments, More.
- * More sheet (3): Subscriptions, Audit log, Log out.
- *
- * Rendered inside the (protected) admin layout so every authenticated admin
- * page inherits it. Hidden above 700px via CSS — the desktop sidebar remains
- * the primary navigation on tablet/desktop.
- *
- * Authorization is unchanged: this component is only rendered when
- * `hasAdminRole` is true (the (protected) layout gates on it). The backend
- * RolesGuard remains the real security boundary.
- *
- * ── Accessibility (architect §9 — verified, not asserted) ────────────────────
- *   - role="navigation" + aria-label on the <nav> landmark
- *   - aria-current="page" on the active route
- *   - Sheet: role="dialog" + aria-modal="true" + aria-labelledby
- *   - Focus trap: Tab/Shift+Tab cycle within the sheet (cannot escape)
- *   - Focus enters the sheet (close button) on open
- *   - Escape closes the sheet; focus restores to the trigger
- *   - Overlay click closes the sheet
- *   - Body scroll locked while open; restored on close
- *   - Icons decorative (aria-hidden); text label is the accessible name
- *   - Touch targets ≥ 44×44 CSS px
- *
- * ── Icons (architect §7) ─────────────────────────────────────────────────────
- * Professional SVG icons (apps/admin/src/components/icons.tsx) replace emoji.
- * Deterministic across Android/iOS/Windows/macOS. Zero new dependencies.
- */
-
 interface NavDestination {
   href: string;
   label: string;
@@ -62,9 +31,7 @@ const PRIMARY_NAV: NavDestination[] = [
 
 const SECONDARY_NAV: NavDestination[] = [
   { href: '/admin/account-appeals', label: 'Account reviews', Icon: UsersIcon },
-  // Subscription-retirement (SUBSCRIPTION-RETIREMENT-IMPL):
-  // SubscriptionsModule is retired. The nav item is renamed "Performance Fees"
-  // and points to a placeholder route until the dedicated admin view lands.
+  { href: '/admin/eligibility-reviews', label: 'Eligibility reviews', Icon: AuditIcon },
   { href: '/admin/audit', label: 'Audit log', Icon: AuditIcon },
 ];
 
@@ -96,7 +63,6 @@ export default function AdminMobileBottomNav({ onLogout }: AdminMobileBottomNavP
 
     previouslyFocusedRef.current = moreButtonRef.current;
 
-    // Lock body scroll while the sheet is open.
     const prevBodyOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
 
@@ -125,11 +91,9 @@ export default function AdminMobileBottomNav({ onLogout }: AdminMobileBottomNavP
           e.preventDefault();
           last.focus();
         }
-      } else {
-        if (active === last) {
-          e.preventDefault();
-          first.focus();
-        }
+      } else if (active === last) {
+        e.preventDefault();
+        first.focus();
       }
     };
     document.addEventListener('keydown', handleKey);
@@ -140,7 +104,6 @@ export default function AdminMobileBottomNav({ onLogout }: AdminMobileBottomNavP
       document.body.style.overflow = prevBodyOverflow;
       previouslyFocusedRef.current?.focus();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [moreOpen]);
 
   function closeSheet() {
@@ -186,11 +149,7 @@ export default function AdminMobileBottomNav({ onLogout }: AdminMobileBottomNavP
       </nav>
 
       {moreOpen && (
-        <div
-          className="mobile-sheet-overlay"
-          onClick={closeSheet}
-          aria-hidden="true"
-        >
+        <div className="mobile-sheet-overlay" onClick={closeSheet} aria-hidden="true">
           <div
             id="admin-mobile-more-sheet"
             ref={sheetRef}
@@ -219,11 +178,7 @@ export default function AdminMobileBottomNav({ onLogout }: AdminMobileBottomNavP
                 const { Icon } = dest;
                 return (
                   <li key={dest.href}>
-                    <Link
-                      href={dest.href}
-                      className="mobile-sheet__item"
-                      onClick={closeSheet}
-                    >
+                    <Link href={dest.href} className="mobile-sheet__item" onClick={closeSheet}>
                       <span className="mobile-sheet__item-icon" aria-hidden="true">
                         <Icon size={20} />
                       </span>
