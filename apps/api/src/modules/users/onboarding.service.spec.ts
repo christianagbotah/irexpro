@@ -93,7 +93,7 @@ describe('OnboardingService readiness gate', () => {
         firstName: 'John',
         lastName: 'Doe',
         displayName: null,
-        dateOfBirth: null,
+        dateOfBirth: '1990-01-01',
         addressLine1: null,
         addressLine2: null,
         addressCity: null,
