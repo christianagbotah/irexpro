@@ -108,6 +108,8 @@ export class CreateEligibilityDisclosureGate1752700000000 implements MigrationIn
   public async down(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`DROP TABLE IF EXISTS identity.user_eligibility_reviews`);
     await queryRunner.query(`DROP TABLE IF EXISTS identity.user_disclosure_consents`);
-    await queryRunner.query(`DROP FUNCTION IF EXISTS identity.reject_eligibility_evidence_mutation()`);
+    await queryRunner.query(
+      `DROP FUNCTION IF EXISTS identity.reject_eligibility_evidence_mutation()`,
+    );
   }
 }
