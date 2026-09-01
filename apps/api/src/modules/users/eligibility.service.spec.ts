@@ -211,9 +211,9 @@ describe('EligibilityService', () => {
 
     expect(accepted.missingConsentKeys).toEqual([]);
     expect(accepted.consents).toHaveLength(4);
-    expect(accepted.consents.every((item) => item.policyFingerprint === initial.policyFingerprint)).toBe(
-      true,
-    );
+    expect(
+      accepted.consents.every((item) => item.policyFingerprint === initial.policyFingerprint),
+    ).toBe(true);
     expect(accepted.canProceed).toBe(true);
     expect(auditService.log).toHaveBeenCalledWith(
       expect.objectContaining({
