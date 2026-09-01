@@ -86,9 +86,9 @@ describe('UsersService Sprint 45 DOB/KYC invariants', () => {
 
     const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
     const future = tomorrow.toISOString().slice(0, 10);
-    await expect(
-      service.updateMyProfile(user.id, { dateOfBirth: future }),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.updateMyProfile(user.id, { dateOfBirth: future })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
 
     expect(profileRepo.save).not.toHaveBeenCalled();
   });
