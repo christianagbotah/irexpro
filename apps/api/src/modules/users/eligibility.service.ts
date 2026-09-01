@@ -461,9 +461,7 @@ export class EligibilityService {
       return profileStatus === KycStatus.APPROVED ? KycStatus.NONE : profileStatus;
     }
 
-    return review.decision === KycReviewDecision.APPROVED
-      ? KycStatus.APPROVED
-      : KycStatus.REJECTED;
+    return review.decision === KycReviewDecision.APPROVED ? KycStatus.APPROVED : KycStatus.REJECTED;
   }
 
   private async evaluateJurisdiction(
