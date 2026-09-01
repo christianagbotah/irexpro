@@ -23,6 +23,11 @@ describe('Sprint 45 — age and KYC readiness migration contract', () => {
     expect(upSource).not.toMatch(/ON DELETE CASCADE/i);
   });
 
+  it('indexes the authoritative lookup by user, reviewed DOB, and recency', () => {
+    expect(upSource).toContain('idx_user_kyc_reviews_lookup');
+    expect(upSource).toContain('(user_id, date_of_birth, created_at DESC)');
+  });
+
   it('enforces append-only KYC review evidence at PostgreSQL', () => {
     expect(upSource).toContain('identity.reject_kyc_evidence_mutation');
     expect(upSource).toContain('trg_user_kyc_reviews_immutable');
