@@ -26,6 +26,8 @@ export interface EligibilityDisclosureView {
 }
 
 export interface EligibilityConsentEvidenceView {
+  policyVersion: string;
+  policyFingerprint: string;
   key: EligibilityDisclosureKey;
   version: string;
   contentSha256: string;
@@ -34,6 +36,7 @@ export interface EligibilityConsentEvidenceView {
 
 export interface EligibilityStatusView {
   policyVersion: string;
+  policyFingerprint: string;
   countryCode: string | null;
   jurisdictionStatus: EligibilityJurisdictionStatus;
   decisionSource: EligibilityDecisionSource;
@@ -56,6 +59,8 @@ export interface EligibilityDisclosureAcceptance {
 }
 
 export interface AcceptEligibilityDisclosuresRequest {
+  policyVersion: string;
+  policyFingerprint: string;
   acceptances: EligibilityDisclosureAcceptance[];
 }
 
@@ -64,6 +69,7 @@ export interface EligibilityReviewQueueItem {
   email: string | null;
   countryCode: string;
   policyVersion: string;
+  policyFingerprint: string;
   jurisdictionStatus: 'REVIEW_REQUIRED';
   reasonCode: string;
 }
