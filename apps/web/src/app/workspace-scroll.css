@@ -49,4 +49,37 @@
     overscroll-behavior-y: contain;
     scrollbar-gutter: stable;
   }
+
+  /* Premium compact scrollbar for both independent workspace panes. */
+  .dashboard-shell.terminal-shell > .dashboard-sidebar.terminal-sidebar,
+  .dashboard-main.terminal-main > .dashboard-content.terminal-content {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+
+  .dashboard-shell.terminal-shell > .dashboard-sidebar.terminal-sidebar::-webkit-scrollbar,
+  .dashboard-main.terminal-main > .dashboard-content.terminal-content::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .dashboard-shell.terminal-shell > .dashboard-sidebar.terminal-sidebar::-webkit-scrollbar-track,
+  .dashboard-main.terminal-main > .dashboard-content.terminal-content::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .dashboard-shell.terminal-shell > .dashboard-sidebar.terminal-sidebar::-webkit-scrollbar-thumb,
+  .dashboard-main.terminal-main > .dashboard-content.terminal-content::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: var(--radius-full);
+    border: 1px solid transparent;
+    background-clip: padding-box;
+  }
+
+  .dashboard-shell.terminal-shell > .dashboard-sidebar.terminal-sidebar::-webkit-scrollbar-thumb:hover,
+  .dashboard-main.terminal-main > .dashboard-content.terminal-content::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted);
+    background-clip: padding-box;
+    border: 1px solid transparent;
+  }
 }
