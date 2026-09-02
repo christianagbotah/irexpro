@@ -1,36 +1,49 @@
-# iRexPro API Dockerfile
-# Multi-stage build: development and production targets
+# syntax=docker/dockerfile:1
+# Build from the repository root:
+#   docker build -f apps/api/Dockerfile --target production .
 
-FROM node:22-alpine AS base
-RUN npm install -g pnpm
-WORKDIR /app
-COPY package.json ./
-RUN pnpm install --frozen-lockfile
+FROM node:22.23.2-alpine3.24 AS base
 
-# ─── Development ────────────────────────────────────────────────────────────
+ENV PNPM_HOME=/pnpm \
+    PATH=/pnpm:$PATH
+
+RUN corepack enable \
+    && corepack prepare pnpm@10.34.5 --activate
+
+WORKDIR /workspace
+
+# Install from the repository-controlled workspace lock. Copy only manifests
+# first so dependency layers remain cacheable when application source changes.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/api/package.json ./apps/api/package.json
+
+RUN pnpm install --frozen-lockfile --filter @irexpro/api...
+
 FROM base AS development
-COPY . .
+COPY apps/api ./apps/api
+WORKDIR /workspace/apps/api
 EXPOSE 3000
 CMD ["pnpm", "start:dev"]
 
-# ─── Build ──────────────────────────────────────────────────────────────────
 FROM base AS builder
-COPY . .
-RUN pnpm build
+COPY apps/api ./apps/api
+RUN pnpm --filter @irexpro/api build \
+    && pnpm --filter @irexpro/api --prod deploy --legacy /workspace/pruned/api
 
-# ─── Production ─────────────────────────────────────────────────────────────
-FROM node:22-alpine AS production
-RUN npm install -g pnpm
-WORKDIR /app
+FROM node:22.23.2-alpine3.24 AS production
+
 ENV NODE_ENV=production
+WORKDIR /app
 
-COPY --from=builder /app/dist ./dist
-COPY package.json ./
-RUN pnpm install --prod --frozen-lockfile
+COPY --from=builder --chown=node:node /workspace/pruned/api/package.json ./package.json
+COPY --from=builder --chown=node:node /workspace/pruned/api/node_modules ./node_modules
+COPY --from=builder --chown=node:node /workspace/apps/api/dist ./dist
 
-# Run as non-root user
-RUN addgroup -g 1001 -S nodejs && adduser -S nestjs -u 1001
-USER nestjs
+USER node
 
 EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=15s --retries=3 \
+    CMD node -e "const p=process.env.APP_PORT||'3000'; fetch('http://127.0.0.1:'+p+'/api/v1/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
 CMD ["node", "dist/main"]

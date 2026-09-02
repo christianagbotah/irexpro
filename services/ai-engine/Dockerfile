@@ -1,27 +1,32 @@
-FROM python:3.11-slim
+FROM python:3.11.16-slim-bookworm
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
+    AI_SIGNAL_MODE=paper \
+    AI_ENGINE_ENV=production
 
 WORKDIR /app
 
-# System dependencies for numpy/pandas/xgboost
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libgomp1 \
-    && rm -rf /var/lib/apt/lists/*
+# Runtime library required by XGBoost. Build toolchains are intentionally not
+# installed in the final image; Python dependencies must resolve to locked wheels.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgomp1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system --gid 10001 irexpro \
+    && useradd --system --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin irexpro
 
-COPY pyproject.toml ./
+COPY requirements.lock ./requirements.lock
+RUN python -m pip install --require-hashes --only-binary=:all: -r requirements.lock
 
-# Install runtime deps only (no dev)
-RUN pip install --no-cache-dir -e "." 2>/dev/null || pip install --no-cache-dir \
-    fastapi uvicorn[standard] pydantic pydantic-settings \
-    httpx redis pandas numpy scikit-learn xgboost \
-    python-dotenv structlog
+COPY --chown=irexpro:irexpro app/ ./app/
 
-COPY app/ ./app/
+USER irexpro
 
 EXPOSE 8001
 
-# Paper mode by default — never live in container without explicit override
-ENV AI_SIGNAL_MODE=paper
-ENV AI_ENGINE_ENV=production
+HEALTHCHECK --interval=30s --timeout=3s --start-period=15s --retries=3 \
+    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/api/v1/health', timeout=2).read()"]
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]
