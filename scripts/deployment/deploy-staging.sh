@@ -74,7 +74,8 @@ cd "$STAGING_ROOT"
 remote_url="$(git remote get-url origin)"
 [[ "$remote_url" == *"$EXPECTED_REPOSITORY"* ]] || die "Unexpected origin repository."
 
-readonly PREVIOUS_SHA="$(git rev-parse HEAD)"
+PREVIOUS_SHA="$(git rev-parse HEAD)"
+readonly PREVIOUS_SHA
 git fetch --quiet origin main
 git cat-file -e "${CANDIDATE_SHA}^{commit}" 2>/dev/null || die "Candidate commit is unavailable."
 git merge-base --is-ancestor "$CANDIDATE_SHA" origin/main || die "Candidate is not contained in origin/main."
