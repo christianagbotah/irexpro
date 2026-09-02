@@ -44,12 +44,16 @@ jobs:
       - name: Build Web
         run: pnpm --filter @irexpro/web build
         env:
-          NEXT_PUBLIC_API_URL: http://127.0.0.1:3010/api/v1
+          NEXT_PUBLIC_API_BASE_URL: http://127.0.0.1:3010/api/v1
+          NEXT_PUBLIC_APP_URL: http://127.0.0.1:3005
+          NEXT_PUBLIC_APP_ENV: ci
 
       - name: Build Admin
         run: pnpm --filter @irexpro/admin build
         env:
-          NEXT_PUBLIC_API_URL: http://127.0.0.1:3010/api/v1
+          NEXT_PUBLIC_API_BASE_URL: http://127.0.0.1:3010/api/v1
+          NEXT_PUBLIC_APP_URL: http://127.0.0.1:3006
+          NEXT_PUBLIC_APP_ENV: ci
 
       - name: Commit refreshed lock only after builds pass
         run: |
