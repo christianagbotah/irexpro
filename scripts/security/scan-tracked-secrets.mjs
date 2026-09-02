@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync, statSync } from 'node:fs';
+import { closeSync, fstatSync, openSync, readFileSync } from 'node:fs';
 import { extname } from 'node:path';
 
 const MAX_TEXT_FILE_BYTES = 2 * 1024 * 1024;
@@ -85,22 +85,26 @@ for (const file of trackedFiles) {
     continue;
   }
 
-  let size;
-  try {
-    size = statSync(file).size;
-  } catch {
-    continue;
-  }
-
-  if (size > MAX_TEXT_FILE_BYTES) {
-    continue;
-  }
-
+  let descriptor;
   let content;
+
   try {
-    content = readFileSync(file, 'utf8');
+    descriptor = openSync(file, 'r');
+
+    // Inspect and read the same opened object so a path replacement cannot
+    // create a check/use race between the size check and the content scan.
+    const metadata = fstatSync(descriptor);
+    if (!metadata.isFile() || metadata.size > MAX_TEXT_FILE_BYTES) {
+      continue;
+    }
+
+    content = readFileSync(descriptor, 'utf8');
   } catch {
     continue;
+  } finally {
+    if (descriptor !== undefined) {
+      closeSync(descriptor);
+    }
   }
 
   for (const pattern of patterns) {
