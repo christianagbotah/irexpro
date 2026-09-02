@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import './workspace-scroll.css';
 import { AuthProvider } from '@/context/auth-context';
 
 export const metadata: Metadata = {
