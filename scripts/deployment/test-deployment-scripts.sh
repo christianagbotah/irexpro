@@ -21,9 +21,9 @@ expect_failure() {
 bash -n "$SCRIPT_DIR/deploy-staging.sh"
 bash -n "$SCRIPT_DIR/rollback-staging.sh"
 
-expect_failure "Usage:" "$SCRIPT_DIR/deploy-staging.sh"
-expect_failure "full lowercase commit SHA" "$SCRIPT_DIR/deploy-staging.sh" main
-expect_failure "Usage:" "$SCRIPT_DIR/rollback-staging.sh"
-expect_failure "must differ" "$SCRIPT_DIR/rollback-staging.sh"   1111111111111111111111111111111111111111   1111111111111111111111111111111111111111
+expect_failure "Usage:" bash "$SCRIPT_DIR/deploy-staging.sh"
+expect_failure "full lowercase commit SHA" bash "$SCRIPT_DIR/deploy-staging.sh" main
+expect_failure "Usage:" bash "$SCRIPT_DIR/rollback-staging.sh"
+expect_failure "must differ" bash "$SCRIPT_DIR/rollback-staging.sh"   1111111111111111111111111111111111111111   1111111111111111111111111111111111111111
 
 printf 'Deployment script safety tests passed.\n'
