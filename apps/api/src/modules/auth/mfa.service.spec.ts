@@ -56,9 +56,7 @@ describe('MfaService', () => {
     auditService = { log: jest.fn().mockResolvedValue(undefined) };
     const configService = {
       get: jest.fn((key: string) =>
-        key === 'auth.mfaEncryptionKey'
-          ? '0123456789abcdef0123456789abcdef'
-          : undefined,
+        key === 'auth.mfaEncryptionKey' ? '0123456789abcdef0123456789abcdef' : undefined,
       ),
     } as unknown as ConfigService;
 
