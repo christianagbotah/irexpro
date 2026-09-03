@@ -16,7 +16,7 @@ import { ResetChannel } from './entities/password-reset-token.entity';
  *   - does NOT send email when WEB_BASE_URL is missing
  *   - SMTP failure does not leak account existence (returns false, no raw token in logs)
  *   - raw token is not logged
- *   - reset link uses WEB_BASE_URL
+ *   - reset link uses WEB_BASE_URL with a fragment-only token
  *   - phone delivery returns false (SMS providers are placeholders)
  *   - phone delivery does not log the raw code
  */
@@ -75,7 +75,7 @@ describe('PasswordResetDeliveryService (Sprint 28 amendment — real email + rat
       );
     });
 
-    it('should build the reset link using WEB_BASE_URL', async () => {
+    it('should build the reset link using a fragment so the raw token is absent from the request URL query', async () => {
       await deliveryService.deliver({
         channel: ResetChannel.EMAIL,
         destination: 'user@example.com',
@@ -86,8 +86,13 @@ describe('PasswordResetDeliveryService (Sprint 28 amendment — real email + rat
 
       const sendCall = mockEmailProvider.sendResetEmail.mock.calls[0][0];
       expect(sendCall.resetLink).toBe(
-        'https://irexpro.lightworldtech.com/reset-password?token=raw-token-abc123',
+        'https://irexpro.lightworldtech.com/reset-password#token=raw-token-abc123',
       );
+      const parsed = new URL(sendCall.resetLink);
+      expect(parsed.pathname).toBe('/reset-password');
+      expect(parsed.search).toBe('');
+      expect(new URLSearchParams(parsed.hash.slice(1)).get('token')).toBe('raw-token-abc123');
+      expect(sendCall.resetLink).not.toContain('?token=');
     });
 
     it('should NOT send email when EMAIL_SMTP_URL is missing', async () => {
@@ -163,6 +168,8 @@ describe('PasswordResetDeliveryService (Sprint 28 amendment — real email + rat
       // The raw token was passed to the email provider (embedded in reset link)
       const sendCall = mockEmailProvider.sendResetEmail.mock.calls[0][0];
       expect(sendCall.resetLink).toContain('super-secret-raw-token-xyz');
+      expect(sendCall.resetLink).toContain('#token=');
+      expect(sendCall.resetLink).not.toContain('?token=');
       // The raw token must NOT appear as a standalone field in the provider args
       expect(sendCall).not.toHaveProperty('rawToken');
       expect(sendCall).not.toHaveProperty('token');
@@ -244,9 +251,10 @@ describe('NodemailerEmailProvider (Sprint 28 amendment)', () => {
     // Mark as initialized so getTransport returns our mock
     (provider as unknown as { initialized: boolean }).initialized = true;
 
+    const resetLink = 'https://irexpro.lightworldtech.com/reset-password#token=abc';
     const result = await provider.sendResetEmail({
       to: 'user@example.com',
-      resetLink: 'https://irexpro.lightworldtech.com/reset-password?token=abc',
+      resetLink,
       fromAddress: 'no-reply@irexpro.com',
     });
 
@@ -257,12 +265,8 @@ describe('NodemailerEmailProvider (Sprint 28 amendment)', () => {
     expect(mailOptions.to).toBe('user@example.com');
     expect(mailOptions.subject).toContain('Password reset');
     // The reset link must be in the email body
-    expect(mailOptions.text).toContain(
-      'https://irexpro.lightworldtech.com/reset-password?token=abc',
-    );
-    expect(mailOptions.html).toContain(
-      'https://irexpro.lightworldtech.com/reset-password?token=abc',
-    );
+    expect(mailOptions.text).toContain(resetLink);
+    expect(mailOptions.html).toContain(resetLink);
   });
 
   it('should return false when SMTP send fails (no exception thrown)', async () => {
@@ -274,7 +278,7 @@ describe('NodemailerEmailProvider (Sprint 28 amendment)', () => {
 
     const result = await provider.sendResetEmail({
       to: 'user@example.com',
-      resetLink: 'https://irexpro.lightworldtech.com/reset-password?token=abc',
+      resetLink: 'https://irexpro.lightworldtech.com/reset-password#token=abc',
       fromAddress: 'no-reply@irexpro.com',
     });
 
@@ -295,7 +299,7 @@ describe('NodemailerEmailProvider (Sprint 28 amendment)', () => {
 
     const result = await freshProvider.sendResetEmail({
       to: 'user@example.com',
-      resetLink: 'https://irexpro.lightworldtech.com/reset-password?token=abc',
+      resetLink: 'https://irexpro.lightworldtech.com/reset-password#token=abc',
       fromAddress: 'no-reply@irexpro.com',
     });
 
@@ -316,7 +320,7 @@ describe('NodemailerEmailProvider (Sprint 28 amendment)', () => {
 
     await provider.sendResetEmail({
       to: 'johndoe@example.com',
-      resetLink: 'https://irexpro.lightworldtech.com/reset-password?token=abc',
+      resetLink: 'https://irexpro.lightworldtech.com/reset-password#token=abc',
       fromAddress: 'no-reply@irexpro.com',
     });
 
