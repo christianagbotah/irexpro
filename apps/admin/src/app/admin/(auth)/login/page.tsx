@@ -16,6 +16,8 @@ import { formatEnumLabel } from '@irexpro/types';
  *
  * Behavior:
  *  - Accepts email OR international phone number as identifier.
+ *  - Always offers an optional TOTP field so the UI does not reveal whether a
+ *    particular account has MFA configured.
  *  - Uses the same /auth/login endpoint as the web app.
  *  - After login, fetches /auth/me (via the AuthProvider).
  *  - If the user has ADMIN/SUPER_ADMIN role → redirect to /admin/dashboard.
@@ -29,6 +31,7 @@ export default function AdminLoginPage() {
   const { login, logout, loading, restoring, error, clearError, user, accessToken, hasAdminRole } = useAuth();
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
+  const [mfaCode, setMfaCode] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
 
   // Redirect authenticated admins to the dashboard.
@@ -73,7 +76,7 @@ export default function AdminLoginPage() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     try {
-      await login(identifier, password, rememberMe);
+      await login(identifier, password, rememberMe, mfaCode || undefined);
       // The useEffect above will redirect once /auth/me confirms the admin
       // role. We don't push to /admin/dashboard here unconditionally, because
       // if the user is not an admin they should see the access-denied state
@@ -105,6 +108,25 @@ export default function AdminLoginPage() {
           required
           autoComplete="current-password"
         />
+        <Input
+          label="Authenticator code (if enabled)"
+          type="text"
+          placeholder="123456"
+          value={mfaCode}
+          onChange={(e) => {
+            setMfaCode(e.target.value.replace(/\D/gu, '').slice(0, 6));
+            clearError();
+          }}
+          disabled={loading}
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          pattern="[0-9]{6}"
+          maxLength={6}
+          aria-describedby="admin-login-mfa-help"
+        />
+        <p id="admin-login-mfa-help" className="text-sm muted" style={{ marginTop: '-0.5rem', marginBottom: '1rem' }}>
+          If multi-factor authentication is enabled, enter the current 6-digit code. Leave this blank otherwise.
+        </p>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
             <input
