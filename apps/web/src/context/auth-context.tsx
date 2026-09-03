@@ -29,12 +29,19 @@ interface AuthContextValue {
   loading: boolean;
   restoring: boolean;
   error: string | null;
-  login: (identifier: string, password: string, rememberMe?: boolean) => Promise<void>;
+  login: (
+    identifier: string,
+    password: string,
+    rememberMe?: boolean,
+    mfaCode?: string,
+  ) => Promise<void>;
   register: (email: string, password: string, opts?: {
     countryCode?: string; firstName?: string; lastName?: string;
     phone?: string; rememberMe?: boolean;
   }) => Promise<void>;
   logout: () => Promise<void>;
+  /** Refresh only the frontend-safe current-user state using the existing access token. */
+  refreshUser: () => Promise<void>;
   clearError: () => void;
 }
 
@@ -87,15 +94,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => { cancelled = true; };
   }, [storeTokens, fetchMe]);
 
-  const login = useCallback(async (identifier: string, password: string, rememberMe?: boolean) => {
+  const login = useCallback(async (
+    identifier: string,
+    password: string,
+    rememberMe?: boolean,
+    mfaCode?: string,
+  ) => {
     setLoading(true);
     setError(null);
     try {
-      const tokens = await api.login({ identifier, password, rememberMe });
+      const normalizedMfaCode = mfaCode?.trim() || undefined;
+      const tokens = await api.login({
+        identifier,
+        password,
+        rememberMe,
+        mfaCode: normalizedMfaCode,
+      });
       storeTokens(tokens);
       await fetchMe(tokens.accessToken);
     } catch (err) {
-      // Show backend error message if available; otherwise safe fallback
+      // Show backend error message if available; otherwise safe fallback.
+      // The backend intentionally returns the same credential error for absent
+      // or invalid MFA so this context does not reveal MFA enrollment state.
       const msg = (err instanceof Error && err.message && !err.message.includes('fetch'))
         ? err.message
         : 'Something went wrong. Please try again or contact support.';
@@ -132,6 +152,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     try {
       if (accessToken) {
+        // MFA enable/disable intentionally revokes the current server session,
+        // so this endpoint may already reject the token. Local clearing still
+        // must happen deterministically.
         await api.logout().catch(() => {});
       }
     } finally {
@@ -141,6 +164,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     }
   }, [accessToken]);
+
+  const refreshUser = useCallback(async () => {
+    if (!accessToken) throw new Error('Not authenticated');
+    await fetchMe(accessToken);
+  }, [accessToken, fetchMe]);
 
   const clearError = useCallback(() => setError(null), []);
 
@@ -153,8 +181,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     login,
     register,
     logout,
+    refreshUser,
     clearError,
-  }), [user, accessToken, loading, restoring, error, login, register, logout, clearError]);
+  }), [
+    user,
+    accessToken,
+    loading,
+    restoring,
+    error,
+    login,
+    register,
+    logout,
+    refreshUser,
+    clearError,
+  ]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
