@@ -1,0 +1,49 @@
+name: Deployment Script Safety
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/deployment/**'
+      - 'docs/operations/staging-deployment.md'
+      - '.github/workflows/deployment-script-safety.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/deployment/**'
+      - 'docs/operations/staging-deployment.md'
+      - '.github/workflows/deployment-script-safety.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deployment-script-safety-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate fail-closed deployment scripts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout exact workflow candidate
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Verify checkout matches event SHA
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+      - name: Check shell syntax
+        run: bash -n scripts/deployment/*.sh
+
+      - name: Run ShellCheck
+        run: shellcheck scripts/deployment/*.sh
+
+      - name: Run safety regression tests
+        run: bash scripts/deployment/test-deployment-scripts.sh
