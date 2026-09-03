@@ -31,6 +31,7 @@ import { AiEngineClientModule } from './modules/ai-engine-client/ai-engine-clien
 import { PerformanceFeesModule } from './modules/performance-fees/performance-fees.module';
 import { BrokerReconciliationModule } from './modules/broker-reconciliation/broker-reconciliation.module';
 import { EmergencyShutdownModule } from './modules/emergency-shutdown/emergency-shutdown.module';
+import { TradingActivationModule } from './modules/trading-activation/trading-activation.module';
 import { PerformanceBillingModule } from './modules/performance-billing/performance-billing.module';
 
 @Module({
@@ -96,6 +97,7 @@ import { PerformanceBillingModule } from './modules/performance-billing/performa
     PerformanceFeesModule,
     BrokerReconciliationModule,
     EmergencyShutdownModule,
+    TradingActivationModule,
     PerformanceBillingModule,
   ],
   providers: [
