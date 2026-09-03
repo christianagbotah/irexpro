@@ -88,12 +88,7 @@ export class MfaService {
     });
   }
 
-  async disable(
-    userId: string,
-    code: string,
-    password: string,
-    ipAddress?: string,
-  ): Promise<void> {
+  async disable(userId: string, code: string, password: string, ipAddress?: string): Promise<void> {
     const user = await this.requireUser(userId);
     if (!user.mfaEnabled || !user.mfaSecret) {
       throw new BadRequestException('MFA is not enabled');
@@ -186,7 +181,9 @@ export class MfaService {
       ]).toString('utf8');
     } catch (error) {
       if (error instanceof ServiceUnavailableException) throw error;
-      this.logger.error('Stored MFA secret could not be decrypted; MFA verification failed closed.');
+      this.logger.error(
+        'Stored MFA secret could not be decrypted; MFA verification failed closed.',
+      );
       throw new ServiceUnavailableException('MFA is temporarily unavailable');
     }
   }
