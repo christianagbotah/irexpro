@@ -75,7 +75,9 @@ export class VerificationService {
     });
     await this.tokenRepo.save(record);
 
-    const verificationLink = `${webBaseUrl.replace(/\/$/u, '')}/verify-email?token=${encodeURIComponent(rawToken)}`;
+    // Keep the single-use secret in the fragment so browsers never send it in
+    // the initial navigation request URL to the Web server or reverse proxy.
+    const verificationLink = `${webBaseUrl.replace(/\/$/u, '')}/verify-email#token=${encodeURIComponent(rawToken)}`;
     const fromAddress = this.configService.get<string>('email.fromAddress', 'no-reply@irexpro.com');
     const delivered = await this.emailDelivery.send({
       to: user.email,
