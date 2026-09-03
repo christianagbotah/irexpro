@@ -76,6 +76,39 @@ describe('AuditService', () => {
     );
   });
 
+  it('does not allow an explicit ID to override live HTTP correlation provenance', async () => {
+    const requestCorrelationId = '11111111-1111-4111-8111-111111111111';
+    const explicitCorrelationId = '22222222-2222-4222-8222-222222222222';
+    mockAuditLogRepo.create.mockReturnValue({ id: 'audit-id' });
+    mockAuditLogRepo.save.mockResolvedValue({ id: 'audit-id' });
+
+    await runWithCorrelationId(requestCorrelationId, () =>
+      service.log({
+        action: AuditAction.USER_LOGIN_SUCCESS,
+        correlationId: explicitCorrelationId,
+      }),
+    );
+
+    expect(mockAuditLogRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ correlationId: requestCorrelationId }),
+    );
+  });
+
+  it('accepts an explicit correlation ID for background work without request context', async () => {
+    const correlationId = '33333333-3333-4333-8333-333333333333';
+    mockAuditLogRepo.create.mockReturnValue({ id: 'audit-id' });
+    mockAuditLogRepo.save.mockResolvedValue({ id: 'audit-id' });
+
+    await service.log({
+      action: AuditAction.USER_LOGIN_SUCCESS,
+      correlationId,
+    });
+
+    expect(mockAuditLogRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ correlationId }),
+    );
+  });
+
   it('recursively redacts secret-bearing metadata before persistence', async () => {
     mockAuditLogRepo.create.mockReturnValue({ id: 'audit-id' });
     mockAuditLogRepo.save.mockResolvedValue({ id: 'audit-id' });

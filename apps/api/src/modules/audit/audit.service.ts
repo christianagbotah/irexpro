@@ -39,9 +39,11 @@ export class AuditService {
 
   async log(dto: CreateAuditLogDto): Promise<void> {
     try {
-      // Explicit correlationId is useful for background/queue work. HTTP paths
-      // automatically inherit the AsyncLocalStorage request context.
-      const correlationId = dto.correlationId ?? getCorrelationId() ?? null;
+      // A live HTTP request always uses its server-owned AsyncLocalStorage ID.
+      // Explicit IDs are accepted only when no request context exists, which
+      // keeps background/queue jobs correlatable without allowing HTTP callers
+      // or intermediate services to override request provenance.
+      const correlationId = getCorrelationId() ?? dto.correlationId ?? null;
       const safeMetadata = dto.metadata ? redactSensitive(dto.metadata) : null;
 
       const entry = this.auditLogRepo.create({
