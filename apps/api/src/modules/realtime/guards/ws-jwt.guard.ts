@@ -1,26 +1,33 @@
 import { CanActivate, ExecutionContext, Injectable, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
 import { WsException } from '@nestjs/websockets';
 import { Socket } from 'socket.io';
+import { Repository } from 'typeorm';
+import { User, UserStatus } from '../../users/entities/user.entity';
 
 export interface WsAuthenticatedSocket extends Socket {
   userId: string;
-  userEmail: string;
+  userEmail: string | null;
   userRoles: string[];
+}
+
+interface WsJwtPayload {
+  sub: string;
+  email: string | null;
+  roles: string[];
+  tokenType?: 'access' | 'refresh';
+  sessionVersion?: number;
 }
 
 /**
  * WsJwtGuard — JWT authentication guard for WebSocket connections.
  *
- * Extracts JWT from:
- *   1. socket.handshake.auth.token  (preferred)
- *   2. socket.handshake.headers.authorization (Bearer <token>)
- *
- * On success: attaches { userId, userEmail, userRoles } to socket.data
- * On failure: throws WsException('Unauthorized') — gateway disconnects the socket
- *
- * Security rule: unauthenticated sockets are rejected before joining any room.
+ * Sprint 48 applies the same server-side revocation semantics as the HTTP
+ * JwtStrategy. A socket handshake must present an ACCESS token whose
+ * sessionVersion still matches identity.users.session_version. Refresh tokens,
+ * stale tokens, and tokens for inactive users are rejected before room join.
  */
 @Injectable()
 export class WsJwtGuard implements CanActivate {
@@ -29,9 +36,11 @@ export class WsJwtGuard implements CanActivate {
   constructor(
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
   ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const client: Socket = context.switchToWs().getClient<Socket>();
     const token = this.extractToken(client);
 
@@ -42,23 +51,47 @@ export class WsJwtGuard implements CanActivate {
 
     try {
       const secret = this.configService.get<string>('jwt.secret');
-      const payload = this.jwtService.verify<{ sub: string; email: string; roles: string[] }>(
-        token,
-        { secret },
-      );
+      const payload = this.jwtService.verify<WsJwtPayload>(token, { secret });
 
-      (client as WsAuthenticatedSocket).userId = payload.sub;
-      (client as WsAuthenticatedSocket).userEmail = payload.email;
+      if (!payload.sub || typeof payload.sub !== 'string') {
+        throw new Error('missing subject');
+      }
+      if (payload.tokenType && payload.tokenType !== 'access') {
+        throw new Error('wrong token type');
+      }
+
+      const user = await this.userRepo.findOne({
+        where: { id: payload.sub },
+        select: ['id', 'email', 'status', 'sessionVersion'],
+      });
+
+      if (
+        !user ||
+        user.status === UserStatus.SUSPENDED ||
+        user.status === UserStatus.PERMANENTLY_LOCKED ||
+        user.status === UserStatus.CLOSED
+      ) {
+        throw new Error('inactive user');
+      }
+
+      const tokenVersion = Number.isInteger(payload.sessionVersion) ? payload.sessionVersion! : 0;
+      const userVersion = Number.isInteger(user.sessionVersion) ? user.sessionVersion : 0;
+      if (tokenVersion !== userVersion) {
+        throw new Error('revoked session');
+      }
+
+      (client as WsAuthenticatedSocket).userId = user.id;
+      (client as WsAuthenticatedSocket).userEmail = user.email;
       (client as WsAuthenticatedSocket).userRoles = payload.roles ?? [];
 
-      client.data.userId = payload.sub;
-      client.data.userEmail = payload.email;
+      client.data.userId = user.id;
+      client.data.userEmail = user.email;
       client.data.userRoles = payload.roles ?? [];
 
       return true;
     } catch {
       this.logger.warn(`WsJwtGuard: invalid token on socket ${client.id}`);
-      throw new WsException('Unauthorized: invalid or expired token');
+      throw new WsException('Unauthorized: invalid, expired, or revoked token');
     }
   }
 
