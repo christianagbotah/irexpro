@@ -35,10 +35,10 @@ describe('production authentication configuration validation', () => {
   });
 
   it('rejects production boot when AUTH_VERIFICATION_PEPPER is absent', () => {
-    const { AUTH_VERIFICATION_PEPPER: _removed, ...withoutPepper } = productionBase;
     const { error } = validationSchema.validate({
-      ...withoutPepper,
+      ...productionBase,
       MFA_ENCRYPTION_KEY: 'm'.repeat(32),
+      AUTH_VERIFICATION_PEPPER: undefined,
     });
     expect(error?.message).toContain('AUTH_VERIFICATION_PEPPER');
   });
