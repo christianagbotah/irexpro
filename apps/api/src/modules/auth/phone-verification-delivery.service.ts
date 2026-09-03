@@ -17,10 +17,7 @@ export class PhoneVerificationDeliveryService {
     const accountValid = Boolean(accountSid && /^AC[0-9a-f]{32}$/iu.test(accountSid));
     const fromValid = Boolean(fromNumber && /^\+[1-9]\d{7,14}$/u.test(fromNumber));
     const apiKeyPairValid = Boolean(
-      apiKey &&
-        apiSecret &&
-        /^SK[0-9a-f]{32}$/iu.test(apiKey) &&
-        this.isUsableSecret(apiSecret),
+      apiKey && apiSecret && /^SK[0-9a-f]{32}$/iu.test(apiKey) && this.isUsableSecret(apiSecret),
     );
     const accountTokenValid = Boolean(authToken && this.isUsableSecret(authToken));
 
@@ -63,7 +60,9 @@ export class PhoneVerificationDeliveryService {
       );
 
       if (!response.ok) {
-        this.logger.warn(`Phone verification delivery rejected by provider (status=${response.status})`);
+        this.logger.warn(
+          `Phone verification delivery rejected by provider (status=${response.status})`,
+        );
         return false;
       }
       return true;
@@ -77,6 +76,10 @@ export class PhoneVerificationDeliveryService {
 
   private isUsableSecret(value: string): boolean {
     const normalized = value.trim().toUpperCase();
-    return value.trim().length >= 16 && !normalized.includes('PLACEHOLDER') && !normalized.includes('CHANGE_ME');
+    return (
+      value.trim().length >= 16 &&
+      !normalized.includes('PLACEHOLDER') &&
+      !normalized.includes('CHANGE_ME')
+    );
   }
 }
