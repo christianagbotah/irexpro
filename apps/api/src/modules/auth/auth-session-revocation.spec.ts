@@ -22,8 +22,9 @@ describe('Sprint 48 — server-side auth session revocation', () => {
     };
     const jwtService = {
       verify: jest.fn(),
-      sign: jest.fn((payload: Record<string, unknown>) =>
-        `${String(payload.tokenType)}:${String(payload.sessionVersion)}:${String(payload.jti)}`,
+      sign: jest.fn(
+        (payload: Record<string, unknown>) =>
+          `${String(payload.tokenType)}:${String(payload.sessionVersion)}:${String(payload.jti)}`,
       ),
     };
     const configService = {
@@ -259,12 +260,9 @@ describe('Sprint 48 — server-side auth session revocation', () => {
 
     await service.resetWithToken('raw-reset-token', 'NewStrongPassword123!');
 
-    expect(queryRunner.manager.update).toHaveBeenNthCalledWith(
-      1,
-      User,
-      userId,
-      { passwordHash: expect.any(String) },
-    );
+    expect(queryRunner.manager.update).toHaveBeenNthCalledWith(1, User, userId, {
+      passwordHash: expect.any(String),
+    });
     expect(queryRunner.manager.update).toHaveBeenNthCalledWith(
       2,
       User,
