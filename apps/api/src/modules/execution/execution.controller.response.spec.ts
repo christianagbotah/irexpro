@@ -1,5 +1,6 @@
 import { ExecutionController } from './execution.controller';
 import { ExecutionReadService } from './execution-read.service';
+import { ExecutionService } from './execution.service';
 import { Trade, TradeCloseReason, TradeDirection, TradeStatus } from './entities/trade.entity';
 
 function makeTrade(overrides: Partial<Trade> = {}): Trade {
@@ -36,6 +37,7 @@ function makeTrade(overrides: Partial<Trade> = {}): Trade {
 describe('ExecutionController frontend-safe responses', () => {
   let controller: ExecutionController;
   let readService: Record<string, jest.Mock>;
+  let execService: Record<string, jest.Mock>;
 
   const USER_ID = '11111111-1111-4111-8111-111111111111';
 
@@ -52,7 +54,14 @@ describe('ExecutionController frontend-safe responses', () => {
         }),
       ]),
     };
-    controller = new ExecutionController(readService as unknown as ExecutionReadService);
+    execService = {
+      amendTrade: jest.fn(),
+      cancelTrade: jest.fn(),
+    };
+    controller = new ExecutionController(
+      readService as unknown as ExecutionReadService,
+      execService as unknown as ExecutionService,
+    );
   });
 
   it('passes only the authenticated user UUID into open-position reads', async () => {

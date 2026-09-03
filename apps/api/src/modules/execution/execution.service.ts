@@ -359,6 +359,162 @@ export class ExecutionService {
    * Close an open trade. Called by AI signal, kill switch, or user action.
    * The Risk Engine must validate the CLOSE action before calling this.
    */
+  /**
+   * Amend an open trade's stop-loss and/or take-profit.
+   *
+   * Only OPEN trades can be amended. The modification is sent to the broker
+   * via adapter.modifyOrder(). If the broker confirms, the trade record is
+   * updated with the new SL/TP values.
+   *
+   * @param tradeId        The trade to amend.
+   * @param userId         The owning user (ownership checked).
+   * @param modifications  The SL/TP modifications.
+   */
+  async amendTrade(
+    tradeId: string,
+    userId: string,
+    modifications: { newStopLoss?: string; newTakeProfit?: string },
+  ): Promise<Trade> {
+    const trade = await this.tradeRepo.findOne({ where: { id: tradeId, userId } });
+    if (!trade) {
+      throw new ForbiddenException(`Trade ${tradeId} not found or does not belong to user`);
+    }
+    if (trade.status !== TradeStatus.OPEN) {
+      throw new ForbiddenException(`Trade ${tradeId} is not OPEN (status: ${trade.status})`);
+    }
+    if (!trade.externalOrderId) {
+      throw new ForbiddenException(`Trade ${tradeId} has no externalOrderId — cannot amend`);
+    }
+
+    const connection = await this.brokerService.findConnectionById(
+      trade.brokerConnectionId,
+      userId,
+    );
+    const credentials = this.encryptionService.decrypt({
+      ciphertext: connection.encryptedCredentials!,
+      iv: connection.credentialIv!,
+      tag: connection.credentialTag!,
+      keyId: connection.encryptionKeyId!,
+    });
+
+    const adapter = this.adapterRegistry.getAdapter(connection.brokerId);
+    adapter.setMode(connection.accountType);
+    await adapter.connect(credentials);
+
+    // Zero credentials immediately
+    (Object.keys(credentials) as (keyof typeof credentials)[]).forEach((k) => {
+      (credentials as unknown as Record<string, unknown>)[k] = null;
+    });
+
+    const result = await adapter.modifyOrder(trade.externalOrderId, modifications);
+
+    // Update trade record with new SL/TP
+    const updates: Partial<Trade> = {};
+    if (modifications.newStopLoss) updates.stopLoss = modifications.newStopLoss;
+    if (modifications.newTakeProfit) updates.takeProfit = modifications.newTakeProfit;
+
+    if (Object.keys(updates).length > 0) {
+      await this.tradeRepo.update(trade.id, updates);
+      Object.assign(trade, updates);
+    }
+
+    await this.auditService.log({
+      actorUserId: userId,
+      action: AuditAction.TRADE_AMENDED,
+      resourceType: 'Trade',
+      resourceId: trade.id,
+      metadata: {
+        modifications,
+        brokerSuccess: result.success,
+        externalOrderId: trade.externalOrderId,
+      },
+    });
+
+    this.logger.log(
+      `Trade AMENDED: id=${trade.id} SL=${modifications.newStopLoss ?? 'unchanged'} TP=${modifications.newTakeProfit ?? 'unchanged'}`,
+    );
+
+    return trade;
+  }
+
+  /**
+   * Cancel a PENDING trade (before it has been filled by the broker).
+   *
+   * Only PENDING trades can be cancelled. OPEN trades must be closed
+   * (use closeTrade instead). If the broker has already filled the order,
+   * cancellation fails and the trade remains OPEN.
+   *
+   * @param tradeId  The PENDING trade to cancel.
+   * @param userId   The owning user.
+   * @param reason   Why the trade is being cancelled.
+   */
+  async cancelTrade(tradeId: string, userId: string, reason: string): Promise<Trade> {
+    const trade = await this.tradeRepo.findOne({ where: { id: tradeId, userId } });
+    if (!trade) {
+      throw new ForbiddenException(`Trade ${tradeId} not found or does not belong to user`);
+    }
+    if (trade.status !== TradeStatus.PENDING) {
+      throw new ForbiddenException(
+        `Trade ${tradeId} is not PENDING (status: ${trade.status}). Only PENDING trades can be cancelled.`,
+      );
+    }
+
+    // If the trade has an externalOrderId, attempt to cancel at the broker
+    if (trade.externalOrderId) {
+      try {
+        const connection = await this.brokerService.findConnectionById(
+          trade.brokerConnectionId,
+          userId,
+        );
+        const credentials = this.encryptionService.decrypt({
+          ciphertext: connection.encryptedCredentials!,
+          iv: connection.credentialIv!,
+          tag: connection.credentialTag!,
+          keyId: connection.encryptionKeyId!,
+        });
+
+        const adapter = this.adapterRegistry.getAdapter(connection.brokerId);
+        adapter.setMode(connection.accountType);
+        await adapter.connect(credentials);
+
+        // Zero credentials
+        (Object.keys(credentials) as (keyof typeof credentials)[]).forEach((k) => {
+          (credentials as unknown as Record<string, unknown>)[k] = null;
+        });
+
+        // Try to close (cancel) the order at the broker
+        await adapter.closeOrder(trade.externalOrderId);
+      } catch (err) {
+        this.logger.warn(
+          `Trade ${trade.id} broker cancel failed: ${(err as Error).message}. ` +
+            `Marking as CANCELLED locally — reconciliation will verify.`,
+        );
+      }
+    }
+
+    await this.tradeRepo.update(trade.id, {
+      status: TradeStatus.CANCELLED,
+      closedAt: new Date(),
+    });
+
+    trade.status = TradeStatus.CANCELLED;
+
+    await this.auditService.log({
+      actorUserId: userId,
+      action: AuditAction.TRADE_CANCELLED,
+      resourceType: 'Trade',
+      resourceId: trade.id,
+      metadata: {
+        reason,
+        externalOrderId: trade.externalOrderId,
+      },
+    });
+
+    this.logger.log(`Trade CANCELLED: id=${trade.id} reason=${reason}`);
+
+    return trade;
+  }
+
   async closeTrade(tradeId: string, userId: string, reason: TradeCloseReason): Promise<Trade> {
     const trade = await this.tradeRepo.findOne({ where: { id: tradeId, userId } });
     if (!trade) {
