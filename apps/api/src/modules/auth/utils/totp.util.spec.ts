@@ -1,10 +1,4 @@
-import {
-  buildOtpAuthUri,
-  decodeBase32,
-  encodeBase32,
-  generateTotp,
-  verifyTotp,
-} from './totp.util';
+import { buildOtpAuthUri, decodeBase32, encodeBase32, generateTotp, verifyTotp } from './totp.util';
 
 describe('TOTP utilities', () => {
   const rfcSecret = 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ';
