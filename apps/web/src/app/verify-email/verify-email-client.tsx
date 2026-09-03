@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
@@ -19,6 +19,14 @@ export default function VerifyEmailClient({ token, alreadyVerified }: VerifyEmai
   const [verified, setVerified] = useState(alreadyVerified);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!token) return;
+    // Keep the single-use token only in component memory. Remove it from the
+    // current browser-history entry before any later fetch/navigation can send
+    // the page URL as a same-origin Referer or preserve it in visible history.
+    window.history.replaceState(window.history.state, '', '/verify-email');
+  }, [token]);
+
   async function confirm() {
     if (!token || busy || verified) return;
     setBusy(true);
@@ -29,8 +37,8 @@ export default function VerifyEmailClient({ token, alreadyVerified }: VerifyEmai
         await refreshUser().catch(() => {});
       }
       setVerified(true);
-      // Remove the single-use raw token from the visible URL after successful
-      // consumption. The token is never stored in local/session storage.
+      // Mark the consumed-token state without restoring the raw token to the
+      // URL. The token is never stored in local/session storage.
       router.replace('/verify-email?verified=1');
     } catch {
       // Do not echo provider/backend details or the raw token into the page.
