@@ -5,6 +5,7 @@ import { RiskService } from './risk.service';
 import { RiskProfile } from './entities/risk-profile.entity';
 import { RiskViolation } from './entities/risk-violation.entity';
 import { BrokerService } from '../broker/broker.service';
+import { EmergencyShutdownService } from '../emergency-shutdown/emergency-shutdown.service';
 import { AuditService } from '../audit/audit.service';
 import { ExecutionService } from '../execution/execution.service';
 import { ProposedTrade, RiskRejectionCode } from './interfaces/risk.interface';
@@ -72,6 +73,10 @@ const mockBrokerService = () => ({
   }),
   getRequiredMargin: jest.fn().mockResolvedValue('100.00'),
 });
+const mockEmergencyShutdownService = {
+  isEmergencyShutdownActive: jest.fn().mockResolvedValue(false),
+  getActiveEvent: jest.fn().mockResolvedValue(null),
+};
 
 const mockAuditService = () => ({
   log: jest.fn().mockResolvedValue(undefined),
@@ -102,6 +107,7 @@ describe('RiskService — Sprint 32 Production Hardening', () => {
         { provide: getRepositoryToken(RiskProfile), useValue: mockProfileRepo() },
         { provide: getRepositoryToken(RiskViolation), useValue: mockViolationRepo() },
         { provide: BrokerService, useValue: brokerService },
+        { provide: EmergencyShutdownService, useValue: mockEmergencyShutdownService },
         { provide: AuditService, useValue: mockAuditService() },
         { provide: ExecutionService, useValue: executionService },
         { provide: DomainEventBus, useValue: { publish: jest.fn() } },

@@ -13,6 +13,7 @@ import {
   ValidatedOrder,
 } from './interfaces/risk.interface';
 import { BrokerService } from '../broker/broker.service';
+import { EmergencyShutdownService } from '../emergency-shutdown/emergency-shutdown.service';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../../common/enums/audit-action.enum';
 import { AuditSeverity } from '../audit/entities/audit-log.entity';
@@ -63,6 +64,7 @@ export class RiskService {
     @Inject(forwardRef(() => ExecutionService))
     private executionService: ExecutionService,
     private readonly eventBus: DomainEventBus,
+    private readonly emergencyShutdownService: EmergencyShutdownService,
   ) {}
 
   // ─── Main validation entry point ──────────────────────────────────────────
@@ -114,6 +116,21 @@ export class RiskService {
       proposedInstrument: trade.instrument,
       checkedAt: evaluatedAt,
     };
+
+    // ── Step 0: Global emergency shutdown (checked BEFORE everything) ──────
+    // Platform-wide kill switch — if active, ALL trading is halted immediately.
+    const isEmergencyShutdown = await this.emergencyShutdownService.isEmergencyShutdownActive();
+    if (isEmergencyShutdown) {
+      appliedRules.push('EMERGENCY_SHUTDOWN');
+      return this.rejectAndRecord(
+        userId,
+        trade,
+        RiskRejectionCode.KILL_SWITCH_ACTIVE,
+        'Platform emergency shutdown is active — all trading halted',
+        contextSnapshot as any,
+        evaluatedAt,
+      );
+    }
 
     // ── Step 1: Pre-condition checks (fail fast) ────────────────────────────
 

@@ -71,6 +71,15 @@ export class BrokerService {
     return connection;
   }
 
+  /**
+   * Find a broker connection by ID without user ownership check.
+   * ADMIN/SUPER_ADMIN only — used by emergency shutdown to force-close
+   * positions across all users.
+   */
+  async findConnectionByIdForAdmin(connectionId: string): Promise<BrokerConnection | null> {
+    return this.connectionRepo.findOne({ where: { id: connectionId } });
+  }
+
   async findActiveConnectionForUser(userId: string): Promise<BrokerConnection | null> {
     return this.connectionRepo.findOne({
       where: { userId, status: BrokerConnectionStatus.CONNECTED },
