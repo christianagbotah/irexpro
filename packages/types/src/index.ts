@@ -60,6 +60,9 @@ export interface AuthUser {
   /** Roles from the JWT payload — always present in the Sprint 25 /auth/me response. */
   roles: UserRole[];
   mfaEnabled: boolean;
+  /** Frontend-safe verification state. Raw verification tokens/codes are never returned. */
+  emailVerified: boolean;
+  phoneVerified: boolean;
   lastLoginAt: string | null;
   createdAt: string;
 }
@@ -67,6 +70,8 @@ export interface AuthUser {
 export interface LoginRequest {
   identifier: string;
   password: string;
+  /** Optional 6-digit TOTP. Required by the backend only when MFA is enabled. */
+  mfaCode?: string;
   rememberMe?: boolean;
 }
 
@@ -92,6 +97,17 @@ export interface AuthTokens {
 
 export interface LogoutResponse {
   message: string;
+}
+
+/** Generic response for authenticated identity-security actions. */
+export interface AuthActionResponse {
+  message: string;
+}
+
+/** One-time TOTP enrollment material. Must never be persisted by clients. */
+export interface MfaSetupResponse {
+  secret: string;
+  otpauthUri: string;
 }
 
 // ── Sprint 28: Password reset ───────────────────────────────────────────────
