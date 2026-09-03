@@ -59,6 +59,10 @@ export class AuthController {
   @Post('login')
   @Public()
   @HttpCode(HttpStatus.OK)
+  // Sprint 48: login gets a much tighter IP-level ceiling than the general
+  // auth-module default. Account-level temporary lockout in AuthService adds
+  // a second layer against distributed guessing.
+  @Throttle({ default: { ttl: 60 * 1000, limit: 10 } })
   @ApiOperation({ summary: 'Login with email and password' })
   @ApiResponse({ status: 200, description: 'Login successful, returns access and refresh tokens' })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
