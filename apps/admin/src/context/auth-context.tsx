@@ -30,7 +30,12 @@ interface AuthContextValue {
   loading: boolean;
   restoring: boolean;
   error: string | null;
-  login: (identifier: string, password: string, rememberMe?: boolean) => Promise<void>;
+  login: (
+    identifier: string,
+    password: string,
+    rememberMe?: boolean,
+    mfaCode?: string,
+  ) => Promise<void>;
   logout: () => Promise<void>;
   clearError: () => void;
   hasAdminRole: boolean;
@@ -87,14 +92,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => { cancelled = true; };
   }, [storeTokens, fetchMe]);
 
-  const login = useCallback(async (identifier: string, password: string, rememberMe?: boolean) => {
+  const login = useCallback(async (
+    identifier: string,
+    password: string,
+    rememberMe?: boolean,
+    mfaCode?: string,
+  ) => {
     setLoading(true);
     setError(null);
     try {
-      const tokens = await api.login({ identifier, password, rememberMe });
+      const tokens = await api.login({
+        identifier,
+        password,
+        rememberMe,
+        mfaCode: mfaCode?.trim() || undefined,
+      });
       storeTokens(tokens);
       await fetchMe(tokens.accessToken);
     } catch (err) {
+      // Keep the backend's invariant invalid-credentials response; do not infer
+      // or expose whether a particular admin account has MFA configured.
       const msg = err instanceof Error ? err.message : 'Login failed';
       setError(msg);
       throw err;
