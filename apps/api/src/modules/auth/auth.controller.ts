@@ -32,8 +32,6 @@ import { AuthenticatedPrincipal } from '../../common/interfaces/authenticated-pr
 
 @ApiTags('Auth')
 @Controller('auth')
-// Sprint 28 amendment: apply ThrottlerGuard to all auth routes. Per-route
-// @Throttle overrides set tighter limits on forgot-password and reset-password.
 @UseGuards(ThrottlerGuard)
 export class AuthController {
   constructor(
@@ -53,11 +51,7 @@ export class AuthController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const ipAddress = req.ip;
-    const tokens = await this.authService.register(dto, ipAddress);
-    // Sprint 25: set httpOnly refresh cookie for web/admin. Mobile reads the
-    // refreshToken from the JSON body. Both flows are supported simultaneously.
-    // Sprint 27: pass rememberMe to control cookie maxAge.
+    const tokens = await this.authService.register(dto, req.ip);
     this.authCookieService.setRefreshCookie(res, tokens.refreshToken, dto.rememberMe);
     return tokens;
   }
@@ -73,11 +67,7 @@ export class AuthController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const ipAddress = req.ip;
-    const tokens = await this.authService.login(dto, ipAddress);
-    // Sprint 25: set httpOnly refresh cookie for web/admin. Mobile reads the
-    // refreshToken from the JSON body. Both flows are supported simultaneously.
-    // Sprint 27: pass rememberMe to control cookie maxAge.
+    const tokens = await this.authService.login(dto, req.ip);
     this.authCookieService.setRefreshCookie(res, tokens.refreshToken, dto.rememberMe);
     return tokens;
   }
@@ -85,16 +75,14 @@ export class AuthController {
   @Post('refresh')
   @Public()
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Refresh access token (cookie for web/admin, body for mobile)' })
+  @ApiOperation({ summary: 'Refresh and rotate access/refresh tokens' })
   @ApiResponse({ status: 200, description: 'New access and refresh tokens' })
-  @ApiResponse({ status: 401, description: 'Invalid or expired refresh token' })
+  @ApiResponse({ status: 401, description: 'Invalid, expired, revoked, or replayed refresh token' })
   async refresh(
     @Req() req: Request,
     @Body() dto?: RefreshTokenDto,
     @Res({ passthrough: true }) res?: Response,
   ) {
-    // Sprint 25: hybrid refresh — check httpOnly cookie first (web/admin),
-    // then fall back to JSON body (mobile).
     const refreshToken = this.authCookieService.getRefreshTokenFromCookie(req) ?? dto?.refreshToken;
 
     if (!refreshToken) {
@@ -103,7 +91,6 @@ export class AuthController {
 
     const tokens = await this.authService.refreshTokens(refreshToken);
 
-    // Rotate the refresh cookie for web/admin (if res is available)
     if (res) {
       this.authCookieService.setRefreshCookie(res, tokens.refreshToken);
     }
@@ -115,11 +102,13 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('access-token')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Logout — clear refresh cookie, client discards tokens' })
-  async logout(@Res({ passthrough: true }) res: Response) {
-    // Sprint 25: clear the httpOnly refresh cookie for web/admin.
-    // Mobile client discards its in-memory/SecureStore tokens.
-    // Server-side token invalidation via Redis blacklist is a Phase 2 enhancement.
+  @ApiOperation({ summary: 'Logout and immediately revoke all active tokens for the account' })
+  async logout(
+    @CurrentUser() principal: AuthenticatedPrincipal,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    await this.authService.logout(principal.userId, req.ip);
     this.authCookieService.clearRefreshCookie(res);
     return { message: 'Logged out successfully' };
   }
@@ -130,23 +119,12 @@ export class AuthController {
   @ApiOperation({ summary: 'Get current authenticated user (frontend-safe DTO)' })
   @ApiResponse({ status: 200, description: 'Current user profile with roles', type: AuthUserDto })
   async me(@CurrentUser() principal: AuthenticatedPrincipal): Promise<AuthUserDto> {
-    // Sprint 25: return a frontend-safe AuthUserDto that explicitly allowlists
-    // only safe fields (id, email, firstName, lastName, countryCode, status,
-    // roles, mfaEnabled, lastLoginAt, createdAt). Sensitive fields
-    // (passwordHash, mfaSecret, deletedAt, userRoles, profile PII) are never
-    // included. Roles come from the JWT payload (set by JwtStrategy.validate).
     return this.authService.getAuthUserDto(principal.userId, principal.roles as never);
   }
-
-  // ── Sprint 28: Secure password reset ────────────────────────────────────
 
   @Post('forgot-password')
   @Public()
   @HttpCode(HttpStatus.OK)
-  // Sprint 28 amendment: rate limit — 5 requests per 15 minutes per IP.
-  // Prevents brute-force account enumeration. The response is always the
-  // same generic message, so rate-limited callers cannot distinguish
-  // “rate limited” from “account does not exist”.
   @Throttle({ default: { ttl: 15 * 60 * 1000, limit: 5 } })
   @ApiOperation({ summary: 'Request a password reset (email link or SMS code)' })
   @ApiResponse({
@@ -158,9 +136,6 @@ export class AuthController {
     @Ip() ip: string,
     @Headers('user-agent') userAgent?: string,
   ): Promise<{ message: string }> {
-    // Sprint 28: always return the SAME generic message whether or not the
-    // account exists. This prevents account enumeration. The raw token/code
-    // is delivered via email/SMS (if configured) — never returned in the response.
     await this.passwordResetService.requestReset(dto.identifier, {
       ipAddress: ip,
       userAgent,
@@ -174,20 +149,12 @@ export class AuthController {
   @Post('reset-password')
   @Public()
   @HttpCode(HttpStatus.OK)
-  // Sprint 28 amendment: rate limit — 10 attempts per 15 minutes per IP.
-  // Prevents brute-force token guessing. Combined with the single-use +
-  // expiry + max-5-phone-code-attempts in the service, this provides
-  // defense-in-depth.
   @Throttle({ default: { ttl: 15 * 60 * 1000, limit: 10 } })
   @ApiOperation({ summary: 'Reset password using a token (email) or code (phone)' })
   @ApiResponse({ status: 200, description: 'Password has been reset successfully.' })
   @ApiResponse({ status: 401, description: 'Invalid or expired reset token/code' })
   @ApiResponse({ status: 400, description: 'Weak password or missing fields' })
   async resetPassword(@Body() dto: ResetPasswordDto): Promise<{ message: string }> {
-    // Sprint 28: supports two flows:
-    //   1. Email token: { token, password }
-    //   2. Phone code: { identifier, code, password }
-    // The controller routes to the appropriate service method.
     if (dto.token) {
       await this.passwordResetService.resetWithToken(dto.token, dto.password);
     } else if (dto.identifier && dto.code) {
