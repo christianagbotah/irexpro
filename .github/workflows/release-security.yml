@@ -54,6 +54,12 @@ jobs:
       - name: Test required CI gate path policy
         run: node scripts/security/required-ci-gate.mjs --self-test
 
+      - name: Test required CI trigger drift guard
+        run: node scripts/security/check-required-ci-trigger-drift.mjs --self-test
+
+      - name: Enforce required CI trigger/path consistency
+        run: node scripts/security/check-required-ci-trigger-drift.mjs
+
       - name: Test tracked-source secret scanner
         run: node scripts/security/test-scan-tracked-secrets.mjs
 
