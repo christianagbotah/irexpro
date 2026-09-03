@@ -21,6 +21,9 @@ concurrency:
   group: deployment-script-safety-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
 jobs:
   validate:
     name: Validate fail-closed deployment scripts
@@ -31,13 +34,14 @@ jobs:
       - name: Checkout exact workflow candidate
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
+          ref: ${{ env.CANDIDATE_SHA }}
           persist-credentials: false
 
-      - name: Verify checkout matches event SHA
+      - name: Verify checkout matches exact candidate SHA
         shell: bash
         run: |
           set -Eeuo pipefail
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
 
       - name: Check shell syntax
         run: bash -n scripts/deployment/*.sh
