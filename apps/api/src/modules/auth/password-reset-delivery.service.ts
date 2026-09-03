@@ -30,7 +30,8 @@ export const EMAIL_PROVIDER = Symbol('EMAIL_PROVIDER');
  * generic API response — no account enumeration).
  *
  * Security:
- *   - The raw reset token is embedded in the reset link inside the email body.
+ *   - The raw reset token is embedded in the reset link fragment inside the email body.
+ *   - Browser fragments are not transmitted in the initial HTTP navigation request.
  *   - The raw token is NEVER logged.
  *   - The email body is NOT logged (PII minimisation).
  *   - SMTP errors are logged at warn level WITHOUT the raw token or email body.
@@ -145,7 +146,8 @@ export class NodemailerEmailProvider implements EmailProviderInterface {
  * returns false (the API still returns the generic message).
  *
  * Email flow:
- *   - Builds reset link: `${WEB_BASE_URL}/reset-password?token=<rawToken>`
+ *   - Builds reset link: `${WEB_BASE_URL}/reset-password#token=<rawToken>`
+ *   - The fragment is kept client-side by the browser and is not sent in the navigation request.
  *   - Sends via nodemailer (EMAIL_SMTP_URL).
  *   - If EMAIL_SMTP_URL or WEB_BASE_URL is missing → safe warning, returns false.
  *   - If SMTP send fails → safe warning (no raw token), returns false.
@@ -187,7 +189,8 @@ export class PasswordResetDeliveryService {
    *
    * Sprint 28 amendment: uses the injected EmailProviderInterface (default:
    * NodemailerEmailProvider). The raw token is embedded in the reset link
-   * inside the email body — it is NEVER logged.
+   * fragment inside the email body — it is NEVER logged or placed in the
+   * navigation request query string.
    */
   private async deliverEmail(email: string, rawToken: string, userId: string): Promise<boolean> {
     const webBaseUrl = this.configService.get<string>('app.webBaseUrl');
@@ -212,8 +215,9 @@ export class PasswordResetDeliveryService {
       return false;
     }
 
-    // Build the reset link. The raw token is in the URL (never logged).
-    const resetLink = `${webBaseUrl}/reset-password?token=${rawToken}`;
+    // Keep the secret in the fragment so it is not sent to the Web server or
+    // reverse proxy as part of the initial navigation request URL.
+    const resetLink = `${webBaseUrl.replace(/\/$/u, '')}/reset-password#token=${encodeURIComponent(rawToken)}`;
     const fromAddress = this.configService.get<string>('email.fromAddress', 'no-reply@irexpro.com');
 
     // Send via the email provider. If it returns false (SMTP failure),
