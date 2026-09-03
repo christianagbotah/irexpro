@@ -13,7 +13,7 @@ export class EmailVerificationDeliveryService {
   isConfigured(): boolean {
     return Boolean(
       this.configService.get<string>('email.smtpUrl') &&
-        this.configService.get<string>('app.webBaseUrl'),
+      this.configService.get<string>('app.webBaseUrl'),
     );
   }
 
