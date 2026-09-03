@@ -9,10 +9,7 @@ import { NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { setupSwagger } from './config/swagger.config';
-import {
-  createCorrelationId,
-  runWithCorrelationId,
-} from './common/utils/request-correlation.util';
+import { createCorrelationId, runWithCorrelationId } from './common/utils/request-correlation.util';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
