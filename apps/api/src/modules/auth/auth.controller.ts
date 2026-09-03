@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Ip,
@@ -11,24 +12,23 @@ import {
   Res,
   UnauthorizedException,
   UseGuards,
-  Headers,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { ThrottlerGuard, Throttle } from '@nestjs/throttler';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { Request, Response } from 'express';
-import { AuthService } from './auth.service';
-import { AuthCookieService } from './auth-cookie.service';
-import { PasswordResetService } from './password-reset.service';
-import { RegisterDto } from './dto/register.dto';
-import { LoginDto } from './dto/login.dto';
-import { RefreshTokenDto } from './dto/refresh-token.dto';
-import { ForgotPasswordDto } from './dto/forgot-password.dto';
-import { ResetPasswordDto } from './dto/reset-password.dto';
-import { AuthUserDto } from './dto/auth-user.dto';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AuthenticatedPrincipal } from '../../common/interfaces/authenticated-principal.interface';
+import { AuthCookieService } from './auth-cookie.service';
+import { AuthService } from './auth.service';
+import { AuthUserDto } from './dto/auth-user.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { LoginDto } from './dto/login.dto';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { RegisterDto } from './dto/register.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
+import { PasswordResetService } from './password-reset.service';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -43,6 +43,7 @@ export class AuthController {
   @Post('register')
   @Public()
   @HttpCode(HttpStatus.CREATED)
+  @Throttle({ default: { ttl: 15 * 60 * 1000, limit: 10 } })
   @ApiOperation({ summary: 'Register a new user account' })
   @ApiResponse({ status: 201, description: 'User registered successfully' })
   @ApiResponse({ status: 409, description: 'Email already in use' })
@@ -79,6 +80,10 @@ export class AuthController {
   @Post('refresh')
   @Public()
   @HttpCode(HttpStatus.OK)
+  // Refresh is normally sparse (access tokens live for 15 minutes), so 60/min
+  // leaves generous room for multi-tab/mobile retry bursts while preventing the
+  // endpoint from inheriting the broad auth-module default indefinitely.
+  @Throttle({ default: { ttl: 60 * 1000, limit: 60 } })
   @ApiOperation({ summary: 'Refresh and rotate access/refresh tokens' })
   @ApiResponse({ status: 200, description: 'New access and refresh tokens' })
   @ApiResponse({ status: 401, description: 'Invalid, expired, revoked, or replayed refresh token' })
