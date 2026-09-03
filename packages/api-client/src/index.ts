@@ -1,5 +1,6 @@
 import {
   ApiError,
+  AuthActionResponse,
   AuthTokens,
   AuthUser,
   BrokerConnectionView,
@@ -11,6 +12,7 @@ import {
   Invoice,
   LoginRequest,
   LogoutResponse,
+  MfaSetupResponse,
   OnboardingStatus,
   PaymentProviderInfo,
   PaymentTransaction,
@@ -66,7 +68,7 @@ export interface ApiClient {
   // Auth — matches the verified backend (apps/api/src/modules/auth/auth.controller.ts)
   /** POST /auth/register → { accessToken, refreshToken } */
   register(body: RegisterRequest): Promise<AuthTokens>;
-  /** POST /auth/login → { accessToken, refreshToken } */
+  /** POST /auth/login → { accessToken, refreshToken }; optional mfaCode when enabled. */
   login(body: LoginRequest): Promise<AuthTokens>;
   /**
    * POST /auth/refresh → { accessToken, refreshToken }
@@ -79,6 +81,20 @@ export interface ApiClient {
   logout(): Promise<LogoutResponse>;
   /** GET /auth/me (requires Authorization: Bearer) → current user */
   me(): Promise<AuthUser>;
+  /** Begin TOTP enrollment. Returned secret/URI must remain memory-only. */
+  beginMfaSetup(): Promise<MfaSetupResponse>;
+  /** Verify a six-digit TOTP and enable MFA. Existing sessions are revoked. */
+  enableMfa(code: string): Promise<AuthActionResponse>;
+  /** Disable MFA with current password + six-digit TOTP. Existing sessions are revoked. */
+  disableMfa(code: string, password: string): Promise<AuthActionResponse>;
+  /** Send a single-use email verification link for the current account. */
+  requestEmailVerification(): Promise<AuthActionResponse>;
+  /** Public confirmation of a single-use email verification token. */
+  confirmEmailVerification(token: string): Promise<AuthActionResponse>;
+  /** Send a single-use phone verification code for the current account. */
+  requestPhoneVerification(): Promise<AuthActionResponse>;
+  /** Confirm the current account's six-digit phone verification code. */
+  confirmPhoneVerification(code: string): Promise<AuthActionResponse>;
 
   // ── Sprint 28: Password reset ────────────────────────────────────────────
   /** POST /auth/forgot-password → always returns a generic message (no account enumeration). */
@@ -248,6 +264,39 @@ export function createApiClient(options: CreateApiClientOptions): ApiClient {
       request<LogoutResponse>('/auth/logout', { method: 'POST' }),
 
     me: () => request<AuthUser>('/auth/me'),
+
+    beginMfaSetup: () =>
+      request<MfaSetupResponse>('/auth/mfa/setup', { method: 'POST' }),
+
+    enableMfa: (code) =>
+      request<AuthActionResponse>('/auth/mfa/enable', {
+        method: 'POST',
+        body: JSON.stringify({ code }),
+      }),
+
+    disableMfa: (code, password) =>
+      request<AuthActionResponse>('/auth/mfa/disable', {
+        method: 'POST',
+        body: JSON.stringify({ code, password }),
+      }),
+
+    requestEmailVerification: () =>
+      request<AuthActionResponse>('/auth/verification/email/request', { method: 'POST' }),
+
+    confirmEmailVerification: (token) =>
+      request<AuthActionResponse>('/auth/verification/email/confirm', {
+        method: 'POST',
+        body: JSON.stringify({ token }),
+      }),
+
+    requestPhoneVerification: () =>
+      request<AuthActionResponse>('/auth/verification/phone/request', { method: 'POST' }),
+
+    confirmPhoneVerification: (code) =>
+      request<AuthActionResponse>('/auth/verification/phone/confirm', {
+        method: 'POST',
+        body: JSON.stringify({ code }),
+      }),
 
     // Sprint 28: password reset
     forgotPassword: (body) =>
