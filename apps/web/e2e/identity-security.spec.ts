@@ -136,9 +136,12 @@ test.describe('Sprint 49 identity security UX', () => {
     expect(stored).not.toContain('654321');
   });
 
-  test('single-use email token is confirmed explicitly then removed from the visible URL', async ({ page }) => {
+  test('email verification fragment stays out of request URLs and is submitted only in the explicit POST body', async ({ page }) => {
     const token = 'single-use-email-token-e2e';
     let confirmBody: Record<string, unknown> | null = null;
+    const requestUrls: string[] = [];
+    page.on('request', (request) => requestUrls.push(request.url()));
+
     await silenceFavicon(page);
     await page.route('**/api/v1/**', async (route) => {
       const path = apiPath(route);
@@ -152,16 +155,58 @@ test.describe('Sprint 49 identity security UX', () => {
       return route.fulfill(json(200, {}));
     });
 
-    await page.goto(`/verify-email?token=${encodeURIComponent(token)}`);
+    await page.goto(`/verify-email#token=${encodeURIComponent(token)}`);
+    await expect(page.getByRole('button', { name: 'Confirm email' })).toBeVisible();
     await expect(page.getByText(token)).toHaveCount(0);
     await expect(page).toHaveURL(/\/verify-email$/);
     expect(page.url()).not.toContain(token);
+    expect(requestUrls.every((url) => !url.includes(token))).toBe(true);
+
     await page.getByRole('button', { name: 'Confirm email' }).click();
 
     await expect(page).toHaveURL(/\/verify-email\?verified=1$/);
     await expect(page.getByRole('heading', { name: 'Email verified' })).toBeVisible();
     expect(page.url()).not.toContain(token);
+    expect(requestUrls.every((url) => !url.includes(token))).toBe(true);
     expect(confirmBody).toEqual({ token });
+    const storage = await page.evaluate(() => `${JSON.stringify(localStorage)}${JSON.stringify(sessionStorage)}`);
+    expect(storage).not.toContain(token);
+  });
+
+  test('password reset fragment stays out of request URLs and is submitted only in the explicit POST body', async ({ page }) => {
+    const token = 'single-use-reset-token-e2e';
+    const newPassword = 'FragmentReset1234';
+    let resetBody: Record<string, unknown> | null = null;
+    const requestUrls: string[] = [];
+    page.on('request', (request) => requestUrls.push(request.url()));
+
+    await silenceFavicon(page);
+    await page.route('**/api/v1/**', async (route) => {
+      const path = apiPath(route);
+      if (path === 'auth/refresh') {
+        return route.fulfill(json(401, { statusCode: 401, message: 'Unauthorized' }));
+      }
+      if (path === 'auth/reset-password') {
+        resetBody = route.request().postDataJSON() as Record<string, unknown>;
+        return route.fulfill(json(200, { message: 'Password reset successfully' }));
+      }
+      return route.fulfill(json(200, {}));
+    });
+
+    await page.goto(`/reset-password#token=${encodeURIComponent(token)}`);
+    await expect(page).toHaveURL(/\/reset-password$/);
+    await expect(page.getByText('Your secure reset link is loaded.')).toBeVisible();
+    await expect(page.getByLabel('Reset token')).toHaveCount(0);
+    await expect(page.getByText(token)).toHaveCount(0);
+    expect(requestUrls.every((url) => !url.includes(token))).toBe(true);
+
+    await page.getByLabel('New password').fill(newPassword);
+    await page.getByLabel('Confirm new password').fill(newPassword);
+    await page.getByRole('button', { name: /^reset password$/i }).click();
+
+    await expect(page.getByText(/Your password has been reset successfully/i)).toBeVisible();
+    expect(resetBody).toEqual({ token, password: newPassword });
+    expect(requestUrls.every((url) => !url.includes(token))).toBe(true);
     const storage = await page.evaluate(() => `${JSON.stringify(localStorage)}${JSON.stringify(sessionStorage)}`);
     expect(storage).not.toContain(token);
   });
