@@ -1,4 +1,4 @@
-import { ArgumentsHost } from '@nestjs/common';
+import { ArgumentsHost, BadRequestException } from '@nestjs/common';
 import { AllExceptionsFilter } from './all-exceptions.filter';
 
 describe('AllExceptionsFilter security boundary', () => {
@@ -46,7 +46,6 @@ describe('AllExceptionsFilter security boundary', () => {
     const logger = { error: jest.fn(), warn: jest.fn() };
     (filter as unknown as { logger: typeof logger }).logger = logger;
 
-    const { BadRequestException } = jest.requireActual('@nestjs/common');
     const { host, json } = createHost('/test?accessToken=query-secret', '/test');
 
     filter.catch(new BadRequestException('token=response-secret'), host);
