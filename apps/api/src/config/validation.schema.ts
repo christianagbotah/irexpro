@@ -46,6 +46,15 @@ export const validationSchema = Joi.object({
     otherwise: Joi.string().min(32).optional().allow(''),
   }),
 
+  // Dedicated HMAC pepper for low-entropy phone verification codes. Production
+  // requires independent secret material so stored code digests are not
+  // offline-enumerable after a database-only compromise.
+  AUTH_VERIFICATION_PEPPER: Joi.when('NODE_ENV', {
+    is: 'production',
+    then: Joi.string().min(32).required(),
+    otherwise: Joi.string().min(32).optional().allow(''),
+  }),
+
   // Broker credential encryption (AES-256-GCM)
   // Must be at least 32 characters (256 bits).
   // In production: managed by AWS KMS / HashiCorp Vault.
@@ -85,10 +94,18 @@ export const validationSchema = Joi.object({
   STRIPE_SUCCESS_URL: Joi.string().optional().allow(''),
   STRIPE_CANCEL_URL: Joi.string().optional().allow(''),
 
-  // Sprint 28 — password reset delivery (all optional; safe "not configured" behavior)
+  // Sprint 28 — password reset / verification delivery.
   WEB_BASE_URL: Joi.string().optional().allow(''),
   ADMIN_BASE_URL: Joi.string().optional().allow(''),
   EMAIL_SMTP_URL: Joi.string().optional().allow(''),
   EMAIL_FROM: Joi.string().optional().allow(''),
   EMAIL_FROM_ADDRESS: Joi.string().optional().allow(''),
+
+  // Sprint 48 — phone verification delivery. Provider values stay optional so
+  // the service can fail closed when SMS is intentionally not configured.
+  TWILIO_ACCOUNT_SID: Joi.string().optional().allow(''),
+  TWILIO_AUTH_TOKEN: Joi.string().optional().allow(''),
+  TWILIO_API_KEY: Joi.string().optional().allow(''),
+  TWILIO_API_SECRET: Joi.string().optional().allow(''),
+  TWILIO_FROM_NUMBER: Joi.string().optional().allow(''),
 });

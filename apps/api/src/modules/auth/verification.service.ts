@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { createHash, randomBytes } from 'crypto';
+import { createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from 'crypto';
 import { DataSource, IsNull, Repository } from 'typeorm';
 import { AuditAction } from '../../common/enums/audit-action.enum';
 import { AuditService } from '../audit/audit.service';
@@ -16,10 +16,13 @@ import {
   AuthVerificationToken,
   VerificationChannel,
 } from './entities/auth-verification-token.entity';
+import { PhoneVerificationDeliveryService } from './phone-verification-delivery.service';
 
 @Injectable()
 export class VerificationService {
   private static readonly EMAIL_TOKEN_TTL_MINUTES = 15;
+  private static readonly PHONE_CODE_TTL_MINUTES = 10;
+  private static readonly PHONE_MAX_ATTEMPTS = 5;
 
   constructor(
     @InjectRepository(User)
@@ -27,6 +30,7 @@ export class VerificationService {
     @InjectRepository(AuthVerificationToken)
     private readonly tokenRepo: Repository<AuthVerificationToken>,
     private readonly emailDelivery: EmailVerificationDeliveryService,
+    private readonly phoneDelivery: PhoneVerificationDeliveryService,
     private readonly configService: ConfigService,
     private readonly auditService: AuditService,
     private readonly dataSource: DataSource,
@@ -138,7 +142,7 @@ export class VerificationService {
       await queryRunner.commitTransaction();
       verifiedUserId = user.id;
     } catch (error) {
-      await queryRunner.rollbackTransaction();
+      if (queryRunner.isTransactionActive) await queryRunner.rollbackTransaction();
       throw error;
     } finally {
       await queryRunner.release();
@@ -156,7 +160,215 @@ export class VerificationService {
     }
   }
 
+  async requestPhoneVerification(
+    userId: string,
+    context: { ipAddress?: string; userAgent?: string },
+  ): Promise<void> {
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException('User session is no longer valid');
+    if (!user.phone) throw new BadRequestException('No phone number is registered on this account');
+    if (user.phoneVerifiedAt) return;
+    if (!/^\+[1-9]\d{7,14}$/u.test(user.phone)) {
+      throw new BadRequestException('Registered phone number cannot be verified');
+    }
+    if (!this.phoneDelivery.isConfigured()) {
+      throw new ServiceUnavailableException('Phone verification is temporarily unavailable');
+    }
+
+    const pepper = this.verificationPepper();
+    const now = new Date();
+    await this.tokenRepo.update(
+      { userId: user.id, channel: VerificationChannel.PHONE, usedAt: IsNull() },
+      { usedAt: now },
+    );
+
+    const code = randomInt(0, 1_000_000).toString().padStart(6, '0');
+    const tokenHash = this.hashPhoneCode(user.id, user.phone, code, pepper);
+    const expiresAt = new Date(
+      now.getTime() + VerificationService.PHONE_CODE_TTL_MINUTES * 60 * 1000,
+    );
+    const record = this.tokenRepo.create({
+      userId: user.id,
+      tokenHash,
+      channel: VerificationChannel.PHONE,
+      expiresAt,
+      usedAt: null,
+      requestedIp: context.ipAddress ?? null,
+      userAgent: context.userAgent?.slice(0, 500) ?? null,
+      attemptCount: 0,
+    });
+    await this.tokenRepo.save(record);
+
+    const delivered = await this.phoneDelivery.sendVerificationCode(user.phone, code);
+    if (!delivered) {
+      await this.tokenRepo.update(
+        {
+          userId: user.id,
+          channel: VerificationChannel.PHONE,
+          tokenHash,
+          usedAt: IsNull(),
+        },
+        { usedAt: new Date() },
+      );
+    }
+
+    await this.auditService.log({
+      actorUserId: user.id,
+      action: AuditAction.USER_PHONE_VERIFICATION_REQUESTED,
+      resourceType: 'User',
+      resourceId: user.id,
+      ipAddress: context.ipAddress,
+      userAgent: context.userAgent,
+      metadata: {
+        result: delivered ? 'sent' : 'delivery_failed',
+        channel: 'phone',
+      },
+    });
+
+    if (!delivered) {
+      throw new ServiceUnavailableException('Phone verification is temporarily unavailable');
+    }
+  }
+
+  async verifyPhone(userId: string, code: string, ipAddress?: string): Promise<void> {
+    const pepper = this.verificationPepper();
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    let verifiedUserId: string | null = null;
+    let failure: { reason: string; attemptsRemaining: number } | null = null;
+
+    try {
+      const user = await queryRunner.manager.findOne(User, { where: { id: userId } });
+      if (!user) throw new UnauthorizedException('User session is no longer valid');
+      if (!user.phone)
+        throw new BadRequestException('No phone number is registered on this account');
+      if (user.phoneVerifiedAt) {
+        await queryRunner.commitTransaction();
+        return;
+      }
+
+      const token = await queryRunner.manager.findOne(AuthVerificationToken, {
+        where: {
+          userId: user.id,
+          channel: VerificationChannel.PHONE,
+          usedAt: IsNull(),
+        },
+        order: { createdAt: 'DESC' },
+      });
+
+      if (!token) {
+        throw new UnauthorizedException('Invalid or expired verification code');
+      }
+
+      if (token.expiresAt.getTime() <= Date.now()) {
+        await queryRunner.manager.update(
+          AuthVerificationToken,
+          { id: token.id, usedAt: IsNull() },
+          { usedAt: new Date() },
+        );
+        await queryRunner.commitTransaction();
+        failure = { reason: 'expired', attemptsRemaining: 0 };
+      } else {
+        const candidateHash = this.hashPhoneCode(user.id, user.phone, code, pepper);
+        if (!this.safeDigestEqual(token.tokenHash, candidateHash)) {
+          const nextAttemptCount = token.attemptCount + 1;
+          const attemptsRemaining = Math.max(
+            VerificationService.PHONE_MAX_ATTEMPTS - nextAttemptCount,
+            0,
+          );
+          const exhausted = attemptsRemaining === 0;
+          const updated = await queryRunner.manager.update(
+            AuthVerificationToken,
+            { id: token.id, usedAt: IsNull(), attemptCount: token.attemptCount },
+            {
+              attemptCount: nextAttemptCount,
+              ...(exhausted ? { usedAt: new Date() } : {}),
+            },
+          );
+          if (updated.affected !== 1) {
+            throw new UnauthorizedException('Invalid or expired verification code');
+          }
+          await queryRunner.commitTransaction();
+          failure = {
+            reason: exhausted ? 'attempts_exhausted' : 'invalid_code',
+            attemptsRemaining,
+          };
+        } else {
+          const consumed = await queryRunner.manager.update(
+            AuthVerificationToken,
+            { id: token.id, usedAt: IsNull(), attemptCount: token.attemptCount },
+            { usedAt: new Date() },
+          );
+          if (consumed.affected !== 1) {
+            throw new UnauthorizedException('Invalid or expired verification code');
+          }
+
+          const userUpdate: Partial<User> = { phoneVerifiedAt: new Date() };
+          if (user.status === UserStatus.PENDING_VERIFICATION) {
+            userUpdate.status = UserStatus.ACTIVE;
+          }
+          await queryRunner.manager.update(User, user.id, userUpdate);
+          await queryRunner.commitTransaction();
+          verifiedUserId = user.id;
+        }
+      }
+    } catch (error) {
+      if (queryRunner.isTransactionActive) await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
+
+    if (failure) {
+      await this.auditService.log({
+        actorUserId: userId,
+        action: AuditAction.USER_PHONE_VERIFICATION_FAILED,
+        resourceType: 'User',
+        resourceId: userId,
+        ipAddress,
+        metadata: {
+          result: 'failed',
+          channel: 'phone',
+          reason: failure.reason,
+          attemptsRemaining: failure.attemptsRemaining,
+        },
+      });
+      throw new UnauthorizedException('Invalid or expired verification code');
+    }
+
+    if (verifiedUserId) {
+      await this.auditService.log({
+        actorUserId: verifiedUserId,
+        action: AuditAction.USER_PHONE_VERIFIED,
+        resourceType: 'User',
+        resourceId: verifiedUserId,
+        ipAddress,
+        metadata: { result: 'success', channel: 'phone' },
+      });
+    }
+  }
+
   private hash(value: string): string {
     return createHash('sha256').update(value, 'utf8').digest('hex');
+  }
+
+  private verificationPepper(): string {
+    const pepper = this.configService.get<string>('auth.verificationPepper');
+    if (!pepper || pepper.length < 32) {
+      throw new ServiceUnavailableException('Phone verification is temporarily unavailable');
+    }
+    return pepper;
+  }
+
+  private hashPhoneCode(userId: string, phone: string, code: string, pepper: string): string {
+    return createHmac('sha256', pepper).update(`${userId}:${phone}:${code}`, 'utf8').digest('hex');
+  }
+
+  private safeDigestEqual(storedHex: string, candidateHex: string): boolean {
+    const stored = Buffer.from(storedHex, 'hex');
+    const candidate = Buffer.from(candidateHex, 'hex');
+    return stored.length === 32 && candidate.length === 32 && timingSafeEqual(stored, candidate);
   }
 }

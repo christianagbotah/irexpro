@@ -57,6 +57,8 @@ describe('AuthController rate limits (HTTP)', () => {
   const verificationService = {
     requestEmailVerification: jest.fn().mockResolvedValue(undefined),
     verifyEmail: jest.fn().mockResolvedValue(undefined),
+    requestPhoneVerification: jest.fn().mockResolvedValue(undefined),
+    verifyPhone: jest.fn().mockResolvedValue(undefined),
   };
 
   const jwtGuard = {
@@ -64,7 +66,7 @@ describe('AuthController rate limits (HTTP)', () => {
       context.switchToHttp().getRequest().user = {
         userId: '11111111-1111-4111-8111-111111111111',
         email: 'user@example.com',
-        phone: null,
+        phone: '+233244000000',
         roles: [],
         status: UserStatus.ACTIVE,
       };
@@ -177,6 +179,21 @@ describe('AuthController rate limits (HTTP)', () => {
       200,
     );
     expect(verificationService.verifyEmail).toHaveBeenCalledTimes(10);
+  });
+
+  it('limits phone verification requests to 5 requests per 15 minutes per IP', async () => {
+    await expectAllowedThenThrottled('/auth/verification/phone/request', {}, 5, 200);
+    expect(verificationService.requestPhoneVerification).toHaveBeenCalledTimes(5);
+  });
+
+  it('limits phone verification confirmation to 10 requests per 15 minutes per IP', async () => {
+    await expectAllowedThenThrottled(
+      '/auth/verification/phone/confirm',
+      { code: '123456' },
+      10,
+      200,
+    );
+    expect(verificationService.verifyPhone).toHaveBeenCalledTimes(10);
   });
 
   it('limits forgot-password to 5 requests per 15 minutes per IP', async () => {

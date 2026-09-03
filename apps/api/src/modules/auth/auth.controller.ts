@@ -33,6 +33,7 @@ import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
+import { VerifyPhoneDto } from './dto/verify-phone.dto';
 import { MfaService } from './mfa.service';
 import { PasswordResetService } from './password-reset.service';
 import { VerificationService } from './verification.service';
@@ -222,6 +223,45 @@ export class AuthController {
     }
     await this.verificationService.verifyEmail(dto.token, ip);
     return { message: 'Email verified successfully.' };
+  }
+
+  @Post('verification/phone/request')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('access-token')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { ttl: 15 * 60 * 1000, limit: 5 } })
+  @ApiOperation({ summary: 'Send a single-use phone verification code' })
+  async requestPhoneVerification(
+    @CurrentUser() principal: AuthenticatedPrincipal,
+    @Ip() ip: string,
+    @Headers('user-agent') userAgent?: string,
+  ): Promise<{ message: string }> {
+    if (!this.verificationService) {
+      throw new ServiceUnavailableException('Phone verification is temporarily unavailable');
+    }
+    await this.verificationService.requestPhoneVerification(principal.userId, {
+      ipAddress: ip,
+      userAgent,
+    });
+    return { message: 'If verification is required, a code has been sent.' };
+  }
+
+  @Post('verification/phone/confirm')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('access-token')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { ttl: 15 * 60 * 1000, limit: 10 } })
+  @ApiOperation({ summary: 'Confirm the current account phone verification code' })
+  async confirmPhoneVerification(
+    @CurrentUser() principal: AuthenticatedPrincipal,
+    @Body() dto: VerifyPhoneDto,
+    @Ip() ip: string,
+  ): Promise<{ message: string }> {
+    if (!this.verificationService) {
+      throw new ServiceUnavailableException('Phone verification is temporarily unavailable');
+    }
+    await this.verificationService.verifyPhone(principal.userId, dto.code, ip);
+    return { message: 'Phone verified successfully.' };
   }
 
   @Post('forgot-password')

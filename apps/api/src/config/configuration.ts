@@ -24,6 +24,15 @@ export default () => ({
     smtpUrl: process.env.EMAIL_SMTP_URL,
     fromAddress: process.env.EMAIL_FROM ?? process.env.EMAIL_FROM_ADDRESS ?? 'no-reply@irexpro.com',
   },
+  sms: {
+    twilio: {
+      accountSid: process.env.TWILIO_ACCOUNT_SID,
+      authToken: process.env.TWILIO_AUTH_TOKEN,
+      apiKey: process.env.TWILIO_API_KEY,
+      apiSecret: process.env.TWILIO_API_SECRET,
+      fromNumber: process.env.TWILIO_FROM_NUMBER,
+    },
+  },
   jwt: {
     secret: process.env.JWT_SECRET,
     accessExpiry: process.env.JWT_ACCESS_EXPIRY ?? '15m',
@@ -36,6 +45,7 @@ export default () => ({
     argon2TimeCost: parseInt(process.env.ARGON2_TIME_COST ?? '3', 10),
     argon2Parallelism: parseInt(process.env.ARGON2_PARALLELISM ?? '1', 10),
     mfaEncryptionKey: process.env.MFA_ENCRYPTION_KEY,
+    verificationPepper: process.env.AUTH_VERIFICATION_PEPPER,
   },
   database: {
     host: process.env.DB_HOST ?? 'localhost',

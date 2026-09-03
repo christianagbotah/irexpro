@@ -1,15 +1,18 @@
 import { ConfigService } from '@nestjs/config';
-import { createHash } from 'crypto';
+import { createHash, createHmac } from 'crypto';
 import { DataSource, Repository } from 'typeorm';
 import { AuditAction } from '../../common/enums/audit-action.enum';
 import { AuditService } from '../audit/audit.service';
 import { User, UserStatus } from '../users/entities/user.entity';
 import { EmailVerificationDeliveryService } from './email-verification-delivery.service';
 import { AuthVerificationToken } from './entities/auth-verification-token.entity';
+import { PhoneVerificationDeliveryService } from './phone-verification-delivery.service';
 import { VerificationService } from './verification.service';
 
 describe('VerificationService request flow', () => {
-  it('persists only a SHA-256 token hash and never places the raw token in audit evidence', async () => {
+  const verificationPepper = 'phone-verification-pepper-32-bytes-minimum';
+
+  it('persists only a SHA-256 email token hash and never places the raw token in audit evidence', async () => {
     const user = {
       id: '11111111-1111-4111-8111-111111111111',
       email: 'user@example.com',
@@ -33,10 +36,15 @@ describe('VerificationService request flow', () => {
       isConfigured: jest.fn().mockReturnValue(true),
       send: jest.fn().mockResolvedValue(true),
     };
+    const phoneDelivery = {
+      isConfigured: jest.fn().mockReturnValue(false),
+      sendVerificationCode: jest.fn(),
+    };
     const configService = {
       get: jest.fn((key: string, fallback?: unknown) => {
         if (key === 'app.webBaseUrl') return 'https://app.example.test';
         if (key === 'email.fromAddress') return 'no-reply@example.test';
+        if (key === 'auth.verificationPepper') return verificationPepper;
         return fallback;
       }),
     } as unknown as ConfigService;
@@ -46,6 +54,7 @@ describe('VerificationService request flow', () => {
       userRepo as unknown as Repository<User>,
       tokenRepo as unknown as Repository<AuthVerificationToken>,
       emailDelivery as unknown as EmailVerificationDeliveryService,
+      phoneDelivery as unknown as PhoneVerificationDeliveryService,
       configService,
       auditService as unknown as AuditService,
       {} as DataSource,
@@ -77,5 +86,119 @@ describe('VerificationService request flow', () => {
       }),
     );
     expect(JSON.stringify(auditService.log.mock.calls)).not.toContain(rawToken!);
+  });
+
+  it('stores a keyed phone-code digest and never persists or audits the six-digit code', async () => {
+    const user = {
+      id: '11111111-1111-4111-8111-111111111111',
+      phone: '+233244000000',
+      phoneVerifiedAt: null,
+      status: UserStatus.ACTIVE,
+    } as User;
+    const saved: Partial<AuthVerificationToken>[] = [];
+    const userRepo = { findOne: jest.fn().mockResolvedValue(user) };
+    const tokenRepo = {
+      update: jest.fn().mockResolvedValue({ affected: 0 }),
+      create: jest.fn((value: Partial<AuthVerificationToken>) => value),
+      save: jest.fn(async (value: Partial<AuthVerificationToken>) => {
+        saved.push(value);
+        return value;
+      }),
+    };
+    const emailDelivery = { isConfigured: jest.fn(), send: jest.fn() };
+    const phoneDelivery = {
+      isConfigured: jest.fn().mockReturnValue(true),
+      sendVerificationCode: jest.fn().mockResolvedValue(true),
+    };
+    const configService = {
+      get: jest.fn((key: string, fallback?: unknown) => {
+        if (key === 'auth.verificationPepper') return verificationPepper;
+        return fallback;
+      }),
+    } as unknown as ConfigService;
+    const auditService = { log: jest.fn().mockResolvedValue(undefined) };
+
+    const service = new VerificationService(
+      userRepo as unknown as Repository<User>,
+      tokenRepo as unknown as Repository<AuthVerificationToken>,
+      emailDelivery as unknown as EmailVerificationDeliveryService,
+      phoneDelivery as unknown as PhoneVerificationDeliveryService,
+      configService,
+      auditService as unknown as AuditService,
+      {} as DataSource,
+    );
+
+    await service.requestPhoneVerification(user.id, {
+      ipAddress: '127.0.0.1',
+      userAgent: 'verification-test-agent',
+    });
+
+    const code = phoneDelivery.sendVerificationCode.mock.calls[0][1] as string;
+    expect(code).toMatch(/^\d{6}$/u);
+    expect(saved).toHaveLength(1);
+
+    const expectedHash = createHmac('sha256', verificationPepper)
+      .update(`${user.id}:${user.phone}:${code}`, 'utf8')
+      .digest('hex');
+    expect(saved[0].tokenHash).toBe(expectedHash);
+    expect(saved[0].tokenHash).not.toBe(code);
+    expect(JSON.stringify(saved[0])).not.toContain(code);
+
+    expect(auditService.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorUserId: user.id,
+        action: AuditAction.USER_PHONE_VERIFICATION_REQUESTED,
+        metadata: { result: 'sent', channel: 'phone' },
+      }),
+    );
+    const auditEvidence = JSON.stringify(auditService.log.mock.calls);
+    expect(auditEvidence).not.toContain(code);
+    expect(auditEvidence).not.toContain(user.phone!);
+  });
+
+  it('invalidates the generated challenge when the SMS provider does not accept delivery', async () => {
+    const user = {
+      id: '11111111-1111-4111-8111-111111111111',
+      phone: '+233244000000',
+      phoneVerifiedAt: null,
+      status: UserStatus.ACTIVE,
+    } as User;
+    const userRepo = { findOne: jest.fn().mockResolvedValue(user) };
+    const tokenRepo = {
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
+      create: jest.fn((value: Partial<AuthVerificationToken>) => value),
+      save: jest.fn(async (value: Partial<AuthVerificationToken>) => value),
+    };
+    const phoneDelivery = {
+      isConfigured: jest.fn().mockReturnValue(true),
+      sendVerificationCode: jest.fn().mockResolvedValue(false),
+    };
+    const configService = {
+      get: jest.fn((key: string, fallback?: unknown) =>
+        key === 'auth.verificationPepper' ? verificationPepper : fallback,
+      ),
+    } as unknown as ConfigService;
+    const auditService = { log: jest.fn().mockResolvedValue(undefined) };
+    const service = new VerificationService(
+      userRepo as unknown as Repository<User>,
+      tokenRepo as unknown as Repository<AuthVerificationToken>,
+      {} as EmailVerificationDeliveryService,
+      phoneDelivery as unknown as PhoneVerificationDeliveryService,
+      configService,
+      auditService as unknown as AuditService,
+      {} as DataSource,
+    );
+
+    await expect(service.requestPhoneVerification(user.id, {})).rejects.toThrow(
+      'Phone verification is temporarily unavailable',
+    );
+
+    expect(tokenRepo.update).toHaveBeenCalledTimes(2);
+    expect(auditService.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: AuditAction.USER_PHONE_VERIFICATION_REQUESTED,
+        metadata: { result: 'delivery_failed', channel: 'phone' },
+      }),
+    );
   });
 });

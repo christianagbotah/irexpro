@@ -23,7 +23,11 @@ export class AuthVerificationToken {
   @Column({ name: 'user_id', type: 'uuid' })
   userId: string;
 
-  /** SHA-256 of the raw email token / future phone verification code. */
+  /**
+   * Email: SHA-256 of the high-entropy raw token.
+   * Phone: HMAC-SHA-256 of the six-digit code using the auth verification pepper.
+   * Raw verification material is never persisted.
+   */
   @Column({ name: 'token_hash', type: 'varchar', length: 64 })
   tokenHash: string;
 
