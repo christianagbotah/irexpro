@@ -54,6 +54,16 @@ export class User {
   @Column({ name: 'last_login_at', type: 'timestamptz', nullable: true })
   lastLoginAt: Date | null;
 
+  /** Consecutive invalid-password attempts since the last success/expired lock. */
+  @Column({ name: 'failed_login_attempts', type: 'integer', default: 0 })
+  @Exclude()
+  failedLoginAttempts: number;
+
+  /** Temporary abuse lock. Separate from the permanent account status lifecycle. */
+  @Column({ name: 'login_locked_until', type: 'timestamptz', nullable: true })
+  @Exclude()
+  loginLockedUntil: Date | null;
+
   @Column({ name: 'country_code', type: 'varchar', length: 2, nullable: true })
   countryCode: string | null;
 

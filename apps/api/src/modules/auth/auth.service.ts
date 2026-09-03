@@ -26,6 +26,8 @@ import { JwtPayload } from './strategies/jwt.strategy';
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
+  private static readonly LOGIN_FAILURE_LIMIT = 10;
+  private static readonly LOGIN_LOCKOUT_MINUTES = 15;
 
   constructor(
     @InjectRepository(User)
@@ -87,9 +89,6 @@ export class AuthService {
         passwordHash,
         countryCode: dto.countryCode ?? null,
         status: UserStatus.ACTIVE,
-        // New token generations begin at 1. The migration applies the same
-        // baseline to every existing user, which invalidates pre-Sprint-48
-        // JWTs that do not carry a sessionVersion claim.
         sessionVersion: 1,
       });
       await queryRunner.manager.save(user);
@@ -149,7 +148,11 @@ export class AuthService {
       await this.auditService.log({
         action: AuditAction.USER_LOGIN_FAILED,
         ipAddress,
-        metadata: { identifier: dto.identifier, reason: 'user_not_found' },
+        metadata: {
+          reason: 'user_not_found',
+          result: 'failed',
+          identifierType: emailLogin ? 'email' : 'phone',
+        },
       });
       throw new UnauthorizedException('Invalid credentials');
     }
@@ -163,23 +166,56 @@ export class AuthService {
         actorUserId: user.id,
         action: AuditAction.USER_LOGIN_FAILED,
         ipAddress,
-        metadata: { reason: 'account_status', status: user.status },
-      });
-      throw new UnauthorizedException('Account is not active');
-    }
-
-    const isValid = await argon2.verify(user.passwordHash, dto.password);
-    if (!isValid) {
-      await this.auditService.log({
-        actorUserId: user.id,
-        action: AuditAction.USER_LOGIN_FAILED,
-        ipAddress,
-        metadata: { reason: 'invalid_password' },
+        metadata: { reason: 'account_status', result: 'blocked', status: user.status },
       });
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    await this.userRepo.update(user.id, { lastLoginAt: new Date() });
+    const now = Date.now();
+    const lockedUntil = user.loginLockedUntil ? new Date(user.loginLockedUntil).getTime() : 0;
+
+    if (lockedUntil > now) {
+      await this.auditService.log({
+        actorUserId: user.id,
+        action: AuditAction.USER_LOGIN_FAILED,
+        ipAddress,
+        metadata: { reason: 'temporary_lockout', result: 'blocked' },
+      });
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    // Expired temporary locks self-clear before password verification. This
+    // gives the account a clean consecutive-failure window after the cooldown.
+    if (lockedUntil > 0 && lockedUntil <= now) {
+      await this.userRepo.update(user.id, {
+        failedLoginAttempts: 0,
+        loginLockedUntil: null,
+      });
+      user.failedLoginAttempts = 0;
+      user.loginLockedUntil = null;
+    }
+
+    const isValid = await argon2.verify(user.passwordHash, dto.password);
+    if (!isValid) {
+      await this.recordLoginFailure(user.id);
+      await this.auditService.log({
+        actorUserId: user.id,
+        action: AuditAction.USER_LOGIN_FAILED,
+        ipAddress,
+        metadata: {
+          reason: 'invalid_password',
+          result: 'failed',
+          lockoutThreshold: AuthService.LOGIN_FAILURE_LIMIT,
+        },
+      });
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    await this.userRepo.update(user.id, {
+      lastLoginAt: new Date(),
+      failedLoginAttempts: 0,
+      loginLockedUntil: null,
+    });
 
     const roles = user.userRoles?.map((ur) => ur.role.name) ?? [RoleName.USER];
 
@@ -187,17 +223,28 @@ export class AuthService {
       actorUserId: user.id,
       action: AuditAction.USER_LOGIN_SUCCESS,
       ipAddress,
-      metadata: { email: user.email },
+      metadata: { result: 'success' },
     });
 
     return this.generateTokens(user, roles);
   }
 
   /**
-   * Rotate a refresh token by atomically advancing the user's server-side
-   * session generation. Only one caller can advance a given generation; a
-   * replay or concurrent reuse of the same refresh token therefore fails.
+   * Atomically increment failed-login state in PostgreSQL. The threshold and
+   * interval are compile-time integers, not request data, so this SQL fragment
+   * cannot be influenced by a caller. Concurrent bad-password requests cannot
+   * lose increments or bypass the threshold.
    */
+  private async recordLoginFailure(userId: string): Promise<void> {
+    await this.userRepo.update(userId, {
+      failedLoginAttempts: () => '"failed_login_attempts" + 1',
+      loginLockedUntil: () =>
+        `CASE WHEN "failed_login_attempts" + 1 >= ${AuthService.LOGIN_FAILURE_LIMIT} ` +
+        `THEN CURRENT_TIMESTAMP + INTERVAL '${AuthService.LOGIN_LOCKOUT_MINUTES} minutes' ` +
+        'ELSE NULL END',
+    });
+  }
+
   async refreshTokens(
     refreshToken: string,
   ): Promise<{ accessToken: string; refreshToken: string }> {
@@ -212,9 +259,6 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
-    // New Sprint-48 tokens are explicitly typed. Legacy tokens have no type;
-    // they are still rejected in production by the session-version migration
-    // (legacy version=0, persisted users start at version=1).
     if (payload.tokenType && payload.tokenType !== 'refresh') {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
@@ -245,8 +289,6 @@ export class AuthService {
       { sessionVersion: nextVersion },
     );
 
-    // TypeORM returns UpdateResult. The guard also tolerates legacy unit-test
-    // mocks that return undefined, while production always supplies affected.
     if (rotation?.affected !== undefined && rotation.affected !== 1) {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
@@ -269,11 +311,6 @@ export class AuthService {
     return this.generateTokens(user, roles);
   }
 
-  /**
-   * Revoke every currently issued token for a user. Logout is intentionally
-   * account-wide in Sprint 48: advancing the generation invalidates access and
-   * refresh JWTs on web, admin, and mobile immediately.
-   */
   async logout(userId: string, ipAddress?: string): Promise<void> {
     const result = await this.userRepo.update(userId, {
       sessionVersion: () => '"session_version" + 1',
@@ -329,11 +366,6 @@ export class AuthService {
     return { accessToken, refreshToken };
   }
 
-  /**
-   * Persisted users are always >=1 after the Sprint-48 migration. The zero
-   * fallback exists only for legacy/in-memory entity shapes and ensures that
-   * pre-migration JWTs cannot match a migrated production user.
-   */
   private userSessionVersion(user: Pick<User, 'sessionVersion'>): number {
     return Number.isInteger(user.sessionVersion) ? user.sessionVersion : 0;
   }
