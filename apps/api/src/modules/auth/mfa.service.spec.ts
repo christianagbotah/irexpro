@@ -42,7 +42,11 @@ describe('MfaService', () => {
     userRepo = {
       findOne: jest.fn().mockImplementation(async () => user),
       update: jest.fn().mockImplementation(async (_criteria, update) => {
-        if (typeof update === 'object' && 'mfaSecret' in update && typeof update.mfaSecret === 'string') {
+        if (
+          typeof update === 'object' &&
+          'mfaSecret' in update &&
+          typeof update.mfaSecret === 'string'
+        ) {
           user.mfaSecret = update.mfaSecret;
         }
         return { affected: 1 } as never;
@@ -113,12 +117,14 @@ describe('MfaService', () => {
 
   it('rejects an invalid TOTP without enabling MFA or persisting the challenge', async () => {
     const setup = await service.beginSetup(user.id);
+    const validCode = generateTotp(setup.secret, fixedNow);
+    const invalidCode = validCode === '000000' ? '000001' : '000000';
     userRepo.update.mockClear();
     auditService.log.mockClear();
 
-    await expect(service.enable(user.id, '000000', '127.0.0.1')).rejects.toMatchObject({
-      status: 401,
-    });
+    await expect(service.enable(user.id, invalidCode, '127.0.0.1')).rejects.toThrow(
+      'MFA verification failed',
+    );
 
     expect(userRepo.update).not.toHaveBeenCalledWith(
       user.id,
@@ -127,7 +133,7 @@ describe('MfaService', () => {
     expect(auditService.log).toHaveBeenCalledWith(
       expect.objectContaining({ action: AuditAction.USER_MFA_CHALLENGE_FAILED }),
     );
-    expect(JSON.stringify(auditService.log.mock.calls)).not.toContain('000000');
+    expect(JSON.stringify(auditService.log.mock.calls)).not.toContain(invalidCode);
     expect(JSON.stringify(auditService.log.mock.calls)).not.toContain(setup.secret);
   });
 });
