@@ -154,6 +154,8 @@ test.describe('Sprint 49 identity security UX', () => {
 
     await page.goto(`/verify-email?token=${encodeURIComponent(token)}`);
     await expect(page.getByText(token)).toHaveCount(0);
+    await expect(page).toHaveURL(/\/verify-email$/);
+    expect(page.url()).not.toContain(token);
     await page.getByRole('button', { name: 'Confirm email' }).click();
 
     await expect(page).toHaveURL(/\/verify-email\?verified=1$/);
