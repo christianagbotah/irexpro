@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -49,6 +49,25 @@ for (const secretValue of fixtures) {
   }
   if (!result.stderr.includes('fixtures/candidate.txt')) {
     throw new Error('Scanner output did not identify the affected path.');
+  }
+}
+
+// A tracked symlink must be inspected as its immutable Git blob (the link
+// target text), never followed into an external working-tree file.
+{
+  const root = mkdtempSync(join(tmpdir(), 'irexpro-secret-symlink-'));
+  const external = join(root, 'external-secret.txt');
+  try {
+    execFileSync('git', ['init', '--quiet'], { cwd: root });
+    writeFileSync(external, ['-----BEGIN ', 'PRIVATE KEY-----'].join(''));
+    symlinkSync(external, join(root, 'tracked-link'));
+    execFileSync('git', ['add', 'tracked-link'], { cwd: root });
+    const result = spawnSync(process.execPath, [scannerPath], { cwd: root, encoding: 'utf8' });
+    if (result.status !== 0) {
+      throw new Error('Scanner followed a tracked symlink instead of reading its Git blob.');
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 }
 
