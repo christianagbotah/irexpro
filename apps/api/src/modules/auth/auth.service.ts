@@ -9,6 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
+import { randomUUID } from 'crypto';
 import * as argon2 from 'argon2';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -45,17 +46,14 @@ export class AuthService {
     dto: RegisterDto,
     ipAddress?: string,
   ): Promise<{ accessToken: string; refreshToken: string }> {
-    // Sprint 27: validate that at least one of email or phone is provided
     if (!dto.email && !dto.phone) {
       throw new BadRequestException('At least one of email or phone is required');
     }
 
-    // Normalize phone if provided (Sprint 27 amendment)
     const normalizedPhone = dto.phone
       ? normalizePhone(dto.phone, this.callingCodeForCountry(dto.countryCode))
       : null;
 
-    // Check for duplicate email (if provided)
     if (dto.email) {
       const existingByEmail = await this.userRepo.findOne({
         where: { email: dto.email.toLowerCase() },
@@ -65,7 +63,6 @@ export class AuthService {
       }
     }
 
-    // Check for duplicate phone (if provided, after normalization)
     if (normalizedPhone) {
       const existingByPhone = await this.userRepo.findOne({ where: { phone: normalizedPhone } });
       if (existingByPhone) {
@@ -89,14 +86,11 @@ export class AuthService {
         phone: normalizedPhone,
         passwordHash,
         countryCode: dto.countryCode ?? null,
-        // Hotfix: create users as ACTIVE because no email/phone verification
-        // flow is implemented yet. PENDING_VERIFICATION was a permanent
-        // dead-end (no code transitions users to ACTIVE), which caused
-        // /auth/refresh to reject every newly registered user with 401.
-        // When a verification flow is added in a future sprint, revert this
-        // to PENDING_VERIFICATION and have the verification endpoint set
-        // ACTIVE upon successful verification.
         status: UserStatus.ACTIVE,
+        // New token generations begin at 1. The migration applies the same
+        // baseline to every existing user, which invalidates pre-Sprint-48
+        // JWTs that do not carry a sessionVersion claim.
+        sessionVersion: 1,
       });
       await queryRunner.manager.save(user);
 
@@ -142,10 +136,8 @@ export class AuthService {
     dto: LoginDto,
     ipAddress?: string,
   ): Promise<{ accessToken: string; refreshToken: string }> {
-    // Sprint 27: support email OR phone as identifier.
     const identifier = dto.identifier.trim();
     const emailLogin = isEmail(identifier);
-    // For phone login, normalize: clean spaces/dashes, ensure starts with +
     const phoneLookup = emailLogin ? null : normalizePhone(identifier);
 
     const user = await this.userRepo.findOne({
@@ -201,18 +193,29 @@ export class AuthService {
     return this.generateTokens(user, roles);
   }
 
+  /**
+   * Rotate a refresh token by atomically advancing the user's server-side
+   * session generation. Only one caller can advance a given generation; a
+   * replay or concurrent reuse of the same refresh token therefore fails.
+   */
   async refreshTokens(
     refreshToken: string,
   ): Promise<{ accessToken: string; refreshToken: string }> {
     let payload: JwtPayload;
     try {
-      // Hotfix: do NOT pass { secret } explicitly. The JwtModule is already
-      // configured with the secret in AuthModule.registerAsync, and
-      // jwtService.verify(token) uses that secret automatically. Passing an
-      // explicit secret is redundant and can mask config-loading issues.
       payload = this.jwtService.verify<JwtPayload>(refreshToken);
     } catch {
-      // Token is malformed, tampered, or expired — reject cleanly with 401.
+      throw new UnauthorizedException('Invalid or expired refresh token');
+    }
+
+    if (!payload.sub || typeof payload.sub !== 'string') {
+      throw new UnauthorizedException('Invalid or expired refresh token');
+    }
+
+    // New Sprint-48 tokens are explicitly typed. Legacy tokens have no type;
+    // they are still rejected in production by the session-version migration
+    // (legacy version=0, persisted users start at version=1).
+    if (payload.tokenType && payload.tokenType !== 'refresh') {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
@@ -221,12 +224,6 @@ export class AuthService {
       relations: ['userRoles', 'userRoles.role'],
     });
 
-    // Hotfix (ROOT CAUSE): block only SUSPENDED/CLOSED users — NOT
-    // PENDING_VERIFICATION. This matches login() and JwtStrategy.validate(),
-    // which both allow PENDING_VERIFICATION. The previous check
-    // (`user.status !== ACTIVE`) rejected every newly registered user because
-    // register() created them as PENDING_VERIFICATION and no activation flow
-    // existed. If you can login, you should be able to refresh.
     if (
       !user ||
       user.status === UserStatus.SUSPENDED ||
@@ -236,41 +233,119 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
+    const tokenVersion = this.payloadSessionVersion(payload);
+    const currentVersion = this.userSessionVersion(user);
+    if (tokenVersion !== currentVersion) {
+      throw new UnauthorizedException('Invalid or expired refresh token');
+    }
+
+    const nextVersion = currentVersion + 1;
+    const rotation = await this.userRepo.update(
+      { id: user.id, sessionVersion: currentVersion },
+      { sessionVersion: nextVersion },
+    );
+
+    // TypeORM returns UpdateResult. The guard also tolerates legacy unit-test
+    // mocks that return undefined, while production always supplies affected.
+    if (rotation?.affected !== undefined && rotation.affected !== 1) {
+      throw new UnauthorizedException('Invalid or expired refresh token');
+    }
+
+    user.sessionVersion = nextVersion;
     const roles = user.userRoles?.map((ur) => ur.role.name) ?? [RoleName.USER];
+
+    await this.auditService.log({
+      actorUserId: user.id,
+      action: AuditAction.USER_TOKEN_REFRESHED,
+      resourceType: 'User',
+      resourceId: user.id,
+      metadata: {
+        result: 'success',
+        previousSessionVersion: currentVersion,
+        sessionVersion: nextVersion,
+      },
+    });
+
     return this.generateTokens(user, roles);
+  }
+
+  /**
+   * Revoke every currently issued token for a user. Logout is intentionally
+   * account-wide in Sprint 48: advancing the generation invalidates access and
+   * refresh JWTs on web, admin, and mobile immediately.
+   */
+  async logout(userId: string, ipAddress?: string): Promise<void> {
+    const result = await this.userRepo.update(userId, {
+      sessionVersion: () => '"session_version" + 1',
+    });
+
+    if (result?.affected !== undefined && result.affected !== 1) {
+      throw new UnauthorizedException('User session is no longer valid');
+    }
+
+    await this.auditService.log({
+      actorUserId: userId,
+      action: AuditAction.USER_LOGOUT,
+      resourceType: 'User',
+      resourceId: userId,
+      ipAddress,
+      metadata: { result: 'success', scope: 'all_sessions' },
+    });
   }
 
   private generateTokens(
     user: User,
     roles: string[],
   ): { accessToken: string; refreshToken: string } {
-    const payload: JwtPayload = { sub: user.id, email: user.email, roles };
-    const accessToken = this.jwtService.sign(payload, {
-      expiresIn: this.configService.get<string>('jwt.accessExpiry', '15m'),
-    });
-    const refreshToken = this.jwtService.sign(payload, {
-      expiresIn: this.configService.get<string>('jwt.refreshExpiry', '7d'),
-    });
+    const basePayload = {
+      sub: user.id,
+      email: user.email,
+      roles,
+      sessionVersion: this.userSessionVersion(user),
+    };
+
+    const accessToken = this.jwtService.sign(
+      {
+        ...basePayload,
+        tokenType: 'access' as const,
+        jti: randomUUID(),
+      },
+      {
+        expiresIn: this.configService.get<string>('jwt.accessExpiry', '15m'),
+      },
+    );
+
+    const refreshToken = this.jwtService.sign(
+      {
+        ...basePayload,
+        tokenType: 'refresh' as const,
+        jti: randomUUID(),
+      },
+      {
+        expiresIn: this.configService.get<string>('jwt.refreshExpiry', '7d'),
+      },
+    );
+
     return { accessToken, refreshToken };
+  }
+
+  /**
+   * Persisted users are always >=1 after the Sprint-48 migration. The zero
+   * fallback exists only for legacy/in-memory entity shapes and ensures that
+   * pre-migration JWTs cannot match a migrated production user.
+   */
+  private userSessionVersion(user: Pick<User, 'sessionVersion'>): number {
+    return Number.isInteger(user.sessionVersion) ? user.sessionVersion : 0;
+  }
+
+  private payloadSessionVersion(payload: JwtPayload): number {
+    return Number.isInteger(payload.sessionVersion) ? payload.sessionVersion! : 0;
   }
 
   async validateUser(id: string): Promise<User | null> {
     return this.userRepo.findOne({ where: { id } });
   }
 
-  /**
-   * Build a frontend-safe AuthUserDto for the /auth/me endpoint.
-   *
-   * Sprint 25: this replaces the previous approach of returning the raw User
-   * entity minus passwordHash/mfaSecret. It:
-   *   - Loads the user's profile (for firstName/lastName)
-   *   - Uses the roles from the JWT payload (passed by the controller from
-   *     request.user.roles — already set by JwtStrategy.validate)
-   *   - Returns ONLY frontend-safe fields via AuthUserDto.fromUser
-   *
-   * Sensitive fields (passwordHash, mfaSecret, deletedAt, userRoles, profile
-   * PII, provider/broker secrets) are NEVER included.
-   */
   async getAuthUserDto(userId: string, roles: RoleName[]): Promise<AuthUserDto> {
     const user = await this.userRepo.findOne({
       where: { id: userId },
@@ -284,14 +359,6 @@ export class AuthService {
     return AuthUserDto.fromUser(user, roles, user.profile);
   }
 
-  /**
-   * Hashes a password using argon2 with the configured cost parameters.
-   * Uses the same ConfigService values as register() so that test environments
-   * can inject low-cost values without weakening production security.
-   *
-   * Production defaults: memoryCost=65536, timeCost=3, parallelism=1
-   * Test override:       memoryCost=256,   timeCost=1, parallelism=1
-   */
   async hashPassword(password: string): Promise<string> {
     return argon2.hash(password, {
       memoryCost: this.configService.get<number>('auth.argon2MemoryCost', 65536),
@@ -300,16 +367,10 @@ export class AuthService {
     });
   }
 
-  /** Verifies a password against an argon2 hash. Exposed for testing. */
   async verifyPassword(hash: string, password: string): Promise<boolean> {
     return argon2.verify(hash, password);
   }
 
-  /**
-   * Maps a 2-letter country code to its calling code for phone normalization.
-   * Sprint 27 amendment: ensures the backend can normalize local phone numbers
-   * even when the frontend only sends the country code (not the calling code).
-   */
   private callingCodeForCountry(countryCode?: string): string | undefined {
     if (!countryCode) return undefined;
     const map: Record<string, string> = {

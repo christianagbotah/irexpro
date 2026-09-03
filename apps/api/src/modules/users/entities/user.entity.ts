@@ -70,6 +70,16 @@ export class User {
   @Exclude()
   mfaSecret: string | null;
 
+  /**
+   * Server-side authentication generation.
+   *
+   * Every access/refresh token carries this value. Refresh, logout, and
+   * password reset advance it, immediately invalidating tokens issued under
+   * an older generation without storing raw JWTs.
+   */
+  @Column({ name: 'session_version', type: 'integer', default: 1 })
+  sessionVersion: number;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 

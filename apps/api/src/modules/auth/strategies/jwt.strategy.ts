@@ -11,6 +11,12 @@ export interface JwtPayload {
   sub: string;
   email: string | null;
   roles: string[];
+  /** Distinguishes bearer access JWTs from refresh JWTs. */
+  tokenType?: 'access' | 'refresh';
+  /** Server-side token generation used for immediate revocation. */
+  sessionVersion?: number;
+  /** Unique token id so each rotation produces a distinct JWT. */
+  jti?: string;
   iat?: number;
   exp?: number;
 }
@@ -18,18 +24,13 @@ export interface JwtPayload {
 /**
  * JwtStrategy — validates JWT access tokens and populates request.user.
  *
- * Hotfix: validate() now returns a SANITIZED AuthenticatedPrincipal containing
- * ONLY { userId, email, phone, roles, status }. It does NOT return the full
- * User entity. This prevents:
- *   - passwordHash, mfaSecret, userRoles entities from being in request.user
- *   - Controllers accidentally passing the full object to services expecting
- *     a UUID string (which caused QueryFailedError: invalid input syntax for
- *     type uuid)
+ * Sprint 48 adds two server-side security gates:
+ *   1. refresh JWTs cannot be presented as bearer access tokens;
+ *   2. the token's sessionVersion must match identity.users.session_version.
  *
- * The principal is validated against the DB on every request (user must exist
- * and not be SUSPENDED/CLOSED). The roles come from the JWT payload (set at
- * token-sign time), not re-queried — this is the existing behavior and keeps
- * token revocation simple (short access token expiry).
+ * Logout, password reset, and refresh rotation advance session_version, so
+ * stale access tokens are rejected immediately rather than remaining valid
+ * until their normal expiry.
  */
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -50,11 +51,16 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Invalid token: missing subject');
     }
 
-    // Load the user to verify they still exist and are active.
-    // We select ONLY safe fields — never passwordHash or mfaSecret.
+    // New tokens are explicitly typed. A legacy token has no type, but will be
+    // rejected after migration because it has version 0 while persisted users
+    // begin at version 1.
+    if (payload.tokenType && payload.tokenType !== 'access') {
+      throw new UnauthorizedException('Invalid access token');
+    }
+
     const user = await this.userRepo.findOne({
       where: { id: payload.sub },
-      select: ['id', 'email', 'phone', 'status'],
+      select: ['id', 'email', 'phone', 'status', 'sessionVersion'],
     });
 
     if (
@@ -66,7 +72,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('User account is not active');
     }
 
-    // Return the sanitized principal — no secrets, no entity relations.
+    const tokenVersion = Number.isInteger(payload.sessionVersion) ? payload.sessionVersion! : 0;
+    const userVersion = Number.isInteger(user.sessionVersion) ? user.sessionVersion : 0;
+    if (tokenVersion !== userVersion) {
+      throw new UnauthorizedException('Session has been revoked');
+    }
+
     return {
       userId: user.id,
       email: user.email,
