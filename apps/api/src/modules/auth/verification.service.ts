@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  Inject,
   Injectable,
   ServiceUnavailableException,
   UnauthorizedException,
@@ -12,10 +11,7 @@ import { DataSource, IsNull, Repository } from 'typeorm';
 import { AuditAction } from '../../common/enums/audit-action.enum';
 import { AuditService } from '../audit/audit.service';
 import { User, UserStatus } from '../users/entities/user.entity';
-import {
-  EMAIL_PROVIDER,
-  EmailProviderInterface,
-} from './password-reset-delivery.service';
+import { EmailVerificationDeliveryService } from './email-verification-delivery.service';
 import {
   AuthVerificationToken,
   VerificationChannel,
@@ -30,8 +26,7 @@ export class VerificationService {
     private readonly userRepo: Repository<User>,
     @InjectRepository(AuthVerificationToken)
     private readonly tokenRepo: Repository<AuthVerificationToken>,
-    @Inject(EMAIL_PROVIDER)
-    private readonly emailProvider: EmailProviderInterface,
+    private readonly emailDelivery: EmailVerificationDeliveryService,
     private readonly configService: ConfigService,
     private readonly auditService: AuditService,
     private readonly dataSource: DataSource,
@@ -47,7 +42,7 @@ export class VerificationService {
     if (user.emailVerifiedAt) return;
 
     const webBaseUrl = this.configService.get<string>('app.webBaseUrl');
-    if (!webBaseUrl || !this.emailProvider.sendVerificationEmail) {
+    if (!webBaseUrl || !this.emailDelivery.isConfigured()) {
       throw new ServiceUnavailableException('Email verification is temporarily unavailable');
     }
 
@@ -77,7 +72,7 @@ export class VerificationService {
 
     const verificationLink = `${webBaseUrl.replace(/\/$/u, '')}/verify-email?token=${encodeURIComponent(rawToken)}`;
     const fromAddress = this.configService.get<string>('email.fromAddress', 'no-reply@irexpro.com');
-    const delivered = await this.emailProvider.sendVerificationEmail({
+    const delivered = await this.emailDelivery.send({
       to: user.email,
       verificationLink,
       fromAddress,
