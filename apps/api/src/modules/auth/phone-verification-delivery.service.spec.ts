@@ -50,9 +50,7 @@ describe('PhoneVerificationDeliveryService', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, options] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe(
-      `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
-    );
+    expect(url).toBe(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`);
     expect(options.method).toBe('POST');
     expect(options.headers).toEqual(
       expect.objectContaining({
