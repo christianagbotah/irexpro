@@ -38,7 +38,8 @@ export class VerificationService {
   ): Promise<void> {
     const user = await this.userRepo.findOne({ where: { id: userId } });
     if (!user) throw new UnauthorizedException('User session is no longer valid');
-    if (!user.email) throw new BadRequestException('No email address is registered on this account');
+    if (!user.email)
+      throw new BadRequestException('No email address is registered on this account');
     if (user.emailVerifiedAt) return;
 
     const webBaseUrl = this.configService.get<string>('app.webBaseUrl');
