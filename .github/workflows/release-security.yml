@@ -41,6 +41,12 @@ jobs:
       - name: Scan tracked source without printing secret values
         run: node scripts/security/scan-tracked-secrets.mjs
 
+      - name: Test tracked-artifact hygiene policy
+        run: node scripts/security/test-tracked-artifacts.mjs
+
+      - name: Reject tracked generated and secret-bearing artifacts
+        run: node scripts/security/check-tracked-artifacts.mjs
+
   node-dependency-audit:
     name: VPS Production Dependency Audit
     runs-on: ubuntu-latest
