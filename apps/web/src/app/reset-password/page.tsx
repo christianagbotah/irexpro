@@ -1,34 +1,27 @@
 'use client';
 
-import { useState, FormEvent, useEffect, Suspense } from 'react';
+import { useState, FormEvent, useEffect } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
 import { AuthLayout, Button, Input, Alert } from '@/components/ui';
 import { api } from '@/lib/api';
+import { consumeSingleUseTokenFragment } from '@/lib/single-use-token-fragment';
 
 /**
- * Reset password page — Sprint 28.
+ * Reset password page.
  *
- * Wired to the real POST /auth/reset-password endpoint. Supports two flows:
+ * Email links place the single-use token in the URL fragment. Fragments are
+ * never sent in the initial navigation request to the Web server/reverse proxy.
+ * After hydration the token is copied only into component memory and the
+ * fragment is immediately removed from browser history.
  *
- * 1. Email token flow (default):
- *    - If ?token=... is in the URL, show new-password + confirm-password form.
- *    - Submit { token, password } to /auth/reset-password.
- *
- * 2. Phone code flow (toggle):
- *    - User enters identifier (phone) + 6-digit code + new password.
- *    - Submit { identifier, code, password } to /auth/reset-password.
- *
- * If no token is in the URL and phone code is not selected, show guidance.
- *
- * After success, show a link back to login. After failure, show a safe error.
+ * A manual token field remains available as a fallback when the user opens the
+ * page without an emailed fragment. Phone-code reset remains a separate flow.
  */
-function ResetPasswordContent() {
-  const searchParams = useSearchParams();
-  const urlToken = searchParams.get('token');
-
-  const [mode, setMode] = useState<'email' | 'phone'>(urlToken ? 'email' : 'email');
-  const [token, setToken] = useState(urlToken ?? '');
+export default function ResetPasswordPage() {
+  const [mode, setMode] = useState<'email' | 'phone'>('email');
+  const [token, setToken] = useState('');
+  const [fragmentResolved, setFragmentResolved] = useState(false);
+  const [hasFragmentToken, setHasFragmentToken] = useState(false);
   const [identifier, setIdentifier] = useState('');
   const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
@@ -38,8 +31,14 @@ function ResetPasswordContent() {
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
-    if (urlToken) setToken(urlToken);
-  }, [urlToken]);
+    const fragmentToken = consumeSingleUseTokenFragment('/reset-password');
+    if (fragmentToken) {
+      setToken(fragmentToken);
+      setHasFragmentToken(true);
+      setMode('email');
+    }
+    setFragmentResolved(true);
+  }, []);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -67,6 +66,7 @@ function ResetPasswordContent() {
           return;
         }
         await api.resetPassword({ token, password });
+        setToken('');
       } else {
         if (!identifier || !code) {
           setError('Phone number and code are required for phone code reset.');
@@ -84,6 +84,14 @@ function ResetPasswordContent() {
     }
   }
 
+  if (!fragmentResolved) {
+    return (
+      <AuthLayout title="Reset password">
+        <p className="loading-text">Loading reset request…</p>
+      </AuthLayout>
+    );
+  }
+
   if (success) {
     return (
       <AuthLayout title="Password reset">
@@ -98,15 +106,13 @@ function ResetPasswordContent() {
   }
 
   const showEmailForm = mode === 'email';
-  const hasToken = Boolean(urlToken || token);
 
   return (
     <AuthLayout title="Reset password" subtitle="Set a new password using your reset link or phone code">
       <form onSubmit={handleSubmit}>
         {error && <Alert variant="error">{error}</Alert>}
 
-        {/* Flow toggle — only show if there's no URL token */}
-        {!urlToken && (
+        {!hasFragmentToken && (
           <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
             <Button
               type="button"
@@ -129,21 +135,26 @@ function ResetPasswordContent() {
 
         {showEmailForm ? (
           <>
-            {!urlToken && (
+            {hasFragmentToken ? (
               <Alert variant="info">
-                Use the reset link sent to your email. If you have the link, open it or paste the
-                token below.
+                Your secure reset link is loaded. The single-use token has been removed from the browser address bar.
               </Alert>
+            ) : (
+              <>
+                <Alert variant="info">
+                  Use the reset link sent to your email. If needed, you can paste a reset token below.
+                </Alert>
+                <Input
+                  label="Reset token"
+                  type="text"
+                  placeholder="Paste your reset token here"
+                  value={token}
+                  onChange={(e) => setToken(e.target.value)}
+                  disabled={loading}
+                  required={showEmailForm}
+                />
+              </>
             )}
-            <Input
-              label="Reset token"
-              type="text"
-              placeholder="Paste your reset token here"
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              disabled={loading || Boolean(urlToken)}
-              required={showEmailForm}
-            />
           </>
         ) : (
           <>
@@ -200,13 +211,5 @@ function ResetPasswordContent() {
         Remember your password? <Link href="/login">Back to login</Link>
       </div>
     </AuthLayout>
-  );
-}
-
-export default function ResetPasswordPage() {
-  return (
-    <Suspense fallback={<AuthLayout title="Reset password"><p className="loading-text">Loading…</p></AuthLayout>}>
-      <ResetPasswordContent />
-    </Suspense>
   );
 }
