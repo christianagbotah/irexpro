@@ -1,34 +1,36 @@
 # Sprint 48 — Operational Security Readiness
 
 This runbook defines the evidence required before iRexPro may be considered for
-production promotion. It covers authentication security evidence, secret
-rotation, backup restoration, incident response, rollback verification, and
-release sign-off. It does not authorize a production deployment or enable
-broker, funding, trading, execution, strategy, model, position-sizing,
-allocation, or risk behavior.
+production promotion. It covers authentication security evidence, notification
+provider readiness, secret rotation, backup restoration, incident response,
+rollback verification, and release sign-off. It does not authorize a production
+deployment or enable broker, funding, trading, execution, strategy, model,
+position-sizing, allocation, or risk behavior.
 
 ## 1. Promotion status
 
-Production promotion remains **NO-GO** until every operational control in this
-document has an accountable owner, dated evidence, and an independent reviewer.
-Staging health or merged code alone is not production approval.
+Production promotion remains **NO-GO** until every applicable operational
+control in this document has an accountable owner, dated evidence, and an
+independent reviewer. Merged code, staging health, or synthetic CI evidence is
+not by itself production approval.
 
-The previous Sprint 48 server-side authentication-revocation blocker is now
-closed at the application layer. The following controls are merged to `main`:
+The following Sprint 48 repository controls are merged to `main`:
 
 | Control | Evidence | Merge SHA |
 | --- | --- | --- |
 | Refresh rotation, replay rejection, server-side session revocation, logout/reset invalidation, HTTP/WebSocket enforcement | PR #84 | `bd58601de864fe6015ad7c360932332dfb553b8e` |
 | Login abuse protection and temporary account lockout | PR #85 | `799f95c9f19d87de2da263d3951fe0a9d4690355` |
 | Server-owned request correlation and centralized audit metadata redaction | PR #86 | `e9b3836d49053b1db14d034df234069cf9df55e5` |
-| Runtime HTTP rate-limit verification for every currently exposed public auth route | PR #87 | `3f5a88dc10461965e2cedf9d91e34b07deccdd99` |
+| Runtime HTTP rate-limit verification for exposed authentication routes | PR #87 | `3f5a88dc10461965e2cedf9d91e34b07deccdd99` |
+| Operational secret/incident/rollback/restore rehearsal controls | PR #88 | repository merge evidence |
+| Server-owned audit correlation provenance follow-up | PR #89 | repository merge evidence |
+| Deterministic staging deployment and rollback controls | PR #90 | `31f9386dfe995c385153bc4752fd772310cc47db` |
+| TOTP MFA and email verification hardening | PR #91 | `446c15c01c984d9b06696321aef02875ad2fa64d` |
 
-These merges do **not** complete operational readiness. Secret rotation and
-backup-restoration evidence still require execution by the authorized operators
-in the target environment. MFA challenge/enrolment and email/phone verification
-HTTP endpoints are not currently exposed; if production policy requires those
-features, they remain a separate release prerequisite and must receive explicit
-rate limits and adversarial tests before activation.
+PR #92 is the current candidate for bounded phone verification. It must not be
+represented as merged or production-ready until its exact-head API/security
+checks are green, the PR is merged, and the target environment has a real,
+approved SMS provider configuration.
 
 The release record must identify:
 
@@ -37,7 +39,8 @@ The release record must identify:
 - exact-head CI/security workflow run identifiers for the candidate;
 - the operator and independent reviewer;
 - the backup artifact identifier and restoration-rehearsal result;
-- each secret-rotation result, without recording secret values;
+- each secret/provider-credential rotation or activation result, without
+  recording secret values;
 - unresolved security exceptions and their approving owner, if exceptions are
   permitted by organizational policy;
 - the final go/no-go decision and timestamp.
@@ -50,8 +53,8 @@ Before a go/no-go decision:
 1. record the exact candidate SHA;
 2. verify the pull request/release branch still points to that SHA;
 3. verify required API CI, migration/database compatibility, concurrency,
-   Release Security, dependency, secret-scan, SBOM, and CodeQL checks that are
-   applicable to the candidate are green on that exact SHA;
+   Release Security, dependency, secret-scan, SBOM, CodeQL, and deployment
+   safety checks applicable to the candidate are green on that exact SHA;
 4. record the run IDs or immutable evidence links in the release record;
 5. verify no commit was pushed after the evidence was collected;
 6. if the SHA moves, discard the prior gate decision and repeat verification.
@@ -61,11 +64,11 @@ candidate.
 
 ## 3. Authentication security evidence
 
-### 3.1 Implemented controls
+### 3.1 Implemented repository controls
 
-The current authentication design uses a persisted `session_version` on the
-user record. Access and refresh JWTs carry the version and token type.
-Server-side validation rejects stale generations and incorrect token types.
+The authentication design uses a persisted `session_version` on the user
+record. Access and refresh JWTs carry the version and token type. Server-side
+validation rejects stale generations and incorrect token types.
 
 Verified behaviors include:
 
@@ -80,38 +83,66 @@ Verified behaviors include:
 - repeated invalid passwords trigger persistent temporary lockout;
 - login failures return generic responses and avoid raw identifier/password
   values in audit metadata;
-- public auth endpoints have explicit per-route throttles and HTTP-level tests
-  prove the first request over each limit returns `429`;
-- request and audit records use server-generated correlation IDs;
-- audit metadata is recursively passed through the shared sensitive-field
-  redaction policy before persistence.
+- request/audit records use server-generated correlation IDs and recursively
+  redact sensitive metadata;
+- TOTP MFA seeds are encrypted at rest with dedicated authentication-domain key
+  material;
+- enabling or disabling MFA advances `session_version`, revoking sessions
+  issued before the MFA state change;
+- MFA-enabled login issues tokens only after both password and TOTP succeed;
+- email verification uses high-entropy, single-use tokens and persists only a
+  SHA-256 digest;
+- the PR #92 phone-verification candidate uses a six-digit challenge with a
+  10-minute expiry, HMAC-SHA-256 persistence keyed by an independent
+  verification pepper, account/current-phone binding, transactional single-use
+  consumption, and a persisted five-invalid-attempt ceiling;
+- provider delivery failures invalidate the associated phone challenge;
+- phone verification confirmation requires an authenticated account and is
+  therefore bound to that account rather than being a public code endpoint.
 
-### 3.2 Current public authentication rate limits
+### 3.2 Authentication rate limits
 
 | Endpoint | Limit |
 | --- | ---: |
 | `POST /auth/register` | 10 / 15 minutes / IP |
 | `POST /auth/login` | 10 / minute / IP |
 | `POST /auth/refresh` | 60 / minute / IP |
+| `POST /auth/mfa/setup` | 5 / 15 minutes / IP |
+| `POST /auth/mfa/enable` | 10 / 15 minutes / IP |
+| `POST /auth/mfa/disable` | 5 / 15 minutes / IP |
+| `POST /auth/verification/email/request` | 5 / 15 minutes / IP |
+| `POST /auth/verification/email/confirm` | 10 / 15 minutes / IP |
+| `POST /auth/verification/phone/request` | 5 / 15 minutes / IP |
+| `POST /auth/verification/phone/confirm` | 10 / 15 minutes / IP |
 | `POST /auth/forgot-password` | 5 / 15 minutes / IP |
 | `POST /auth/reset-password` | 10 / 15 minutes / IP |
 
 See `docs/security/auth-rate-limit-policy.md` for the runtime-test contract.
+Phone request/confirmation rows become deployed production controls only after
+PR #92 is merged and the exact release candidate contains that code.
 
-### 3.3 Remaining authentication prerequisite
+### 3.3 Remaining authentication operational prerequisites
 
-The data model contains MFA/verification-related fields, but the current loaded
-API does not expose MFA challenge/enrolment or email/phone verification HTTP
-flows. Do not mark those controls complete based on dormant fields.
+After the PR #92 repository candidate is merged, no authentication control
+should be marked production-ready merely because the implementation exists.
+Before production activation, authorized operators must still provide evidence
+that:
 
-If production policy requires MFA or verification, the release remains NO-GO
-until the required flows are implemented and independently verified with:
+- `MFA_ENCRYPTION_KEY` and `AUTH_VERIFICATION_PEPPER` are supplied from the
+  approved secret-management path and are independent from JWT, cookie,
+  database, payment, broker, and provider credentials;
+- email SMTP configuration, if email verification is required, is tested using
+  an approved non-sensitive test account without exposing message contents or
+  credentials in evidence;
+- the SMS provider has real approved credentials/sender configuration and a
+  controlled verification message can be delivered without logging code,
+  recipient, provider secret, or response payload;
+- recovery/support procedures account for MFA and verified-contact state;
+- secret rotation and target-environment restore evidence described below is
+  complete.
 
-- secret-safe storage and lifecycle rules;
-- send/challenge/verify rate limits;
-- replay/expiry/attempt-limit tests;
-- account-recovery interactions;
-- audit events with correlation IDs and no secret values.
+If an applicable production-required control or provider cannot be validated,
+promotion remains **NO-GO**.
 
 ## 4. Secret inventory and ownership
 
@@ -121,14 +152,16 @@ status. Never record secret values in the inventory or release evidence.
 
 At minimum, classify these secret families:
 
-| Secret family | Required owner | Rotation validation |
+| Secret family | Required owner | Rotation/activation validation |
 | --- | --- | --- |
 | Database credentials | Database operator | New credential connects; old credential is rejected |
 | Redis credentials | Platform operator | Readiness succeeds; old credential is rejected |
 | JWT and cookie signing keys | Identity owner | New sessions validate; retired keys follow the approved grace policy |
 | Internal service credentials | Platform operator | Authorized internal health succeeds; old credential is rejected |
-| Encryption keys | Security owner | Key version is recorded and a controlled decrypt/re-encrypt test passes |
-| Notification/provider keys | Integration owner | Provider test succeeds without exposing message contents or credentials |
+| `MFA_ENCRYPTION_KEY` | Identity/security owner | Key-version and controlled migration/decrypt validation recorded without exposing plaintext seeds |
+| `AUTH_VERIFICATION_PEPPER` | Identity/security owner | New challenge lifecycle validates; pre-rotation outstanding phone challenges are intentionally invalidated or handled by documented policy |
+| SMTP credentials | Integration owner | Controlled email delivery succeeds without exposing credentials/content |
+| Twilio/API notification credentials and sender identity | Integration owner | Controlled SMS delivery succeeds; retired credential is rejected where provider capabilities allow |
 
 Broker, payment, and live-market credentials are outside this runbook's
 execution scope. Their rotation requires the appropriately authorized
@@ -160,6 +193,23 @@ Use a separate record for each secret family. The record must contain:
 8. post-change health, log-redaction, and alerting evidence;
 9. rollback decision and final status.
 
+### Authentication-specific cautions
+
+`MFA_ENCRYPTION_KEY` protects persisted MFA seeds. Replacing it without an
+approved key-version/migration procedure can make existing MFA enrolments
+undecryptable. Treat its rotation as a controlled identity-data migration,
+not as a blind environment-variable replacement.
+
+`AUTH_VERIFICATION_PEPPER` protects low-entropy phone challenges. Changing it
+makes outstanding phone challenges unverifiable. Rotation must therefore occur
+under a documented policy that intentionally expires/reissues outstanding
+challenges rather than attempting to preserve raw codes.
+
+Notification-provider credentials may be rotated independently of challenge
+storage. Validate only through an approved controlled destination; evidence
+must not contain the recipient, verification code, Authorization header,
+provider token, or provider response body.
+
 ### Verification
 
 Verify only the minimum behavior required for the rotated family. Examples:
@@ -169,19 +219,25 @@ Verify only the minimum behavior required for the rotated family. Examples:
 - database/Redis credentials: readiness succeeds with the new credential and
   the retired credential is rejected after the approved cutover;
 - internal API credentials: authorized health succeeds and the previous
-  credential is rejected after cutover.
+  credential is rejected after cutover;
+- verification pepper: a newly issued controlled phone challenge completes and
+  a pre-rotation challenge follows the documented invalidation policy;
+- SMS/SMTP credentials: one controlled delivery succeeds with secret-safe
+  logs/evidence.
 
-Review logs and audit records to ensure secret values were not emitted.
+Review logs and audit records to ensure secret values or verification material
+were not emitted.
 
 ### Rollback
 
-Rollback is service-specific. Restore the previously approved secret version
-only if it remains safe to do so; otherwise invoke the incident-response path
-and issue a new replacement secret. Record the rollback decision and the health
-checks performed afterwards.
+Rollback is service-specific. Restore a previously approved secret version only
+if it remains safe to do so; otherwise invoke incident response and issue a new
+replacement secret. Record the rollback decision and health checks performed
+afterwards.
 
 Stop the rotation if the backup is unverified, the candidate SHA is unknown,
-the new credential cannot be validated, or logs expose secret material.
+the new credential cannot be validated, MFA key-version compatibility is
+uncertain, or logs expose secret/verification material.
 
 ## 6. Backup acceptance criteria
 
@@ -196,92 +252,71 @@ A backup is acceptable only when it is:
 - free of credentials in filenames, command output, screenshots, and tickets.
 
 A successful backup command is not proof of recoverability. Only a completed
-restore rehearsal satisfies this gate.
+restore rehearsal using the approved target-environment backup evidence
+satisfies this operational gate.
 
 ## 7. Non-destructive restoration rehearsal
 
 The restoration rehearsal must use an isolated non-production target with no
 route to production services or external providers.
 
-### Prerequisites
-
-- approved backup artifact and digest;
-- source database/version identified;
-- isolated target with outbound side effects disabled;
-- restore operator and independent reviewer assigned;
-- application candidate SHA and migration state recorded;
-- cleanup plan for the restored copy approved.
-
-### Rehearsal
-
-Record the following evidence:
+Record:
 
 1. backup identifier, digest, creation time, and source database version;
 2. isolated target identifier and responsible operator;
 3. restoration start and completion times;
 4. schema/migration compatibility result;
 5. safe record-count and referential-integrity checks;
-6. application liveness and readiness results using disabled external
-   integrations;
+6. application liveness/readiness results with external integrations disabled;
 7. confirmation that no email, SMS, payment, broker, or execution side effect
    was possible;
-8. measured recovery time and comparison with the approved recovery objective;
+8. measured recovery time versus the approved recovery objective;
 9. cleanup confirmation for the isolated restored copy;
 10. reviewer sign-off.
 
-### Verification and rollback
-
 A rehearsal passes only if the restored database is usable by the expected
-application version, integrity checks pass, no external side effect is possible,
-and the isolated copy is cleaned up according to policy. A failed rehearsal is
-itself release evidence: classify the failure, preserve sanitized diagnostics,
-and keep production promotion blocked until a later rehearsal succeeds.
+application version, integrity checks pass, no external side effect is
+possible, and the isolated copy is cleaned up according to policy. A failed
+rehearsal blocks promotion until a later rehearsal succeeds.
 
 Do not restore over a production database as a rehearsal. Do not copy restored
-data into developer laptops or attach it to GitHub issues or CI artifacts.
+data to developer laptops or attach it to GitHub issues/CI artifacts.
 
-A synthetic CI restore using disposable data is useful for testing the restore
-procedure, but it does **not** replace a rehearsal using an approved target-
-environment backup artifact.
+The disposable PostgreSQL CI restore validates procedure mechanics only. It
+**does not** replace target-environment restoration evidence using an approved
+backup artifact.
 
 ## 8. Incident severity and ownership
 
 | Severity | Examples | Required response |
 | --- | --- | --- |
-| SEV-1 | Confirmed credential disclosure, unauthorized access, integrity loss | Contain immediately, preserve evidence, notify security owner, block promotion |
-| SEV-2 | Persistent readiness failure, repeated crashes, failed security control | Stop promotion, assign incident lead, investigate and retest |
-| SEV-3 | Degraded non-critical function with safe fallback | Track, assess impact, and require owner approval before promotion |
+| SEV-1 | Confirmed credential/code disclosure, unauthorized access, integrity loss | Contain immediately, preserve evidence, notify security owner, block promotion |
+| SEV-2 | Persistent readiness/provider failure, repeated crashes, failed security control | Stop promotion, assign incident lead, investigate and retest |
+| SEV-3 | Degraded non-critical function with safe fallback | Track, assess impact, require owner approval before promotion |
 
 Every incident must name an incident lead, communications owner, technical
-owner, evidence custodian, and final decision-maker. The incident record must
-use sanitized identifiers and must never include tokens, credentials, reset
-codes, private keys, full connection strings, or raw sensitive payloads.
+owner, evidence custodian, and final decision-maker. Never include tokens,
+credentials, reset/verification codes, MFA seeds, private keys, full connection
+strings, provider Authorization headers, or raw sensitive payloads in incident
+evidence.
 
 ## 9. Incident lifecycle
 
-1. **Detect:** record the time, safe symptom, affected environment, correlation
-   ID where available, and source.
+1. **Detect:** record time, safe symptom, affected environment, correlation ID
+   where available, and source.
 2. **Classify:** assign severity and owners.
 3. **Contain:** isolate the affected component and block promotion.
 4. **Preserve:** retain sanitized logs, correlation/audit identifiers, immutable
    SHAs, workflow identifiers, and relevant audit-event identifiers.
-5. **Recover:** use the last verified release and approved data-recovery plan.
-6. **Validate:** repeat exact-head CI, security, readiness, and smoke gates.
+5. **Recover:** use the last verified release and approved recovery plan.
+6. **Validate:** repeat exact-head CI, security, readiness, provider, and smoke
+   gates applicable to the incident.
 7. **Review:** document root cause, corrective actions, owners, and due dates.
 
 ## 10. Rollback verification
 
-Before any promotion, confirm that the last known-good SHA still has retained
-release evidence and remains compatible with the current database state.
-
-### Prerequisites
-
-- candidate and rollback SHAs recorded;
-- database compatibility decision recorded;
-- required secrets/key versions available under the rollback policy;
-- rollback operator and independent reviewer assigned.
-
-### Verification evidence
+Before promotion, confirm the last known-good SHA has retained release evidence
+and remains compatible with current database and required secret/key versions.
 
 Rollback evidence must include:
 
@@ -289,13 +324,13 @@ Rollback evidence must include:
 - reason for rollback;
 - database compatibility decision;
 - affected services;
+- required secret/key/provider version compatibility decision;
 - liveness/readiness results after recovery;
-- confirmation that secret and dependency scans correspond to the restored
-  code SHA;
+- confirmation that security scans correspond to the restored code SHA;
 - start/end timestamps and operator/reviewer sign-off.
 
-Database reversal is a separate, explicitly approved decision. Application
-rollback must never automatically trigger a destructive database rollback.
+Database reversal is a separate explicitly approved decision. Application
+rollback must never automatically trigger destructive database rollback.
 
 ## 11. Evidence location and retention
 
@@ -303,34 +338,36 @@ Keep release evidence in the approved operations/security evidence store, not
 inside the application repository when it contains environment-specific data.
 The repository may contain templates and sanitized runbook references only.
 
-For every evidence item record a stable identifier or link in the release
-record. Required categories are:
+Required evidence categories include:
 
 - exact-head CI/security runs;
-- secret-rotation records;
+- secret-rotation/activation records;
+- provider readiness evidence when email/SMS verification is enabled;
 - backup artifact metadata and integrity digest;
 - restoration-rehearsal record;
 - incident/exception records, if any;
-- rollback rehearsal or validation evidence;
+- rollback validation evidence;
 - final operator/reviewer sign-off.
 
 Never upload database backups, private logs containing customer data, secret
-values, provider payloads, or raw production environment files to GitHub.
+values, provider payloads, raw production environment files, phone numbers,
+verification codes, or MFA seeds to GitHub.
 
 ## 12. Go/no-go decision
 
 The decision is **NO-GO** if any required evidence is missing, any exact-head
 gate is non-green, backup restoration has not been demonstrated, a material
-incident remains open, secrets appear in evidence, the deployed SHA cannot be
-proven, or any production-required MFA/verification control remains absent.
+incident remains open, secrets/verification material appear in evidence, the
+deployed SHA cannot be proven, or any production-required authentication or
+provider control cannot be validated.
 
-The authentication session-revocation blocker described in the original Sprint
-48 runbook is closed by PR #84 and its subsequent security slices; it is no
-longer a reason by itself to hold promotion.
+Repository implementation of session revocation, login abuse protection, TOTP
+MFA, email verification, and the PR #92 phone-verification candidate does not
+by itself convert the release to GO.
 
 The decision may become **GO** only after all applicable gates are green for one
-immutable candidate, operational evidence is complete, and the authorized
-operators and independent reviewer sign the release record.
+immutable candidate, operational evidence is complete, and authorized operators
+and an independent reviewer sign the release record.
 
 ## 13. Related runbooks and evidence contracts
 
@@ -338,3 +375,4 @@ operators and independent reviewer sign the release record.
 - `docs/runbooks/sprint-47-production-release-security-health.md`
 - `docs/runbooks/production-deployment-vps-webuzo.md`
 - `docs/runbooks/secrets-never-committed.md`
+- `docs/operations/staging-deployment.md`
