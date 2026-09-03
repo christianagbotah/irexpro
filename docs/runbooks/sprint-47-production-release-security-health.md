@@ -2,6 +2,11 @@
 
 This runbook defines the release-security and health-readiness gate for iRexPro production candidates. It supplements `production-deployment-vps-webuzo.md` and implements Issue #59 without changing broker order submission, strategy logic, execution behavior, or risk overrides.
 
+Sprint 48 operational evidence, secret rotation, restoration rehearsal, incident
+ownership, and final sign-off are defined in
+`sprint-48-operational-security-readiness.md`. Both runbooks must pass before a
+production promotion is considered.
+
 ## 1. Release boundary
 
 A release candidate is eligible for promotion only when all evidence is tied to one immutable Git commit SHA. Never promote from a mutable branch name alone.
