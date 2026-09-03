@@ -166,8 +166,7 @@ export class VerificationService {
   ): Promise<void> {
     const user = await this.userRepo.findOne({ where: { id: userId } });
     if (!user) throw new UnauthorizedException('User session is no longer valid');
-    if (!user.phone)
-      throw new BadRequestException('No phone number is registered on this account');
+    if (!user.phone) throw new BadRequestException('No phone number is registered on this account');
     if (user.phoneVerifiedAt) return;
     if (!/^\+[1-9]\d{7,14}$/u.test(user.phone)) {
       throw new BadRequestException('Registered phone number cannot be verified');
@@ -364,9 +363,7 @@ export class VerificationService {
   }
 
   private hashPhoneCode(userId: string, phone: string, code: string, pepper: string): string {
-    return createHmac('sha256', pepper)
-      .update(`${userId}:${phone}:${code}`, 'utf8')
-      .digest('hex');
+    return createHmac('sha256', pepper).update(`${userId}:${phone}:${code}`, 'utf8').digest('hex');
   }
 
   private safeDigestEqual(storedHex: string, candidateHex: string): boolean {
