@@ -38,6 +38,9 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           package-manager-cache: false
 
+      - name: Test tracked-source secret scanner
+        run: node scripts/security/test-scan-tracked-secrets.mjs
+
       - name: Scan tracked source without printing secret values
         run: node scripts/security/scan-tracked-secrets.mjs
 
