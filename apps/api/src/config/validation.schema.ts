@@ -39,15 +39,12 @@ export const validationSchema = Joi.object({
   COOKIE_SECRET: Joi.string().min(16).required(),
 
   // Independent AES-256-GCM key for TOTP seeds at rest. Production must fail
-  // fast if it is absent; dev/test may omit it until MFA endpoints are used.
-  MFA_ENCRYPTION_KEY: Joi.string()
-    .min(32)
-    .allow('')
-    .when('NODE_ENV', {
-      is: 'production',
-      then: Joi.string().min(32).required(),
-      otherwise: Joi.optional(),
-    }),
+  // fast if it is absent or blank; dev/test may omit it until MFA is exercised.
+  MFA_ENCRYPTION_KEY: Joi.when('NODE_ENV', {
+    is: 'production',
+    then: Joi.string().min(32).required(),
+    otherwise: Joi.string().min(32).optional().allow(''),
+  }),
 
   // Broker credential encryption (AES-256-GCM)
   // Must be at least 32 characters (256 bits).
