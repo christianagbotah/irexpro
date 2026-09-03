@@ -176,7 +176,9 @@ test.describe('Sprint 49 identity security UX', () => {
     await page.goto('/security');
     await expect(page.getByRole('heading', { level: 1, name: 'Account Security' })).toBeVisible();
     const viewport = page.viewportSize();
-    if (viewport && viewport.width <= 900) {
+    // Workspace navigation switches from sidebar to the mobile bottom nav at
+    // the product CSS breakpoint: @media (max-width: 700px).
+    if (viewport && viewport.width <= 700) {
       await page.getByRole('button', { name: 'More navigation' }).click();
       await expect(page.getByRole('dialog').getByRole('link', { name: 'Security' })).toBeVisible();
     } else {
