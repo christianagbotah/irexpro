@@ -16,6 +16,8 @@ env:
   POSTGRES_PASSWORD: ci_disposable_restore_password
   SOURCE_DB: irexpro_backup_source
   RESTORE_DB: irexpro_backup_restore
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  WORKFLOW_SHA: ${{ github.sha }}
 
 jobs:
   synthetic-postgres-restore:
@@ -139,7 +141,8 @@ jobs:
 
           digest="$(cat security-artifacts/synthetic-restore.sha256)"
           {
-            echo "candidate_sha=$GITHUB_SHA"
+            echo "candidate_sha=$CANDIDATE_SHA"
+            echo "workflow_sha=$WORKFLOW_SHA"
             echo 'database_version=PostgreSQL 16'
             echo 'source=disposable_ci_fixture'
             echo "backup_sha256=$digest"
