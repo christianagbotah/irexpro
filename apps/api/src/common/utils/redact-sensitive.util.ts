@@ -41,6 +41,7 @@ const SENSITIVE_KEYS = new Set([
  */
 export function redactSensitive<T>(obj: T): T {
   if (obj === null || obj === undefined) return obj;
+  if (typeof obj === 'string') return redactString(obj) as T;
   if (typeof obj !== 'object') return obj;
   if (obj instanceof Date) return obj;
   if (obj instanceof RegExp) return obj;
@@ -55,10 +56,8 @@ export function redactSensitive<T>(obj: T): T {
     const lowerKey = key.toLowerCase();
     if (SENSITIVE_KEYS.has(lowerKey)) {
       result[key] = '[REDACTED]';
-    } else if (typeof value === 'object' && value !== null) {
-      result[key] = redactSensitive(value);
     } else {
-      result[key] = value;
+      result[key] = redactSensitive(value);
     }
   }
   return result as T;
