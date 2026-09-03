@@ -60,9 +60,13 @@ export interface AuthUser {
   /** Roles from the JWT payload — always present in the Sprint 25 /auth/me response. */
   roles: UserRole[];
   mfaEnabled: boolean;
-  /** Frontend-safe verification state. Raw verification tokens/codes are never returned. */
-  emailVerified: boolean;
-  phoneVerified: boolean;
+  /**
+   * Frontend-safe verification state. Sprint 49 API responses always include
+   * these booleans; optional typing keeps older deterministic fixtures and
+   * independently deployed clients backward-compatible during rollout.
+   */
+  emailVerified?: boolean;
+  phoneVerified?: boolean;
   lastLoginAt: string | null;
   createdAt: string;
 }
