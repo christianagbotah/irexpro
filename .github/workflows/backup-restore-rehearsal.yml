@@ -47,7 +47,9 @@ jobs:
       - name: Seed disposable source database
         run: |
           set -euo pipefail
-          docker run --rm --network host \
+          # -i is required so the heredoc reaches psql inside the client
+          # container; without it Docker closes stdin and creates an empty dump.
+          docker run --rm -i --network host \
             -e PGPASSWORD="$POSTGRES_PASSWORD" \
             "$POSTGRES_IMAGE" \
             psql -v ON_ERROR_STOP=1 -h 127.0.0.1 -U postgres -d "$SOURCE_DB" <<'SQL'
