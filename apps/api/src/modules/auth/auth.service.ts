@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   Logger,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -22,6 +23,7 @@ import { Role, RoleName } from '../users/entities/role.entity';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../../common/enums/audit-action.enum';
 import { JwtPayload } from './strategies/jwt.strategy';
+import { MfaService } from './mfa.service';
 
 @Injectable()
 export class AuthService {
@@ -42,6 +44,10 @@ export class AuthService {
     private configService: ConfigService,
     private auditService: AuditService,
     private dataSource: DataSource,
+    // Optional keeps legacy focused unit-test constructors stable. Production
+    // AuthModule always supplies MfaService; MFA-enabled accounts fail closed if
+    // a test/minimal module omits it.
+    @Optional() private mfaService?: MfaService,
   ) {}
 
   async register(
@@ -211,6 +217,23 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    // MFA is evaluated only after the primary password succeeds, so the public
+    // response never reveals whether an account has MFA configured. Bad TOTP
+    // challenges do not increment the password-failure counter; the controller's
+    // tight per-IP login throttle bounds online TOTP guessing separately.
+    if (
+      user.mfaEnabled &&
+      (!this.mfaService || !this.mfaService.verifyLoginChallenge(user, dto.mfaCode))
+    ) {
+      await this.auditService.log({
+        actorUserId: user.id,
+        action: AuditAction.USER_LOGIN_FAILED,
+        ipAddress,
+        metadata: { reason: 'invalid_mfa', result: 'failed' },
+      });
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
     await this.userRepo.update(user.id, {
       lastLoginAt: new Date(),
       failedLoginAttempts: 0,
@@ -223,7 +246,7 @@ export class AuthService {
       actorUserId: user.id,
       action: AuditAction.USER_LOGIN_SUCCESS,
       ipAddress,
-      metadata: { result: 'success' },
+      metadata: { result: 'success', mfaVerified: user.mfaEnabled },
     });
 
     return this.generateTokens(user, roles);
