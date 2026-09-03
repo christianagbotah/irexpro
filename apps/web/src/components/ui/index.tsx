@@ -189,6 +189,7 @@ const WORKSPACE_NAV: WorkspaceNavGroup[] = [
       { href: '/onboarding/broker', label: 'Broker Accounts', Icon: PlugIcon },
       { href: '/onboarding/risk', label: 'Risk Limits', Icon: ShieldIcon },
       { href: '/onboarding/profile', label: 'Profile', Icon: UserIcon },
+      { href: '/security', label: 'Security', Icon: ShieldIcon },
       { href: '/payments/success', label: 'Fees & Payments', Icon: PaymentsIcon, matchPrefix: true },
     ],
   },

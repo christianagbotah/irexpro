@@ -11,6 +11,7 @@ export default function LoginPage() {
   const { login, loading, restoring, error, clearError, user, accessToken } = useAuth();
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
+  const [mfaCode, setMfaCode] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
 
   useEffect(() => {
@@ -30,7 +31,7 @@ export default function LoginPage() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     try {
-      await login(identifier, password, rememberMe);
+      await login(identifier, password, rememberMe, mfaCode || undefined);
       router.push('/dashboard');
     } catch { /* error in context */ }
   }
@@ -59,6 +60,25 @@ export default function LoginPage() {
           required
           autoComplete="current-password"
         />
+        <Input
+          label="Authenticator code (if enabled)"
+          type="text"
+          placeholder="123456"
+          value={mfaCode}
+          onChange={(e) => {
+            setMfaCode(e.target.value.replace(/\D/gu, '').slice(0, 6));
+            clearError();
+          }}
+          disabled={loading}
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          pattern="[0-9]{6}"
+          maxLength={6}
+          aria-describedby="login-mfa-help"
+        />
+        <p id="login-mfa-help" className="text-sm muted" style={{ marginTop: '-0.5rem', marginBottom: '1rem' }}>
+          If multi-factor authentication is enabled, enter the current 6-digit code from your authenticator app. Leave this blank otherwise.
+        </p>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
             <input

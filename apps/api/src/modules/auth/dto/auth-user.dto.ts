@@ -17,6 +17,7 @@ import { RoleName } from '../../users/entities/role.entity';
  *   - deletedAt
  *   - userRoles (the raw join-entity array with nested role objects)
  *   - profile (the raw UserProfile entity with PII like address, DOB, KYC)
+ *   - raw email/phone verification tokens or codes
  *   - any provider secrets, broker secrets, or internal security fields
  */
 export class AuthUserDto {
@@ -56,6 +57,18 @@ export class AuthUserDto {
   @ApiPropertyOptional({ example: false })
   mfaEnabled: boolean;
 
+  @ApiProperty({
+    example: true,
+    description: 'Whether the current email address has been verified. No token is returned.',
+  })
+  emailVerified: boolean;
+
+  @ApiProperty({
+    example: false,
+    description: 'Whether the current phone number has been verified. No code is returned.',
+  })
+  phoneVerified: boolean;
+
   @ApiPropertyOptional({ example: '2026-01-01T00:00:00.000Z' })
   lastLoginAt: string | null;
 
@@ -79,6 +92,8 @@ export class AuthUserDto {
     dto.status = user.status;
     dto.roles = roles;
     dto.mfaEnabled = user.mfaEnabled;
+    dto.emailVerified = Boolean(user.emailVerifiedAt);
+    dto.phoneVerified = Boolean(user.phoneVerifiedAt);
     dto.lastLoginAt = user.lastLoginAt ? user.lastLoginAt.toISOString() : null;
     dto.createdAt = user.createdAt ? user.createdAt.toISOString() : new Date(0).toISOString();
     return dto;
