@@ -48,9 +48,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         `${category} — ${safeLogContext.method} ${safeLogContext.path} → ${status}`,
       );
     } else if (status >= 400) {
-      this.logger.warn(
-        `${safeLogContext.method} ${safeLogContext.path} → ${status}`,
-      );
+      this.logger.warn(`${safeLogContext.method} ${safeLogContext.path} → ${status}`);
     }
 
     // Build the client-facing response — redact any sensitive fields
