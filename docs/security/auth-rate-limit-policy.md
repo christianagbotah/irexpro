@@ -1,6 +1,7 @@
 # Authentication Rate-Limit Policy
 
-**Sprint:** 48 — Authentication & Operational Security Readiness  
+**Sprint:** 48 — Authentication & Operational Security Readiness
+
 **Scope:** Authentication endpoints only. This document does not alter broker, funding, trading, execution, strategy, model, position-sizing, allocation, or risk behavior.
 
 ## Exposed authentication surfaces
