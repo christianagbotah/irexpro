@@ -5,9 +5,11 @@ import { RiskController } from './risk.controller';
 import { RiskIntelligenceController } from './risk-intelligence.controller';
 import { RiskIntelligenceService } from './risk-intelligence.service';
 import { RiskProfile } from './entities/risk-profile.entity';
+import { User } from '../users/entities/user.entity';
 import { RiskViolation } from './entities/risk-violation.entity';
 import { BrokerModule } from '../broker/broker.module';
 import { EmergencyShutdownModule } from '../emergency-shutdown/emergency-shutdown.module';
+import { GlobalConfigModule } from '../global-config/global-config.module';
 import { AuditModule } from '../audit/audit.module';
 import { ExecutionModule } from '../execution/execution.module';
 
@@ -23,9 +25,10 @@ import { ExecutionModule } from '../execution/execution.module';
  */
 @Module({
   imports: [
-    TypeOrmModule.forFeature([RiskProfile, RiskViolation]),
+    TypeOrmModule.forFeature([RiskProfile, RiskViolation, User]),
     BrokerModule,
     EmergencyShutdownModule,
+    GlobalConfigModule,
     AuditModule,
     forwardRef(() => ExecutionModule),
   ],

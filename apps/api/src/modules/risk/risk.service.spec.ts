@@ -6,6 +6,8 @@ import { RiskProfile } from './entities/risk-profile.entity';
 import { RiskViolation } from './entities/risk-violation.entity';
 import { BrokerService } from '../broker/broker.service';
 import { EmergencyShutdownService } from '../emergency-shutdown/emergency-shutdown.service';
+import { GlobalConfigService } from '../global-config/global-config.service';
+import { User } from '../users/entities/user.entity';
 import { AuditService } from '../audit/audit.service';
 import { ExecutionService } from '../execution/execution.service';
 import { ProposedTrade, RiskRejectionCode } from './interfaces/risk.interface';
@@ -73,6 +75,13 @@ const mockEmergencyShutdownService = {
   isEmergencyShutdownActive: jest.fn().mockResolvedValue(false),
   getActiveEvent: jest.fn().mockResolvedValue(null),
 };
+const mockGlobalConfigService = {
+  isCountrySupported: jest.fn().mockResolvedValue(true),
+  findByCountryCode: jest.fn().mockResolvedValue({ isActive: true, isBlocked: false }),
+};
+const mockUserRepo = {
+  findOne: jest.fn().mockResolvedValue({ id: 'user-1', countryCode: 'GH', status: 'ACTIVE' }),
+};
 
 const mockAuditService = () => ({
   log: jest.fn().mockResolvedValue(undefined),
@@ -112,6 +121,8 @@ describe('RiskService', () => {
           useValue: { publish: jest.fn(), subscribe: jest.fn().mockReturnValue(() => {}) },
         },
         { provide: EmergencyShutdownService, useValue: mockEmergencyShutdownService },
+        { provide: GlobalConfigService, useValue: mockGlobalConfigService },
+        { provide: getRepositoryToken(User), useValue: mockUserRepo },
       ],
     }).compile();
 

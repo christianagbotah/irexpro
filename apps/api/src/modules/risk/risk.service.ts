@@ -13,7 +13,9 @@ import {
   ValidatedOrder,
 } from './interfaces/risk.interface';
 import { BrokerService } from '../broker/broker.service';
+import { User } from '../users/entities/user.entity';
 import { EmergencyShutdownService } from '../emergency-shutdown/emergency-shutdown.service';
+import { GlobalConfigService } from '../global-config/global-config.service';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../../common/enums/audit-action.enum';
 import { AuditSeverity } from '../audit/entities/audit-log.entity';
@@ -59,12 +61,15 @@ export class RiskService {
     private profileRepo: Repository<RiskProfile>,
     @InjectRepository(RiskViolation)
     private violationRepo: Repository<RiskViolation>,
+    @InjectRepository(User)
+    private userRepo: Repository<User>,
     private brokerService: BrokerService,
     private auditService: AuditService,
     @Inject(forwardRef(() => ExecutionService))
     private executionService: ExecutionService,
     private readonly eventBus: DomainEventBus,
     private readonly emergencyShutdownService: EmergencyShutdownService,
+    private readonly globalConfigService: GlobalConfigService,
   ) {}
 
   // ─── Main validation entry point ──────────────────────────────────────────
@@ -131,6 +136,41 @@ export class RiskService {
         evaluatedAt,
       );
     }
+
+    // ── Step 0b: Jurisdiction enforcement ──────────────────────────────────
+    // The user's country must be supported for trading. This is checked on
+    // EVERY trade (not just activation) to prevent jurisdictional circumvention.
+    const userProfile = await this.userRepo.findOne({
+      where: { id: userId },
+      select: ['id', 'countryCode', 'status'],
+    });
+    if (userProfile?.countryCode) {
+      const countrySupported = await this.globalConfigService.isCountrySupported(
+        userProfile.countryCode,
+      );
+      if (!countrySupported) {
+        appliedRules.push('JURISDICTION_BLOCKED');
+        return this.rejectAndRecord(
+          userId,
+          trade,
+          RiskRejectionCode.RISK_ENGINE_ERROR,
+          `Trading is not available in user's country (${userProfile.countryCode})`,
+          contextSnapshot as any,
+          evaluatedAt,
+        );
+      }
+    } else {
+      appliedRules.push('JURISDICTION_MISSING');
+      return this.rejectAndRecord(
+        userId,
+        trade,
+        RiskRejectionCode.RISK_ENGINE_ERROR,
+        'User has no country code set — cannot verify trading jurisdiction',
+        contextSnapshot as any,
+        evaluatedAt,
+      );
+    }
+    appliedRules.push('JURISDICTION:OK');
 
     // ── Step 1: Pre-condition checks (fail fast) ────────────────────────────
 
