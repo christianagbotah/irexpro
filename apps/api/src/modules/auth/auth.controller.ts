@@ -174,7 +174,9 @@ export class AuthController {
   @ApiBearerAuth('access-token')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { ttl: 15 * 60 * 1000, limit: 5 } })
-  @ApiOperation({ summary: 'Disable MFA using current password and TOTP; revokes existing sessions' })
+  @ApiOperation({
+    summary: 'Disable MFA using current password and TOTP; revokes existing sessions',
+  })
   async disableMfa(
     @CurrentUser() principal: AuthenticatedPrincipal,
     @Body() dto: DisableMfaDto,
