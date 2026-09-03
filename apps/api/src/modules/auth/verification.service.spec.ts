@@ -12,7 +12,7 @@ import { VerificationService } from './verification.service';
 describe('VerificationService request flow', () => {
   const verificationPepper = 'phone-verification-pepper-32-bytes-minimum';
 
-  it('persists only a SHA-256 email token hash and never places the raw token in audit evidence', async () => {
+  it('persists only a SHA-256 email token hash and keeps the raw token out of the request URL query', async () => {
     const user = {
       id: '11111111-1111-4111-8111-111111111111',
       email: 'user@example.com',
@@ -69,7 +69,12 @@ describe('VerificationService request flow', () => {
     expect(emailDelivery.send).toHaveBeenCalledTimes(1);
 
     const verificationLink = emailDelivery.send.mock.calls[0][0].verificationLink as string;
-    const rawToken = new URL(verificationLink).searchParams.get('token');
+    const parsedLink = new URL(verificationLink);
+    expect(parsedLink.pathname).toBe('/verify-email');
+    expect(parsedLink.search).toBe('');
+    expect(verificationLink).not.toContain('?token=');
+
+    const rawToken = new URLSearchParams(parsedLink.hash.slice(1)).get('token');
     expect(rawToken).toBeTruthy();
     expect(rawToken).toHaveLength(43);
 
