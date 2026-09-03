@@ -60,6 +60,12 @@ jobs:
       - name: Enforce required CI trigger/path consistency
         run: node scripts/security/check-required-ci-trigger-drift.mjs
 
+      - name: Test GitHub Actions supply-chain policy
+        run: node scripts/security/check-workflow-supply-chain.mjs --self-test
+
+      - name: Enforce GitHub Actions supply-chain policy
+        run: node scripts/security/check-workflow-supply-chain.mjs
+
       - name: Test tracked-source secret scanner
         run: node scripts/security/test-scan-tracked-secrets.mjs
 
