@@ -16,8 +16,8 @@ env:
   POSTGRES_PASSWORD: ci_disposable_restore_password
   SOURCE_DB: irexpro_backup_source
   RESTORE_DB: irexpro_backup_restore
-  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-  WORKFLOW_SHA: ${{ github.sha }}
+  CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  TRIGGER_SHA: ${{ github.sha }}
 
 jobs:
   synthetic-postgres-restore:
@@ -40,8 +40,19 @@ jobs:
           --health-retries 10
 
     steps:
-      - name: Checkout
+      - name: Checkout exact candidate
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          persist-credentials: false
+
+      - name: Verify exact candidate checkout
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$CANDIDATE_SHA"
+          echo "CHECKED_OUT_SHA=$actual" >> "$GITHUB_ENV"
 
       - name: Create sanitized evidence directory
         run: mkdir -p security-artifacts
@@ -142,7 +153,8 @@ jobs:
           digest="$(cat security-artifacts/synthetic-restore.sha256)"
           {
             echo "candidate_sha=$CANDIDATE_SHA"
-            echo "workflow_sha=$WORKFLOW_SHA"
+            echo "checked_out_sha=$CHECKED_OUT_SHA"
+            echo "trigger_sha=$TRIGGER_SHA"
             echo 'database_version=PostgreSQL 16'
             echo 'source=disposable_ci_fixture'
             echo "backup_sha256=$digest"
@@ -172,6 +184,8 @@ jobs:
           test ! -e security-artifacts/synthetic-restore.dump
           test -s security-artifacts/synthetic-restore-evidence.txt
           test -s security-artifacts/synthetic-restore.sha256
+          grep -Fx "candidate_sha=$CANDIDATE_SHA" security-artifacts/synthetic-restore-evidence.txt
+          grep -Fx "checked_out_sha=$CANDIDATE_SHA" security-artifacts/synthetic-restore-evidence.txt
 
       - name: Upload sanitized rehearsal evidence
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f

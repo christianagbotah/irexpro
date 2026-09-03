@@ -2,17 +2,17 @@
 
 This runbook defines the evidence required before iRexPro may be considered for
 production promotion. It covers authentication security evidence, notification
-provider readiness, secret rotation, backup restoration, incident response,
-rollback verification, and release sign-off. It does not authorize a production
-deployment or enable broker, funding, trading, execution, strategy, model,
-position-sizing, allocation, or risk behavior.
+provider readiness, CI provenance, secret rotation, backup restoration,
+incident response, rollback verification, and release sign-off. It does not
+authorize production deployment or enable broker, funding, trading, execution,
+strategy, model, position-sizing, allocation, or risk behavior.
 
 ## 1. Promotion status
 
 Production promotion remains **NO-GO** until every applicable operational
-control in this document has an accountable owner, dated evidence, and an
-independent reviewer. Merged code, staging health, or synthetic CI evidence is
-not by itself production approval.
+control has an accountable owner, dated evidence, and an independent reviewer.
+Merged code, staging health, or synthetic CI evidence is not by itself
+production approval.
 
 The following Sprint 48 repository controls are merged to `main`:
 
@@ -26,11 +26,11 @@ The following Sprint 48 repository controls are merged to `main`:
 | Server-owned audit correlation provenance follow-up | PR #89 | repository merge evidence |
 | Deterministic staging deployment and rollback controls | PR #90 | `31f9386dfe995c385153bc4752fd772310cc47db` |
 | TOTP MFA and email verification hardening | PR #91 | `446c15c01c984d9b06696321aef02875ad2fa64d` |
+| Bounded phone verification and fail-closed SMS delivery | PR #92 | `4871687e15a19202e35a1c19250bb36eb39351ef` |
 
-PR #92 is the current candidate for bounded phone verification. It must not be
-represented as merged or production-ready until its exact-head API/security
-checks are green, the PR is merged, and the target environment has a real,
-approved SMS provider configuration.
+Issue #93 tracks CI provenance hardening so future release evidence proves the
+immutable pull-request head SHA it claims to validate. This repository change
+does not replace any target-environment operational evidence.
 
 The release record must identify:
 
@@ -39,28 +39,47 @@ The release record must identify:
 - exact-head CI/security workflow run identifiers for the candidate;
 - the operator and independent reviewer;
 - the backup artifact identifier and restoration-rehearsal result;
-- each secret/provider-credential rotation or activation result, without
-  recording secret values;
-- unresolved security exceptions and their approving owner, if exceptions are
-  permitted by organizational policy;
+- each secret/provider-credential rotation or activation result without secret
+  values;
+- unresolved security exceptions and their approving owner, if permitted by
+  organizational policy;
 - the final go/no-go decision and timestamp.
 
 ## 2. Exact-head release verification
 
-Never promote a candidate using workflow results from a superseded commit.
+For a `pull_request` workflow, **exact-head** means
+`github.event.pull_request.head.sha`. GitHub's `github.sha` for that event is
+normally the synthetic `pull/<n>/merge` commit. The synthetic merge commit can
+be useful integration evidence, but it is not the immutable PR-head candidate
+and must never be labeled as exact-head evidence.
+
+Critical release workflows must therefore:
+
+1. derive `CANDIDATE_SHA` from `github.event.pull_request.head.sha` for
+   `pull_request`, otherwise from `github.sha`;
+2. checkout `ref: ${{ env.CANDIDATE_SHA }}` explicitly;
+3. disable persisted checkout credentials unless a reviewed write requirement
+   exists;
+4. verify `git rev-parse HEAD` equals `CANDIDATE_SHA` before dependency
+   installation, build, test, scan, or evidence generation;
+5. fail closed when provenance differs;
+6. keep PR mergeability/base-integration review as a separate gate rather than
+   silently substituting a synthetic merge ref for exact-head evidence.
+
 Before a go/no-go decision:
 
 1. record the exact candidate SHA;
 2. verify the pull request/release branch still points to that SHA;
 3. verify required API CI, migration/database compatibility, concurrency,
-   Release Security, dependency, secret-scan, SBOM, CodeQL, and deployment
-   safety checks applicable to the candidate are green on that exact SHA;
-4. record the run IDs or immutable evidence links in the release record;
-5. verify no commit was pushed after the evidence was collected;
+   Release Security, dependency, secret-scan, SBOM, CodeQL, UI, restore, and
+   deployment-safety checks applicable to the candidate are green on that SHA;
+4. record run IDs or immutable evidence links;
+5. verify no commit was pushed after evidence was collected;
 6. if the SHA moves, discard the prior gate decision and repeat verification.
 
-A green check belonging to an older head is not release evidence for a newer
-candidate.
+A green check belonging to an older head, or evidence generated from a
+synthetic merge SHA while labeled as the PR head, is not valid exact-head
+release evidence.
 
 ## 3. Authentication security evidence
 
@@ -92,13 +111,13 @@ Verified behaviors include:
 - MFA-enabled login issues tokens only after both password and TOTP succeed;
 - email verification uses high-entropy, single-use tokens and persists only a
   SHA-256 digest;
-- the PR #92 phone-verification candidate uses a six-digit challenge with a
-  10-minute expiry, HMAC-SHA-256 persistence keyed by an independent
-  verification pepper, account/current-phone binding, transactional single-use
-  consumption, and a persisted five-invalid-attempt ceiling;
+- phone verification uses a six-digit challenge with a 10-minute expiry,
+  HMAC-SHA-256 persistence keyed by an independent verification pepper,
+  account/current-phone binding, transactional single-use consumption, and a
+  persisted five-invalid-attempt ceiling;
 - provider delivery failures invalidate the associated phone challenge;
-- phone verification confirmation requires an authenticated account and is
-  therefore bound to that account rather than being a public code endpoint.
+- phone confirmation requires an authenticated account and is bound to that
+  account rather than being a public code endpoint.
 
 ### 3.2 Authentication rate limits
 
@@ -118,25 +137,22 @@ Verified behaviors include:
 | `POST /auth/reset-password` | 10 / 15 minutes / IP |
 
 See `docs/security/auth-rate-limit-policy.md` for the runtime-test contract.
-Phone request/confirmation rows become deployed production controls only after
-PR #92 is merged and the exact release candidate contains that code.
+These are merged repository controls; production readiness still depends on the
+applicable provider, secret, recovery, and target-environment evidence below.
 
 ### 3.3 Remaining authentication operational prerequisites
 
-After the PR #92 repository candidate is merged, no authentication control
-should be marked production-ready merely because the implementation exists.
-Before production activation, authorized operators must still provide evidence
-that:
+Repository implementation does not make the release production-ready. Before
+production activation, authorized operators must provide evidence that:
 
 - `MFA_ENCRYPTION_KEY` and `AUTH_VERIFICATION_PEPPER` are supplied from the
   approved secret-management path and are independent from JWT, cookie,
   database, payment, broker, and provider credentials;
-- email SMTP configuration, if email verification is required, is tested using
-  an approved non-sensitive test account without exposing message contents or
-  credentials in evidence;
+- email SMTP configuration, if required, is tested using an approved
+  non-sensitive destination without exposing message contents or credentials;
 - the SMS provider has real approved credentials/sender configuration and a
   controlled verification message can be delivered without logging code,
-  recipient, provider secret, or response payload;
+  recipient, provider secret, or provider response body;
 - recovery/support procedures account for MFA and verified-contact state;
 - secret rotation and target-environment restore evidence described below is
   complete.
@@ -156,16 +172,16 @@ At minimum, classify these secret families:
 | --- | --- | --- |
 | Database credentials | Database operator | New credential connects; old credential is rejected |
 | Redis credentials | Platform operator | Readiness succeeds; old credential is rejected |
-| JWT and cookie signing keys | Identity owner | New sessions validate; retired keys follow the approved grace policy |
+| JWT and cookie signing keys | Identity owner | New sessions validate; retired keys follow approved grace policy |
 | Internal service credentials | Platform operator | Authorized internal health succeeds; old credential is rejected |
-| `MFA_ENCRYPTION_KEY` | Identity/security owner | Key-version and controlled migration/decrypt validation recorded without exposing plaintext seeds |
-| `AUTH_VERIFICATION_PEPPER` | Identity/security owner | New challenge lifecycle validates; pre-rotation outstanding phone challenges are intentionally invalidated or handled by documented policy |
+| `MFA_ENCRYPTION_KEY` | Identity/security owner | Key-version and controlled migration/decrypt validation recorded without plaintext seeds |
+| `AUTH_VERIFICATION_PEPPER` | Identity/security owner | New challenge lifecycle validates; outstanding challenges follow documented invalidation policy |
 | SMTP credentials | Integration owner | Controlled email delivery succeeds without exposing credentials/content |
 | Twilio/API notification credentials and sender identity | Integration owner | Controlled SMS delivery succeeds; retired credential is rejected where provider capabilities allow |
 
 Broker, payment, and live-market credentials are outside this runbook's
-execution scope. Their rotation requires the appropriately authorized
-engineering and compliance owners.
+execution scope. Their rotation requires appropriately authorized engineering
+and compliance owners.
 
 ## 5. Controlled secret-rotation procedure
 
@@ -180,13 +196,13 @@ engineering and compliance owners.
 
 ### Execution record
 
-Use a separate record for each secret family. The record must contain:
+Use a separate record for each secret family. Record:
 
 1. change identifier and approved maintenance window;
 2. accountable operator and independent reviewer;
 3. affected services and expected user impact;
 4. pre-change health and backup evidence;
-5. new secret version identifier (never the value);
+5. new secret version identifier, never the value;
 6. validation result for the new version;
 7. confirmation that the previous version was revoked or an approved grace
    period was documented;
@@ -197,27 +213,27 @@ Use a separate record for each secret family. The record must contain:
 
 `MFA_ENCRYPTION_KEY` protects persisted MFA seeds. Replacing it without an
 approved key-version/migration procedure can make existing MFA enrolments
-undecryptable. Treat its rotation as a controlled identity-data migration,
-not as a blind environment-variable replacement.
+undecryptable. Treat rotation as a controlled identity-data migration, not a
+blind environment-variable replacement.
 
 `AUTH_VERIFICATION_PEPPER` protects low-entropy phone challenges. Changing it
-makes outstanding phone challenges unverifiable. Rotation must therefore occur
-under a documented policy that intentionally expires/reissues outstanding
-challenges rather than attempting to preserve raw codes.
+makes outstanding phone challenges unverifiable. Rotation must intentionally
+expire/reissue outstanding challenges under documented policy rather than
+attempting to preserve raw codes.
 
 Notification-provider credentials may be rotated independently of challenge
 storage. Validate only through an approved controlled destination; evidence
-must not contain the recipient, verification code, Authorization header,
-provider token, or provider response body.
+must not contain recipient, verification code, Authorization header, provider
+token, or provider response body.
 
 ### Verification
 
 Verify only the minimum behavior required for the rotated family. Examples:
 
 - identity signing keys: new login/refresh succeeds and stale/revoked sessions
-  behave according to the approved key/session policy;
+  follow approved key/session policy;
 - database/Redis credentials: readiness succeeds with the new credential and
-  the retired credential is rejected after the approved cutover;
+  the retired credential is rejected after cutover;
 - internal API credentials: authorized health succeeds and the previous
   credential is rejected after cutover;
 - verification pepper: a newly issued controlled phone challenge completes and
@@ -231,13 +247,12 @@ were not emitted.
 ### Rollback
 
 Rollback is service-specific. Restore a previously approved secret version only
-if it remains safe to do so; otherwise invoke incident response and issue a new
-replacement secret. Record the rollback decision and health checks performed
-afterwards.
+if it remains safe; otherwise invoke incident response and issue a replacement
+secret. Record the rollback decision and post-change health checks.
 
-Stop the rotation if the backup is unverified, the candidate SHA is unknown,
-the new credential cannot be validated, MFA key-version compatibility is
-uncertain, or logs expose secret/verification material.
+Stop rotation if the backup is unverified, candidate SHA is unknown, new
+credential cannot be validated, MFA key-version compatibility is uncertain, or
+logs expose secret/verification material.
 
 ## 6. Backup acceptance criteria
 
@@ -252,8 +267,8 @@ A backup is acceptable only when it is:
 - free of credentials in filenames, command output, screenshots, and tickets.
 
 A successful backup command is not proof of recoverability. Only a completed
-restore rehearsal using the approved target-environment backup evidence
-satisfies this operational gate.
+restore rehearsal using approved target-environment backup evidence satisfies
+this operational gate.
 
 ## 7. Non-destructive restoration rehearsal
 
@@ -270,7 +285,7 @@ Record:
 6. application liveness/readiness results with external integrations disabled;
 7. confirmation that no email, SMS, payment, broker, or execution side effect
    was possible;
-8. measured recovery time versus the approved recovery objective;
+8. measured recovery time versus approved recovery objective;
 9. cleanup confirmation for the isolated restored copy;
 10. reviewer sign-off.
 
@@ -282,9 +297,12 @@ rehearsal blocks promotion until a later rehearsal succeeds.
 Do not restore over a production database as a rehearsal. Do not copy restored
 data to developer laptops or attach it to GitHub issues/CI artifacts.
 
-The disposable PostgreSQL CI restore validates procedure mechanics only. It
-**does not** replace target-environment restoration evidence using an approved
-backup artifact.
+The disposable PostgreSQL CI restore validates procedure mechanics only. Its
+sanitized evidence must record `candidate_sha` and `checked_out_sha` as equal.
+The separate `trigger_sha` may be a synthetic GitHub merge SHA on pull requests
+and must not be mislabeled as the exact candidate. Synthetic CI still **does
+not** replace target-environment restoration evidence using an approved backup
+artifact.
 
 ## 8. Incident severity and ownership
 
@@ -340,7 +358,7 @@ The repository may contain templates and sanitized runbook references only.
 
 Required evidence categories include:
 
-- exact-head CI/security runs;
+- exact-head CI/security runs whose checkout SHA is independently verified;
 - secret-rotation/activation records;
 - provider readiness evidence when email/SMS verification is enabled;
 - backup artifact metadata and integrity digest;
@@ -356,18 +374,18 @@ verification codes, or MFA seeds to GitHub.
 ## 12. Go/no-go decision
 
 The decision is **NO-GO** if any required evidence is missing, any exact-head
-gate is non-green, backup restoration has not been demonstrated, a material
-incident remains open, secrets/verification material appear in evidence, the
-deployed SHA cannot be proven, or any production-required authentication or
-provider control cannot be validated.
+gate is non-green, checkout provenance cannot be proven, backup restoration has
+not been demonstrated, a material incident remains open, secrets/verification
+material appear in evidence, deployed SHA cannot be proven, or a required
+authentication/provider control cannot be validated.
 
 Repository implementation of session revocation, login abuse protection, TOTP
-MFA, email verification, and the PR #92 phone-verification candidate does not
-by itself convert the release to GO.
+MFA, email verification, and phone verification does not by itself convert the
+release to GO.
 
 The decision may become **GO** only after all applicable gates are green for one
 immutable candidate, operational evidence is complete, and authorized operators
-and an independent reviewer sign the release record.
+plus an independent reviewer sign the release record.
 
 ## 13. Related runbooks and evidence contracts
 
@@ -376,3 +394,4 @@ and an independent reviewer sign the release record.
 - `docs/runbooks/production-deployment-vps-webuzo.md`
 - `docs/runbooks/secrets-never-committed.md`
 - `docs/operations/staging-deployment.md`
+- `scripts/security/check-workflow-candidate-provenance.mjs`
