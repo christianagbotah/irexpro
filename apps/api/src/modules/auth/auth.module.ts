@@ -13,21 +13,29 @@ import {
   NodemailerEmailProvider,
   EMAIL_PROVIDER,
 } from './password-reset-delivery.service';
+import { EmailVerificationDeliveryService } from './email-verification-delivery.service';
+import { MfaService } from './mfa.service';
+import { VerificationService } from './verification.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { User } from '../users/entities/user.entity';
 import { UserProfile } from '../users/entities/user-profile.entity';
 import { UserRole } from '../users/entities/user-role.entity';
 import { Role } from '../users/entities/role.entity';
 import { PasswordResetToken } from './entities/password-reset-token.entity';
+import { AuthVerificationToken } from './entities/auth-verification-token.entity';
 import { AuditModule } from '../audit/audit.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, UserProfile, UserRole, Role, PasswordResetToken]),
+    TypeOrmModule.forFeature([
+      User,
+      UserProfile,
+      UserRole,
+      Role,
+      PasswordResetToken,
+      AuthVerificationToken,
+    ]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
-    // Sprint 28 amendment: rate limiting for auth endpoints (forgot-password,
-    // reset-password). Default: 10 requests per 60s per IP. Per-route overrides
-    // on the controller set tighter limits for reset endpoints.
     ThrottlerModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -57,8 +65,9 @@ import { AuditModule } from '../audit/audit.module';
     AuthCookieService,
     PasswordResetService,
     PasswordResetDeliveryService,
-    // Bind the NodemailerEmailProvider as the EMAIL_PROVIDER token so the
-    // delivery service can be unit-tested with a mock provider.
+    EmailVerificationDeliveryService,
+    MfaService,
+    VerificationService,
     { provide: EMAIL_PROVIDER, useClass: NodemailerEmailProvider },
     JwtStrategy,
   ],

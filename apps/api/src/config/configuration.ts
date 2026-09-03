@@ -19,8 +19,7 @@ export default () => ({
     adminBaseUrl: process.env.ADMIN_BASE_URL,
   },
   // Sprint 28 amendment: email provider config. When EMAIL_SMTP_URL is set,
-  // the delivery service uses nodemailer to send real reset emails.
-  // EMAIL_FROM / EMAIL_FROM_ADDRESS are aliases — either works.
+  // the delivery service uses nodemailer to send real reset/verification emails.
   email: {
     smtpUrl: process.env.EMAIL_SMTP_URL,
     fromAddress: process.env.EMAIL_FROM ?? process.env.EMAIL_FROM_ADDRESS ?? 'no-reply@irexpro.com',
@@ -29,6 +28,14 @@ export default () => ({
     secret: process.env.JWT_SECRET,
     accessExpiry: process.env.JWT_ACCESS_EXPIRY ?? '15m',
     refreshExpiry: process.env.JWT_REFRESH_EXPIRY ?? '7d',
+  },
+  // AppModule loads this root configuration object (not auth.config.ts), so
+  // auth-domain services must receive their validated runtime values here.
+  auth: {
+    argon2MemoryCost: parseInt(process.env.ARGON2_MEMORY_COST ?? '65536', 10),
+    argon2TimeCost: parseInt(process.env.ARGON2_TIME_COST ?? '3', 10),
+    argon2Parallelism: parseInt(process.env.ARGON2_PARALLELISM ?? '1', 10),
+    mfaEncryptionKey: process.env.MFA_ENCRYPTION_KEY,
   },
   database: {
     host: process.env.DB_HOST ?? 'localhost',
