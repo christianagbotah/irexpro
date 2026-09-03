@@ -46,7 +46,7 @@ describe('AuthService MFA login enforcement', () => {
         createdAt: new Date(),
         user: undefined as never,
         role: { name: RoleName.USER } as Role,
-      } as UserRole,
+      } as unknown as UserRole,
     ],
   };
 
@@ -65,10 +65,7 @@ describe('AuthService MFA login enforcement', () => {
       update: jest.fn().mockResolvedValue({ affected: 1 }),
     };
     jwtService = {
-      sign: jest
-        .fn()
-        .mockReturnValueOnce('access-token')
-        .mockReturnValueOnce('refresh-token'),
+      sign: jest.fn().mockReturnValueOnce('access-token').mockReturnValueOnce('refresh-token'),
     };
     auditService = { log: jest.fn().mockResolvedValue(undefined) };
     mfaService = { verifyLoginChallenge: jest.fn() };
