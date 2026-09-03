@@ -10,4 +10,6 @@ export default registerAs('auth', () => ({
   // Independent auth-domain key for encrypting TOTP seeds at rest.
   // Do not reuse broker/payment/application secrets for this purpose.
   mfaEncryptionKey: process.env.MFA_ENCRYPTION_KEY,
+  // Independent HMAC key material for low-entropy phone verification codes.
+  verificationPepper: process.env.AUTH_VERIFICATION_PEPPER,
 }));
