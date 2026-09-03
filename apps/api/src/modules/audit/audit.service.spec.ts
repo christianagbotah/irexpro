@@ -1,9 +1,10 @@
-import { Test, TestingModule } from '@nestjs/testing';
 import { Logger } from '@nestjs/common';
+import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { AuditAction } from '../../common/enums/audit-action.enum';
+import { runWithCorrelationId } from '../../common/utils/request-correlation.util';
 import { AuditService } from './audit.service';
 import { AuditLog, AuditSeverity } from './entities/audit-log.entity';
-import { AuditAction } from '../../common/enums/audit-action.enum';
 
 const mockAuditLogRepo = {
   create: jest.fn(),
@@ -54,10 +55,60 @@ describe('AuditService', () => {
         actorUserId: 'user-123',
         action: AuditAction.USER_REGISTERED,
         resourceType: 'User',
+        correlationId: null,
         severity: AuditSeverity.INFO,
       }),
     );
     expect(mockAuditLogRepo.save).toHaveBeenCalledTimes(1);
+  });
+
+  it('inherits the current request correlation ID automatically', async () => {
+    const correlationId = '11111111-1111-4111-8111-111111111111';
+    mockAuditLogRepo.create.mockReturnValue({ id: 'audit-id' });
+    mockAuditLogRepo.save.mockResolvedValue({ id: 'audit-id' });
+
+    await runWithCorrelationId(correlationId, () =>
+      service.log({ action: AuditAction.USER_LOGIN_SUCCESS }),
+    );
+
+    expect(mockAuditLogRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ correlationId }),
+    );
+  });
+
+  it('recursively redacts secret-bearing metadata before persistence', async () => {
+    mockAuditLogRepo.create.mockReturnValue({ id: 'audit-id' });
+    mockAuditLogRepo.save.mockResolvedValue({ id: 'audit-id' });
+
+    const metadata = {
+      provider: 'example',
+      accessToken: 'secret-access-token',
+      nested: {
+        password: 'secret-password',
+        apiKey: 'secret-api-key',
+        safeValue: 'visible',
+      },
+    };
+
+    await service.log({
+      action: AuditAction.USER_LOGIN_FAILED,
+      metadata,
+    });
+
+    expect(mockAuditLogRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: {
+          provider: 'example',
+          accessToken: '[REDACTED]',
+          nested: {
+            password: '[REDACTED]',
+            apiKey: '[REDACTED]',
+            safeValue: 'visible',
+          },
+        },
+      }),
+    );
+    expect(metadata.accessToken).toBe('secret-access-token');
   });
 
   it('should not throw if database save fails (non-disruptive)', async () => {

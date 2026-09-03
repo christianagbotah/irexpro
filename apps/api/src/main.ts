@@ -1,13 +1,15 @@
 import 'reflect-metadata';
-import { NestFactory, Reflector } from '@nestjs/core';
-import { ValidationPipe, ClassSerializerInterceptor, Logger } from '@nestjs/common';
+import { ClassSerializerInterceptor, Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { NestFactory, Reflector } from '@nestjs/core';
 import { IoAdapter } from '@nestjs/platform-socket.io';
-import helmet from 'helmet';
 import * as compression from 'compression';
 import * as cookieParser from 'cookie-parser';
+import { NextFunction, Request, Response } from 'express';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { setupSwagger } from './config/swagger.config';
+import { createCorrelationId, runWithCorrelationId } from './common/utils/request-correlation.util';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -29,6 +31,14 @@ async function bootstrap() {
   app.setGlobalPrefix(apiPrefix);
   app.useWebSocketAdapter(new IoAdapter(app));
 
+  // Server-owned request correlation. Never reuse a caller-supplied request ID:
+  // doing so would allow forged correlation between unrelated audit/log events.
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const correlationId = createCorrelationId();
+    res.setHeader('X-Correlation-Id', correlationId);
+    runWithCorrelationId(correlationId, next);
+  });
+
   // Security
   app.use(helmet());
   app.use(compression());
@@ -39,6 +49,7 @@ async function bootstrap() {
     origin: corsOrigins,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
+    exposedHeaders: ['X-Correlation-Id'],
     credentials: true,
   });
 

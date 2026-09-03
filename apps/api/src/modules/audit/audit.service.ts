@@ -3,6 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AuditLog, AuditSeverity } from './entities/audit-log.entity';
 import { AuditAction } from '../../common/enums/audit-action.enum';
+import { redactSensitive } from '../../common/utils/redact-sensitive.util';
+import { getCorrelationId } from '../../common/utils/request-correlation.util';
 
 const AI_SIGNAL_LIFECYCLE_ACTIONS: AuditAction[] = [
   AuditAction.AI_SIGNAL_RECEIVED,
@@ -19,6 +21,7 @@ export interface CreateAuditLogDto {
   action: AuditAction | string;
   resourceType?: string;
   resourceId?: string;
+  correlationId?: string;
   ipAddress?: string;
   userAgent?: string;
   metadata?: Record<string, unknown>;
@@ -36,15 +39,21 @@ export class AuditService {
 
   async log(dto: CreateAuditLogDto): Promise<void> {
     try {
+      // Explicit correlationId is useful for background/queue work. HTTP paths
+      // automatically inherit the AsyncLocalStorage request context.
+      const correlationId = dto.correlationId ?? getCorrelationId() ?? null;
+      const safeMetadata = dto.metadata ? redactSensitive(dto.metadata) : null;
+
       const entry = this.auditLogRepo.create({
         actorUserId: dto.actorUserId ?? null,
         actorType: dto.actorType ?? 'USER',
         action: dto.action,
         resourceType: dto.resourceType ?? null,
         resourceId: dto.resourceId ?? null,
+        correlationId,
         ipAddress: dto.ipAddress ?? null,
         userAgent: dto.userAgent ?? null,
-        metadata: dto.metadata ?? null,
+        metadata: safeMetadata,
         severity: dto.severity ?? AuditSeverity.INFO,
       });
       await this.auditLogRepo.save(entry);
@@ -54,13 +63,6 @@ export class AuditService {
     }
   }
 
-  /**
-   * Return the newest persisted AI signal receipts for a single user.
-   *
-   * This intentionally starts from AI_SIGNAL_RECEIVED so the Decision Explorer
-   * cannot surface another user's signal simply because a downstream audit row
-   * contains a coincidentally matching resource identifier.
-   */
   async listRecentAiSignalReceipts(userId: string, limit = 25): Promise<AuditLog[]> {
     const safeLimit = Math.min(Math.max(Math.trunc(limit), 1), 100);
     return this.auditLogRepo.find({
@@ -74,13 +76,6 @@ export class AuditService {
     });
   }
 
-  /**
-   * Load persisted lifecycle evidence only for already user-scoped signal IDs.
-   *
-   * AI_SIGNAL_EXECUTED uses the Trade as its resource and therefore stores the
-   * originating signalId in metadata. All other current lifecycle rows use the
-   * AiSignal resource directly. Both paths remain constrained by actor_user_id.
-   */
   async listAiSignalLifecycle(userId: string, signalIds: string[]): Promise<AuditLog[]> {
     if (signalIds.length === 0) return [];
 

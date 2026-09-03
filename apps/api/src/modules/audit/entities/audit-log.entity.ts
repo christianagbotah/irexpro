@@ -29,6 +29,10 @@ export class AuditLog {
   @Column({ name: 'resource_id', type: 'varchar', length: 255, nullable: true })
   resourceId: string | null;
 
+  @Column({ name: 'correlation_id', type: 'uuid', nullable: true })
+  @Index()
+  correlationId: string | null;
+
   @Column({ name: 'ip_address', type: 'varchar', length: 45, nullable: true })
   ipAddress: string | null;
 
