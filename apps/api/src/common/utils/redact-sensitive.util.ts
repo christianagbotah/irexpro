@@ -56,10 +56,8 @@ export function redactSensitive<T>(obj: T): T {
     const lowerKey = key.toLowerCase();
     if (SENSITIVE_KEYS.has(lowerKey)) {
       result[key] = '[REDACTED]';
-    } else if (typeof value === 'object' && value !== null) {
-      result[key] = redactSensitive(value);
     } else {
-      result[key] = value;
+      result[key] = redactSensitive(value);
     }
   }
   return result as T;
