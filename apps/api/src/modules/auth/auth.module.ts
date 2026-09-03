@@ -14,6 +14,7 @@ import {
   EMAIL_PROVIDER,
 } from './password-reset-delivery.service';
 import { EmailVerificationDeliveryService } from './email-verification-delivery.service';
+import { PhoneVerificationDeliveryService } from './phone-verification-delivery.service';
 import { MfaService } from './mfa.service';
 import { VerificationService } from './verification.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
@@ -66,6 +67,7 @@ import { AuditModule } from '../audit/audit.module';
     PasswordResetService,
     PasswordResetDeliveryService,
     EmailVerificationDeliveryService,
+    PhoneVerificationDeliveryService,
     MfaService,
     VerificationService,
     { provide: EMAIL_PROVIDER, useClass: NodemailerEmailProvider },
