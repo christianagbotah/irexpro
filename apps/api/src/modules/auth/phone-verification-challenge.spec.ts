@@ -39,9 +39,7 @@ describe('VerificationService phone confirmation', () => {
       createQueryRunner: jest.fn().mockReturnValue(queryRunner),
     } as unknown as DataSource;
     const configService = {
-      get: jest.fn((key: string) =>
-        key === 'auth.verificationPepper' ? pepper : undefined,
-      ),
+      get: jest.fn((key: string) => (key === 'auth.verificationPepper' ? pepper : undefined)),
     } as unknown as ConfigService;
     const auditService = { log: jest.fn().mockResolvedValue(undefined) };
     const service = new VerificationService(
