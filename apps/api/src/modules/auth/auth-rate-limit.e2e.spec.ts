@@ -1,7 +1,9 @@
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ThrottlerModule } from '@nestjs/throttler';
-import request from 'supertest';
+// Supertest exposes a CommonJS callable in this Jest/CommonJS API package.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+import request = require('supertest');
 import { AuthCookieService } from './auth-cookie.service';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
