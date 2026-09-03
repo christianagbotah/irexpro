@@ -25,12 +25,12 @@ if (clean.status !== 0) {
 }
 
 const fixtures = [
-  '-----BEGIN PRIVATE KEY-----',
-  '-----BEGIN RSA PRIVATE KEY-----',
-  '-----BEGIN EC PRIVATE KEY-----',
-  '-----BEGIN OPENSSH PRIVATE KEY-----',
-  '-----BEGIN ENCRYPTED PRIVATE KEY-----',
-  '-----BEGIN PGP PRIVATE KEY BLOCK-----',
+  ['-----BEGIN ', 'PRIVATE KEY-----'].join(''),
+  ['-----BEGIN RSA ', 'PRIVATE KEY-----'].join(''),
+  ['-----BEGIN EC ', 'PRIVATE KEY-----'].join(''),
+  ['-----BEGIN OPENSSH ', 'PRIVATE KEY-----'].join(''),
+  ['-----BEGIN ENCRYPTED ', 'PRIVATE KEY-----'].join(''),
+  ['-----BEGIN PGP PRIVATE KEY ', 'BLOCK-----'].join(''),
   `AKIA${'A'.repeat(16)}`,
   `github_pat_${'A'.repeat(24)}`,
   `ghp_${'A'.repeat(36)}`,
@@ -53,4 +53,3 @@ for (const secretValue of fixtures) {
 }
 
 console.log('Tracked-source secret scanner tests passed.');
-
