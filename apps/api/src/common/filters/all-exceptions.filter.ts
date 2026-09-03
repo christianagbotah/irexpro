@@ -7,7 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
-import { redactSensitive, sanitizeDatabaseError } from '../utils/redact-sensitive.util';
+import { redactSensitive } from '../utils/redact-sensitive.util';
 
 /**
  * AllExceptionsFilter — Hotfix: redacts sensitive fields from logs + responses.
@@ -34,31 +34,23 @@ export class AllExceptionsFilter implements ExceptionFilter {
     // Build a safe log context — never includes request.user, headers, or body
     const safeLogContext = {
       method: request.method,
-      url: request.url,
+      path: request.path || request.url?.split('?')[0] || 'unknown',
       statusCode: status,
     };
 
     if (status >= 500) {
-      // For 500 errors, log the exception safely
-      if (this.isDatabaseError(exception)) {
-        // Database error — log only safe fields (name, code, sanitized message)
-        const dbErr = sanitizeDatabaseError(exception);
-        this.logger.error(
-          `Database error: ${dbErr.name} [${dbErr.code ?? 'no-code'}] ${dbErr.message} — ${safeLogContext.method} ${safeLogContext.url}`,
-          exception instanceof Error ? exception.stack : String(exception),
-        );
-      } else {
-        // Non-DB error — log name + safe message + stack
-        const errName = exception instanceof Error ? exception.name : 'UnknownError';
-        const errMsg = exception instanceof Error ? exception.message : String(exception);
-        this.logger.error(
-          `${errName}: ${errMsg} — ${safeLogContext.method} ${safeLogContext.url}`,
-          exception instanceof Error ? exception.stack : undefined,
-        );
-      }
+      const category = this.isDatabaseError(exception)
+        ? 'DatabaseError'
+        : exception instanceof Error
+          ? exception.name
+          : 'UnknownError';
+      this.logger.error(
+        `${category} — ${safeLogContext.method} ${safeLogContext.path} → ${status}`,
+      );
     } else if (status >= 400) {
-      // 4xx errors — log at warn level (safe context only)
-      this.logger.warn(`${safeLogContext.method} ${safeLogContext.url} → ${status}`);
+      this.logger.warn(
+        `${safeLogContext.method} ${safeLogContext.path} → ${status}`,
+      );
     }
 
     // Build the client-facing response — redact any sensitive fields
@@ -79,7 +71,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     response.status(status).json({
       statusCode: status,
       timestamp: new Date().toISOString(),
-      path: request.url,
+      path: safeLogContext.path,
       ...(typeof clientMessage === 'object' ? clientMessage : { message: clientMessage }),
     });
   }
