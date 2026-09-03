@@ -1,5 +1,10 @@
 import * as crypto from 'crypto';
-import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { Trade, TradeCloseReason, TradeDirection, TradeStatus } from './entities/trade.entity';
@@ -7,6 +12,7 @@ import { TradingSession, TradingSessionStatus } from './entities/trading-session
 import { RiskDecision } from '../risk/interfaces/risk.interface';
 import { BrokerService } from '../broker/broker.service';
 import { BrokerAdapterRegistry } from '../broker/adapters/broker-adapter.registry';
+import { BrokerCircuitBreakerService } from '../broker/circuit-breaker/broker-circuit-breaker.service';
 import { CredentialEncryptionService } from '../broker/services/credential-encryption.service';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../../common/enums/audit-action.enum';
@@ -56,6 +62,7 @@ export class ExecutionService {
     private auditService: AuditService,
     private dataSource: DataSource,
     private readonly eventBus: DomainEventBus,
+    private readonly circuitBreaker: BrokerCircuitBreakerService,
   ) {}
 
   // ─── Main entry point ────────────────────────────────────────────────────
@@ -192,7 +199,20 @@ export class ExecutionService {
       status: 'PENDING',
     });
 
-    // ── Step 5: Prepare and submit order to broker ─────────────────────────
+    // ── Step 5: Circuit breaker check ─────────────────────────────────────
+    // If the circuit is OPEN for this broker connection, reject immediately
+    // without hitting the broker (protects against cascading failures).
+    if (!this.circuitBreaker.canExecute(connection.id)) {
+      this.logger.warn(
+        `Circuit breaker OPEN for connection ${connection.id} — trade ${trade.id} rejected`,
+      );
+      await this.failTradeAsRejected(trade, 'BROKER_CIRCUIT_OPEN');
+      throw new ServiceUnavailableException(
+        'Broker is temporarily unavailable (circuit breaker open). Please retry shortly.',
+      );
+    }
+
+    // ── Step 5b: Prepare and submit order to broker ────────────────────────
     try {
       const credentials = this.encryptionService.decrypt({
         ciphertext: connection.encryptedCredentials!,
@@ -223,6 +243,9 @@ export class ExecutionService {
       };
 
       const result = await this.submitWithRetry(adapter, brokerRequest);
+
+      // Record success — circuit breaker resets failure count
+      await this.circuitBreaker.recordSuccess(connection.id);
 
       if (result.success && result.externalOrderId) {
         // ── Step 6a: Trade opened ──────────────────────────────────────────
@@ -790,5 +813,22 @@ export class ExecutionService {
     }
 
     throw lastError ?? new Error('All retry attempts exhausted');
+  }
+
+  private async failTradeAsRejected(trade: Trade, reason: string): Promise<void> {
+    await this.tradeRepo.update(trade.id, {
+      status: TradeStatus.REJECTED,
+      closedAt: new Date(),
+    });
+    trade.status = TradeStatus.REJECTED;
+    this.logger.warn('Trade ' + trade.id + ' rejected: ' + reason);
+    await this.auditService.log({
+      actorUserId: trade.userId,
+      action: AuditAction.TRADE_REJECTED,
+      resourceType: 'Trade',
+      resourceId: trade.id,
+      metadata: { reason, tradeId: trade.id },
+      severity: AuditSeverity.WARNING,
+    });
   }
 }

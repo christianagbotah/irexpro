@@ -13,6 +13,7 @@ import { CredentialEncryptionService } from './services/credential-encryption.se
 import { MetaApiClientService } from './services/metaapi-client.service';
 import { PortfolioReadService } from './services/portfolio-read.service';
 import { BrokerHealthCheckJob, BROKER_HEALTH_QUEUE } from './jobs/broker-health-check.job';
+import { BrokerCircuitBreakerService } from './circuit-breaker/broker-circuit-breaker.service';
 import { BrokerHealthCheckProducer } from './jobs/broker-health-check.producer';
 import { AuditModule } from '../audit/audit.module';
 
@@ -42,6 +43,7 @@ import { AuditModule } from '../audit/audit.module';
   ],
   controllers: [BrokerController, PortfolioController],
   providers: [
+    BrokerCircuitBreakerService,
     BrokerService,
     PortfolioReadService,
     CredentialEncryptionService,
@@ -53,6 +55,7 @@ import { AuditModule } from '../audit/audit.module';
     BrokerHealthCheckProducer,
   ],
   exports: [
+    BrokerCircuitBreakerService,
     BrokerService,
     PortfolioReadService,
     BrokerAdapterRegistry,

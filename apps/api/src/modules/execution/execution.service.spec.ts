@@ -7,6 +7,15 @@ import { Trade, TradeCloseReason, TradeStatus } from './entities/trade.entity';
 import { TradingSession, TradingSessionStatus } from './entities/trading-session.entity';
 import { BrokerService } from '../broker/broker.service';
 import { BrokerAdapterRegistry } from '../broker/adapters/broker-adapter.registry';
+import { BrokerCircuitBreakerService } from '../broker/circuit-breaker/broker-circuit-breaker.service';
+const mockCircuitBreaker = {
+  canExecute: jest.fn().mockReturnValue(true),
+  recordSuccess: jest.fn().mockResolvedValue(undefined),
+  recordFailure: jest.fn().mockResolvedValue(false),
+  getState: jest.fn().mockReturnValue('CLOSED'),
+  getDetails: jest.fn().mockReturnValue({ state: 'CLOSED', failureCount: 0 }),
+  reset: jest.fn().mockResolvedValue(undefined),
+};
 import { CredentialEncryptionService } from '../broker/services/credential-encryption.service';
 import { AuditService } from '../audit/audit.service';
 import { AuditSeverity } from '../audit/entities/audit-log.entity';
@@ -164,6 +173,7 @@ describe('ExecutionService', () => {
 
     module = await Test.createTestingModule({
       providers: [
+        { provide: BrokerCircuitBreakerService, useValue: mockCircuitBreaker },
         ExecutionService,
         { provide: getRepositoryToken(Trade), useValue: tradeRepo },
         { provide: getRepositoryToken(TradingSession), useValue: sessionRepo },
