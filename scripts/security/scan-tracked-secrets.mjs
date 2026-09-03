@@ -40,7 +40,8 @@ const binaryExtensions = new Set([
 const patterns = [
   {
     name: 'private key material',
-    regex: /-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----/,
+    regex:
+      /(?:-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY-----|-----BEGIN PGP PRIVATE KEY B(?:LOCK)-----)/,
   },
   {
     name: 'AWS access key id',
