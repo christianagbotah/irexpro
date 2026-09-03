@@ -51,6 +51,9 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           package-manager-cache: false
 
+      - name: Test required CI gate path policy
+        run: node scripts/security/required-ci-gate.mjs --self-test
+
       - name: Test tracked-source secret scanner
         run: node scripts/security/test-scan-tracked-secrets.mjs
 

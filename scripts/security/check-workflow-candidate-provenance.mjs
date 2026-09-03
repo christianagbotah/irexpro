@@ -11,6 +11,7 @@ const criticalWorkflows = [
   '.github/workflows/db-migration-compat.yml',
   '.github/workflows/deployment-script-safety.yml',
   '.github/workflows/release-security.yml',
+  '.github/workflows/required-ci-gate.yml',
   '.github/workflows/risk-concurrency.yml',
   '.github/workflows/web-e2e.yml',
 ];
