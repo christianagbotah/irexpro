@@ -4,6 +4,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { ExecutionController } from './execution.controller';
 import { ExecutionReadService } from './execution-read.service';
 import { ExecutionService } from './execution.service';
+import { ExecutionResilienceService } from './execution-resilience.service';
 import { Trade } from './entities/trade.entity';
 import { TradingSession } from './entities/trading-session.entity';
 import {
@@ -36,10 +37,11 @@ import { AuditModule } from '../audit/audit.module';
   controllers: [ExecutionController],
   providers: [
     ExecutionService,
+    ExecutionResilienceService,
     ExecutionReadService,
     TradeReconciliationJob,
     TradeReconciliationProducer,
   ],
-  exports: [ExecutionService, ExecutionReadService],
+  exports: [ExecutionService, ExecutionResilienceService, ExecutionReadService],
 })
 export class ExecutionModule {}

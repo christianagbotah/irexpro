@@ -8,6 +8,39 @@ import { TradingSession } from './entities/trading-session.entity';
 import { BrokerService } from '../broker/broker.service';
 import { BrokerAdapterRegistry } from '../broker/adapters/broker-adapter.registry';
 import { BrokerCircuitBreakerService } from '../broker/circuit-breaker/broker-circuit-breaker.service';
+import { ExecutionResilienceService } from './execution-resilience.service';
+const mockResilienceService = {
+  submitOrderWithResilience: jest.fn(async (adapter: any, request: any) => {
+    try {
+      const result = await adapter.placeOrder(request);
+      return {
+        success: result.success,
+        externalOrderId: result.externalOrderId ?? null,
+        filledPrice: result.filledPrice ?? null,
+        filledVolume: request.lotSize,
+        status: result.success ? 'FILLED' : 'REJECTED',
+        slippagePoints: null,
+        requoteAttempts: 0,
+        rejectionReason: result.success ? null : 'BROKER_REJECTED',
+        brokerMessage: result.brokerMessage ?? null,
+        uncertain: false,
+      };
+    } catch (err) {
+      return {
+        success: false,
+        externalOrderId: null,
+        filledPrice: null,
+        filledVolume: null,
+        status: 'FAILED',
+        slippagePoints: null,
+        requoteAttempts: 0,
+        rejectionReason: (err as Error).message,
+        brokerMessage: (err as Error).message,
+        uncertain: false,
+      };
+    }
+  }),
+};
 const mockCircuitBreaker = {
   canExecute: jest.fn().mockReturnValue(true),
   recordSuccess: jest.fn().mockResolvedValue(undefined),
@@ -89,6 +122,7 @@ describe('ExecutionService — Sprint 32 Idempotency', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        { provide: ExecutionResilienceService, useValue: mockResilienceService },
         { provide: BrokerCircuitBreakerService, useValue: mockCircuitBreaker },
         ExecutionService,
         { provide: getRepositoryToken(Trade), useValue: tradeRepo },

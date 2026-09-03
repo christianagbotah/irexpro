@@ -13,6 +13,7 @@ import { RiskDecision } from '../risk/interfaces/risk.interface';
 import { BrokerService } from '../broker/broker.service';
 import { BrokerAdapterRegistry } from '../broker/adapters/broker-adapter.registry';
 import { BrokerCircuitBreakerService } from '../broker/circuit-breaker/broker-circuit-breaker.service';
+import { ExecutionResilienceService } from './execution-resilience.service';
 import { CredentialEncryptionService } from '../broker/services/credential-encryption.service';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../../common/enums/audit-action.enum';
@@ -63,6 +64,7 @@ export class ExecutionService {
     private dataSource: DataSource,
     private readonly eventBus: DomainEventBus,
     private readonly circuitBreaker: BrokerCircuitBreakerService,
+    private readonly resilienceService: ExecutionResilienceService,
   ) {}
 
   // ─── Main entry point ────────────────────────────────────────────────────
@@ -242,7 +244,56 @@ export class ExecutionService {
         connectionReference,
       };
 
-      const result = await this.submitWithRetry(adapter, brokerRequest);
+      const resilienceResult = await this.resilienceService.submitOrderWithResilience(
+        adapter,
+        brokerRequest,
+        EXECUTION_TIMEOUT_MS,
+      );
+
+      // Handle uncertain state (timeout — order may have been placed)
+      if (resilienceResult.uncertain) {
+        this.logger.error(
+          `Trade ${trade.id} uncertain state: ${resilienceResult.rejectionReason}. ` +
+            `Reconciliation will verify broker state.`,
+        );
+        // Mark as RECONCILIATION_PENDING — the reconciliation job will check
+        await this.tradeRepo.update(trade.id, {
+          status: TradeStatus.RECONCILIATION_PENDING,
+          brokerRejectionReason: resilienceResult.rejectionReason,
+        });
+        trade.status = TradeStatus.RECONCILIATION_PENDING;
+        await this.circuitBreaker.recordFailure(
+          connection.id,
+          new Error(resilienceResult.rejectionReason ?? 'Unknown'),
+        );
+        throw new Error(
+          `Order submission uncertain: ${resilienceResult.rejectionReason ?? 'Unknown'}`,
+        );
+      }
+
+      // Handle rejection
+      if (!resilienceResult.success) {
+        await this.circuitBreaker.recordFailure(
+          connection.id,
+          new Error(resilienceResult.rejectionReason ?? 'Unknown'),
+        );
+        await this.failTradeAsRejected(
+          trade,
+          resilienceResult.rejectionReason ?? 'BROKER_REJECTED',
+        );
+        throw new Error(`Broker rejected order: ${resilienceResult.brokerMessage}`);
+      }
+
+      // Success — adapt the resilience result to the existing flow
+      const result = {
+        success: resilienceResult.success,
+        externalOrderId: resilienceResult.externalOrderId ?? undefined,
+        filledPrice: resilienceResult.filledPrice ?? undefined,
+        filledAt: new Date(),
+        status: resilienceResult.status === 'FILLED' ? ('FILLED' as const) : ('PENDING' as const),
+        brokerMessage: resilienceResult.brokerMessage ?? undefined,
+        rawResponse: undefined,
+      };
 
       // Record success — circuit breaker resets failure count
       await this.circuitBreaker.recordSuccess(connection.id);

@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { BrokerService } from './broker.service';
+import { getBrokerCatalog } from './catalog/broker-catalog';
 import { ConnectBrokerDto } from './dto/connect-broker.dto';
 import { BrokerConnectionResponseDto } from './dto/broker-connection-response.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -40,6 +41,13 @@ export class BrokerController {
   constructor(private readonly brokerService: BrokerService) {}
 
   // ─── Supported brokers ────────────────────────────────────────────────────
+
+  @Get('catalog')
+  @ApiOperation({ summary: 'Browse the full broker catalog (21+ brokers)' })
+  @ApiResponse({ status: 200, description: 'Full broker catalog with details' })
+  getBrokerCatalog() {
+    return getBrokerCatalog();
+  }
 
   @Get('supported')
   @ApiOperation({ summary: 'List supported broker integrations' })
