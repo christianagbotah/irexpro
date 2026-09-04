@@ -4,28 +4,32 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
+import { consumeSingleUseTokenFragment } from '@/lib/single-use-token-fragment';
 import { useAuth } from '@/context/auth-context';
 import { Alert, AuthLayout, Button } from '@/components/ui';
 
 interface VerifyEmailClientProps {
-  token: string | null;
   alreadyVerified: boolean;
 }
 
-export default function VerifyEmailClient({ token, alreadyVerified }: VerifyEmailClientProps) {
+export default function VerifyEmailClient({ alreadyVerified }: VerifyEmailClientProps) {
   const router = useRouter();
   const { user, accessToken, refreshUser } = useAuth();
+  const [token, setToken] = useState<string | null | undefined>(
+    alreadyVerified ? null : undefined,
+  );
   const [busy, setBusy] = useState(false);
   const [verified, setVerified] = useState(alreadyVerified);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!token) return;
-    // Keep the single-use token only in component memory. Remove it from the
-    // current browser-history entry before any later fetch/navigation can send
-    // the page URL as a same-origin Referer or preserve it in visible history.
-    window.history.replaceState(window.history.state, '', '/verify-email');
-  }, [token]);
+    if (alreadyVerified) return;
+
+    // Fragments are not sent with the initial HTTP navigation request. Read the
+    // token only in the browser, retain it only in component memory, and scrub
+    // the fragment from the current history entry immediately.
+    setToken(consumeSingleUseTokenFragment('/verify-email'));
+  }, [alreadyVerified]);
 
   async function confirm() {
     if (!token || busy || verified) return;
@@ -36,9 +40,8 @@ export default function VerifyEmailClient({ token, alreadyVerified }: VerifyEmai
       if (accessToken) {
         await refreshUser().catch(() => {});
       }
+      setToken(null);
       setVerified(true);
-      // Mark the consumed-token state without restoring the raw token to the
-      // URL. The token is never stored in local/session storage.
       router.replace('/verify-email?verified=1');
     } catch {
       // Do not echo provider/backend details or the raw token into the page.
@@ -57,6 +60,14 @@ export default function VerifyEmailClient({ token, alreadyVerified }: VerifyEmai
             {user ? 'Return to Account Security' : 'Continue to login'}
           </Link>
         </div>
+      </AuthLayout>
+    );
+  }
+
+  if (token === undefined) {
+    return (
+      <AuthLayout title="Verify your email">
+        <p className="loading-text">Loading verification request…</p>
       </AuthLayout>
     );
   }
