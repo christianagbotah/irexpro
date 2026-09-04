@@ -93,7 +93,10 @@ export class AuthController {
   @Header('Pragma', 'no-cache')
   @Throttle({ default: { ttl: 60 * 1000, limit: 10 } })
   @ApiOperation({ summary: 'Login with password and TOTP when MFA is enabled' })
-  @ApiResponse({ status: 200, description: 'Login successful; browser cookie transport omits refresh token from JSON' })
+  @ApiResponse({
+    status: 200,
+    description: 'Login successful; browser cookie transport omits refresh token from JSON',
+  })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
   async login(
     @Body() dto: LoginDto,
@@ -113,7 +116,11 @@ export class AuthController {
   @Header('Pragma', 'no-cache')
   @Throttle({ default: { ttl: 60 * 1000, limit: 60 } })
   @ApiOperation({ summary: 'Refresh and rotate access/refresh tokens' })
-  @ApiResponse({ status: 200, description: 'Cookie flow returns access token only; body/mobile flow returns access and refresh tokens' })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Cookie flow returns access token only; body/mobile flow returns access and refresh tokens',
+  })
   @ApiResponse({ status: 401, description: 'Invalid, expired, revoked, or replayed refresh token' })
   async refresh(
     @Req() req: Request,
@@ -136,9 +143,7 @@ export class AuthController {
     // A cookie-sourced refresh token must never be copied back into a
     // JavaScript-readable browser response. Mobile/native callers provide the
     // refresh token in the JSON body and keep the existing full-token contract.
-    return cookieRefreshToken
-      ? { accessToken: tokens.accessToken }
-      : tokens;
+    return cookieRefreshToken ? { accessToken: tokens.accessToken } : tokens;
   }
 
   @Delete('browser-session')
