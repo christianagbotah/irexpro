@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Header,
   Headers,
@@ -10,6 +11,7 @@ import {
   Ip,
   Optional,
   Post,
+  Query,
   Req,
   Res,
   ServiceUnavailableException,
@@ -38,6 +40,17 @@ import { MfaService } from './mfa.service';
 import { PasswordResetService } from './password-reset.service';
 import { VerificationService } from './verification.service';
 
+const COOKIE_REFRESH_TRANSPORT = 'cookie';
+
+function authResponseForTransport(
+  tokens: { accessToken: string; refreshToken: string },
+  refreshTransport?: string,
+): { accessToken: string } | { accessToken: string; refreshToken: string } {
+  return refreshTransport === COOKIE_REFRESH_TRANSPORT
+    ? { accessToken: tokens.accessToken }
+    : tokens;
+}
+
 @ApiTags('Auth')
 @Controller('auth')
 @UseGuards(ThrottlerGuard)
@@ -56,6 +69,8 @@ export class AuthController {
   @Post('register')
   @Public()
   @HttpCode(HttpStatus.CREATED)
+  @Header('Cache-Control', 'no-store')
+  @Header('Pragma', 'no-cache')
   @Throttle({ default: { ttl: 15 * 60 * 1000, limit: 10 } })
   @ApiOperation({ summary: 'Register a new user account' })
   @ApiResponse({ status: 201, description: 'User registered successfully' })
@@ -64,42 +79,49 @@ export class AuthController {
     @Body() dto: RegisterDto,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
+    @Query('refreshTransport') refreshTransport?: string,
   ) {
     const tokens = await this.authService.register(dto, req.ip);
     this.authCookieService.setRefreshCookie(res, tokens.refreshToken, dto.rememberMe);
-    return tokens;
+    return authResponseForTransport(tokens, refreshTransport);
   }
 
   @Post('login')
   @Public()
   @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'no-store')
+  @Header('Pragma', 'no-cache')
   @Throttle({ default: { ttl: 60 * 1000, limit: 10 } })
   @ApiOperation({ summary: 'Login with password and TOTP when MFA is enabled' })
-  @ApiResponse({ status: 200, description: 'Login successful, returns access and refresh tokens' })
+  @ApiResponse({ status: 200, description: 'Login successful; browser cookie transport omits refresh token from JSON' })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
   async login(
     @Body() dto: LoginDto,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
+    @Query('refreshTransport') refreshTransport?: string,
   ) {
     const tokens = await this.authService.login(dto, req.ip);
     this.authCookieService.setRefreshCookie(res, tokens.refreshToken, dto.rememberMe);
-    return tokens;
+    return authResponseForTransport(tokens, refreshTransport);
   }
 
   @Post('refresh')
   @Public()
   @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'no-store')
+  @Header('Pragma', 'no-cache')
   @Throttle({ default: { ttl: 60 * 1000, limit: 60 } })
   @ApiOperation({ summary: 'Refresh and rotate access/refresh tokens' })
-  @ApiResponse({ status: 200, description: 'New access and refresh tokens' })
+  @ApiResponse({ status: 200, description: 'Cookie flow returns access token only; body/mobile flow returns access and refresh tokens' })
   @ApiResponse({ status: 401, description: 'Invalid, expired, revoked, or replayed refresh token' })
   async refresh(
     @Req() req: Request,
     @Body() dto?: RefreshTokenDto,
     @Res({ passthrough: true }) res?: Response,
   ) {
-    const refreshToken = this.authCookieService.getRefreshTokenFromCookie(req) ?? dto?.refreshToken;
+    const cookieRefreshToken = this.authCookieService.getRefreshTokenFromCookie(req);
+    const refreshToken = cookieRefreshToken ?? dto?.refreshToken;
 
     if (!refreshToken) {
       throw new UnauthorizedException('No refresh token provided');
@@ -111,7 +133,21 @@ export class AuthController {
       this.authCookieService.setRefreshCookie(res, tokens.refreshToken);
     }
 
-    return tokens;
+    // A cookie-sourced refresh token must never be copied back into a
+    // JavaScript-readable browser response. Mobile/native callers provide the
+    // refresh token in the JSON body and keep the existing full-token contract.
+    return cookieRefreshToken
+      ? { accessToken: tokens.accessToken }
+      : tokens;
+  }
+
+  @Delete('browser-session')
+  @Public()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Throttle({ default: { ttl: 60 * 1000, limit: 30 } })
+  @ApiOperation({ summary: 'Idempotently clear the browser HttpOnly refresh cookie' })
+  clearBrowserSession(@Res({ passthrough: true }) res: Response): void {
+    this.authCookieService.clearRefreshCookie(res);
   }
 
   @Post('logout')
