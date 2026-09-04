@@ -200,8 +200,8 @@ test.describe('Sprint 49 identity security UX', () => {
     await expect(page.getByText(token)).toHaveCount(0);
     expect(requestUrls.every((url) => !url.includes(token))).toBe(true);
 
-    await page.getByLabel('New password').fill(newPassword);
-    await page.getByLabel('Confirm new password').fill(newPassword);
+    await page.getByLabel('New password', { exact: true }).fill(newPassword);
+    await page.getByLabel('Confirm new password', { exact: true }).fill(newPassword);
     await page.getByRole('button', { name: /^reset password$/i }).click();
 
     await expect(page.getByText(/Your password has been reset successfully/i)).toBeVisible();
