@@ -1,5 +1,6 @@
 import type { ApiClient } from '@irexpro/api-client';
 import { createApiClient } from '@irexpro/api-client';
+import { createBrowserAuthClient } from '@irexpro/api-client/browser-auth';
 
 /**
  * Shared API client for the web app.
@@ -9,9 +10,10 @@ import { createApiClient } from '@irexpro/api-client';
  * is caught immediately rather than producing silent wrong-URL calls.
  *
  * credentials: 'include' is set so the httpOnly refresh-token cookie (set by the
- * backend) is sent with every request. The access token is attached via the
- * Authorization header by the getAccessToken getter (which reads from a secure,
- * non-localStorage location — see docs/integration).
+ * backend) is sent with auth requests. The access token is attached via the
+ * Authorization header by the getAccessToken getter and remains memory-only.
+ * Browser auth uses the dedicated facade below so refresh tokens are never
+ * returned in JavaScript-readable login/register/refresh response bodies.
  */
 const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
@@ -32,3 +34,5 @@ export const api: ApiClient = createApiClient({
   includeCredentials: true,
   getAccessToken: () => cachedAccessToken,
 });
+
+export const browserAuth = createBrowserAuthClient(api);
