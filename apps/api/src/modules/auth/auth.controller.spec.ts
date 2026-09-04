@@ -11,21 +11,14 @@ import { PasswordResetService } from './password-reset.service';
 import { RoleName } from '../users/entities/role.entity';
 
 /**
- * AuthController spec — Hotfix: refresh token validation.
+ * AuthController spec — refresh token validation and browser confidentiality.
  *
  * These tests verify the FULL sign → verify roundtrip using a REAL JwtModule
- * (not a mock). This proves that:
- *   1. A token signed by login/register can be immediately verified by refresh.
- *   2. The same JWT secret/config is used for both signing and verification.
- *   3. Cookie and body refresh read the same token value.
+ * (not a mock), plus the Sprint 49 browser contract:
+ *   1. Cookie-sourced refresh tokens are never echoed into JSON responses.
+ *   2. Browser login/register cookie transport exposes only accessToken.
+ *   3. Mobile/body refresh preserves the full token-pair response.
  *   4. Missing/invalid tokens return 401 cleanly (not 500).
- *
- * The AuthService is mocked at the boundary (login/register/refreshTokens),
- * but the JwtService is real — so generateTokens() in the real AuthService
- * would sign with the real secret. To test the roundtrip, we sign a token with
- * the real JwtService and pass it to the controller's refresh endpoint, which
- * delegates to the (mocked) authService.refreshTokens — but we configure the
- * mock to actually verify the token using the same real JwtService.
  */
 
 const TEST_JWT_SECRET = 'test-jwt-secret-for-refresh-validation-hotfix-32chars!';
@@ -76,8 +69,6 @@ describe('AuthController — refresh token validation (hotfix)', () => {
             signOptions: { expiresIn: '15m' },
           }),
         }),
-        // Sprint 28 amendment: ThrottlerModule required because the controller
-        // now uses @UseGuards(ThrottlerGuard).
         ThrottlerModule.forRoot({ throttlers: [{ name: 'default', ttl: 60_000, limit: 100 }] }),
       ],
       controllers: [AuthController],
@@ -97,7 +88,6 @@ describe('AuthController — refresh token validation (hotfix)', () => {
     await module.close();
   });
 
-  // Helper: sign a realistic refresh token with the real JwtService
   function signRefreshToken(payload: {
     sub: string;
     email: string | null;
@@ -106,12 +96,10 @@ describe('AuthController — refresh token validation (hotfix)', () => {
     return jwtService.sign(payload, { expiresIn: '7d' });
   }
 
-  // Helper: build a mock Express Request with optional cookies
   function mockRequest(cookies: Record<string, string> = {}): Request {
     return { cookies } as unknown as Request;
   }
 
-  // Helper: build a mock Express Response that records cookie calls
   function mockResponse(): Response & { _cookies: Record<string, unknown> } {
     const _cookies: Record<string, unknown> = {};
     const res = {
@@ -125,8 +113,71 @@ describe('AuthController — refresh token validation (hotfix)', () => {
     };
   }
 
+  describe('browser login/register response transport', () => {
+    it('returns accessToken only for browser login while setting the HttpOnly refresh cookie', async () => {
+      mockAuthService.login.mockResolvedValue({
+        accessToken: 'browser-access',
+        refreshToken: 'browser-refresh-secret',
+      });
+      const res = mockResponse();
+
+      const result = await controller.login(
+        { identifier: 'user@example.com', password: 'test-password' },
+        mockRequest(),
+        res,
+        'cookie',
+      );
+
+      expect(result).toEqual({ accessToken: 'browser-access' });
+      expect(JSON.stringify(result)).not.toContain('browser-refresh-secret');
+      expect(res.cookie).toHaveBeenCalledWith(
+        'irexpro_refresh',
+        'browser-refresh-secret',
+        expect.objectContaining({ httpOnly: true }),
+      );
+    });
+
+    it('returns accessToken only for browser registration while setting the HttpOnly refresh cookie', async () => {
+      mockAuthService.register.mockResolvedValue({
+        accessToken: 'browser-access',
+        refreshToken: 'browser-register-refresh-secret',
+      });
+      const res = mockResponse();
+
+      const result = await controller.register(
+        { email: 'new@example.com', password: 'test-password' },
+        mockRequest(),
+        res,
+        'cookie',
+      );
+
+      expect(result).toEqual({ accessToken: 'browser-access' });
+      expect(JSON.stringify(result)).not.toContain('browser-register-refresh-secret');
+      expect(res.cookie).toHaveBeenCalledWith(
+        'irexpro_refresh',
+        'browser-register-refresh-secret',
+        expect.objectContaining({ httpOnly: true }),
+      );
+    });
+
+    it('keeps the legacy full-token login response when cookie transport is not requested', async () => {
+      mockAuthService.login.mockResolvedValue({
+        accessToken: 'mobile-access',
+        refreshToken: 'mobile-refresh',
+      });
+
+      const result = await controller.login(
+        { identifier: 'mobile@example.com', password: 'test-password' },
+        mockRequest(),
+        mockResponse(),
+      );
+
+      expect(result).toEqual({ accessToken: 'mobile-access', refreshToken: 'mobile-refresh' });
+    });
+  });
+
   describe('POST /auth/refresh — cookie flow (web/admin)', () => {
-    it('should read the refresh token from the httpOnly cookie', async () => {
+    it('reads the refresh token from the HttpOnly cookie without echoing it to JavaScript', async () => {
       const token = signRefreshToken({
         sub: 'user-1',
         email: 'test@example.com',
@@ -144,10 +195,11 @@ describe('AuthController — refresh token validation (hotfix)', () => {
       const result = await controller.refresh(req, undefined, res);
 
       expect(mockAuthService.refreshTokens).toHaveBeenCalledWith(token);
-      expect(result).toEqual({ accessToken: 'new-access', refreshToken: 'new-refresh' });
+      expect(result).toEqual({ accessToken: 'new-access' });
+      expect(JSON.stringify(result)).not.toContain('new-refresh');
     });
 
-    it('should set a new refresh cookie on success (rotation)', async () => {
+    it('sets a new refresh cookie on success (rotation)', async () => {
       const token = signRefreshToken({
         sub: 'user-1',
         email: 'test@example.com',
@@ -171,17 +223,26 @@ describe('AuthController — refresh token validation (hotfix)', () => {
       );
     });
 
-    it('should return 401 when no cookie and no body.refreshToken', async () => {
-      const req = mockRequest(); // no cookies
+    it('returns 401 when no cookie and no body.refreshToken', async () => {
+      const req = mockRequest();
       await expect(controller.refresh(req, undefined, mockResponse())).rejects.toThrow(
         UnauthorizedException,
       );
       expect(mockAuthService.refreshTokens).not.toHaveBeenCalled();
     });
+
+    it('idempotently clears the browser refresh cookie', () => {
+      const res = mockResponse();
+      controller.clearBrowserSession(res);
+      expect(res.clearCookie).toHaveBeenCalledWith(
+        'irexpro_refresh',
+        expect.objectContaining({ httpOnly: true }),
+      );
+    });
   });
 
   describe('POST /auth/refresh — body flow (mobile)', () => {
-    it('should read the refresh token from the JSON body', async () => {
+    it('reads the refresh token from the JSON body and returns the full token pair', async () => {
       const token = signRefreshToken({
         sub: 'user-2',
         email: 'mobile@example.com',
@@ -193,7 +254,7 @@ describe('AuthController — refresh token validation (hotfix)', () => {
         refreshToken: 'new-refresh',
       });
 
-      const req = mockRequest(); // no cookie
+      const req = mockRequest();
       const res = mockResponse();
 
       const result = await controller.refresh(req, { refreshToken: token }, res);
@@ -202,7 +263,7 @@ describe('AuthController — refresh token validation (hotfix)', () => {
       expect(result).toEqual({ accessToken: 'new-access', refreshToken: 'new-refresh' });
     });
 
-    it('should prefer the cookie over the body when both are present', async () => {
+    it('prefers the cookie over the body and therefore keeps the response browser-safe', async () => {
       const cookieToken = signRefreshToken({
         sub: 'user-cookie',
         email: 'cookie@example.com',
@@ -222,13 +283,13 @@ describe('AuthController — refresh token validation (hotfix)', () => {
       const req = mockRequest({ irexpro_refresh: cookieToken });
       const res = mockResponse();
 
-      await controller.refresh(req, { refreshToken: bodyToken }, res);
+      const result = await controller.refresh(req, { refreshToken: bodyToken }, res);
 
-      // Cookie takes precedence
       expect(mockAuthService.refreshTokens).toHaveBeenCalledWith(cookieToken);
+      expect(result).toEqual({ accessToken: 'new-access' });
     });
 
-    it('should return 401 when body is empty {} and no cookie', async () => {
+    it('returns 401 when body is empty {} and no cookie', async () => {
       const req = mockRequest();
       await expect(controller.refresh(req, {}, mockResponse())).rejects.toThrow(
         UnauthorizedException,
@@ -237,26 +298,14 @@ describe('AuthController — refresh token validation (hotfix)', () => {
   });
 
   describe('JWT sign → verify roundtrip (same secret/config)', () => {
-    /**
-     * This is the CRITICAL hotfix test. It proves that a token signed by the
-     * same JwtModule can be immediately verified — i.e., the signing secret
-     * and verification secret are identical (both come from JwtModule config).
-     *
-     * Before the hotfix, refreshTokens() passed { secret: configService.get(...) }
-     * to verify(), which could diverge from the module config. The fix removes
-     * the explicit { secret } so verify() uses the module's configured secret.
-     */
-    it('should verify a token signed by the same JwtModule (login-issued)', async () => {
+    it('verifies a token signed by the same JwtModule (login-issued)', async () => {
       const loginPayload = {
         sub: 'login-user-id',
         email: 'login@example.com',
         roles: [RoleName.USER],
       };
 
-      // Sign as login() would
       const refreshToken = jwtService.sign(loginPayload, { expiresIn: '7d' });
-
-      // Verify as refreshTokens() now does (no explicit { secret })
       const verified = jwtService.verify(refreshToken);
 
       expect(verified.sub).toBe('login-user-id');
@@ -264,10 +313,10 @@ describe('AuthController — refresh token validation (hotfix)', () => {
       expect(verified.roles).toEqual([RoleName.USER]);
     });
 
-    it('should verify a token signed by the same JwtModule (register-issued)', async () => {
+    it('verifies a token signed by the same JwtModule (register-issued)', async () => {
       const registerPayload = {
         sub: 'register-user-id',
-        email: null, // phone-only user
+        email: null,
         roles: [RoleName.USER],
       };
 
@@ -279,32 +328,30 @@ describe('AuthController — refresh token validation (hotfix)', () => {
       expect(verified.roles).toEqual([RoleName.USER]);
     });
 
-    it('should reject a token signed with a different secret', async () => {
-      // Sign with a WRONG secret
+    it('rejects a token signed with a different secret', async () => {
       const wrongToken = jwtService.sign(
         { sub: 'user', email: 'x@example.com', roles: [] },
         { secret: 'completely-different-secret', expiresIn: '7d' },
       );
 
-      // Verify with the module's configured secret should throw
       expect(() => jwtService.verify(wrongToken)).toThrow();
     });
 
-    it('should reject an expired token', async () => {
+    it('rejects an expired token', async () => {
       const expiredToken = jwtService.sign(
         { sub: 'user', email: 'x@example.com', roles: [] },
-        { expiresIn: '-1s' }, // already expired
+        { expiresIn: '-1s' },
       );
 
       expect(() => jwtService.verify(expiredToken)).toThrow();
     });
   });
 
-  describe('refresh does not expose sensitive fields', () => {
-    it('should only return accessToken and refreshToken (no passwordHash)', async () => {
+  describe('refresh response hygiene', () => {
+    it('cookie flow returns only accessToken and excludes sensitive fields', async () => {
       mockAuthService.refreshTokens.mockResolvedValue({
         accessToken: 'access',
-        refreshToken: 'refresh',
+        refreshToken: 'refresh-secret',
       });
 
       const token = signRefreshToken({
@@ -320,7 +367,8 @@ describe('AuthController — refresh token validation (hotfix)', () => {
       const serialized = JSON.stringify(result);
       expect(serialized).not.toContain('passwordHash');
       expect(serialized).not.toContain('mfaSecret');
-      expect(Object.keys(result).sort()).toEqual(['accessToken', 'refreshToken']);
+      expect(serialized).not.toContain('refresh-secret');
+      expect(Object.keys(result)).toEqual(['accessToken']);
     });
   });
 
@@ -330,7 +378,6 @@ describe('AuthController — refresh token validation (hotfix)', () => {
     });
 
     it('getRefreshTokenFromCookie should return the same value set by setRefreshCookie', () => {
-      // This verifies cookie and body refresh read the same token value
       const token = signRefreshToken({
         sub: 'user',
         email: 'x@example.com',
@@ -340,14 +387,12 @@ describe('AuthController — refresh token validation (hotfix)', () => {
       const res = mockResponse();
       authCookieService.setRefreshCookie(res, token, true);
 
-      // The cookie was set with the exact token value
       expect(res.cookie).toHaveBeenCalledWith(
         'irexpro_refresh',
         token,
         expect.objectContaining({ httpOnly: true }),
       );
 
-      // And reading it back from a request gives the same value
       const req = mockRequest({ irexpro_refresh: token });
       const readBack = authCookieService.getRefreshTokenFromCookie(req);
       expect(readBack).toBe(token);
