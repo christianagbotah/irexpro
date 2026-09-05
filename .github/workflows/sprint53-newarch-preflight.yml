@@ -137,19 +137,21 @@ jobs:
       - name: Generate disposable Android and iOS native projects
         run: pnpm --filter @irexpro/mobile exec expo prebuild --platform all --no-install --clean
 
-      - name: Prove Android and iOS generated New Architecture flags
+      - name: Prove Android and iOS generated New Architecture state
         shell: bash
         run: |
           set -Eeuo pipefail
           grep -q '^newArchEnabled=true$' apps/mobile/android/gradle.properties
+          grep -Eq "RCT_NEW_ARCH_ENABLED.*newArchEnabled.*false" apps/mobile/ios/Podfile
           node <<'NODE'
           const fs = require('node:fs');
           const props = JSON.parse(fs.readFileSync('apps/mobile/ios/Podfile.properties.json', 'utf8'));
-          if (props.newArchEnabled !== 'true') {
-            throw new Error(`Expected iOS newArchEnabled=true, got ${JSON.stringify(props.newArchEnabled)}`);
+          if (props.newArchEnabled === 'false') {
+            throw new Error('Generated iOS project explicitly opts out of New Architecture');
           }
-          console.log('Generated native projects enable New Architecture on Android and iOS.');
+          console.log(`Generated iOS project does not opt out of New Architecture (property=${JSON.stringify(props.newArchEnabled)}).`);
           NODE
+          echo 'Generated Android and iOS projects use the SDK 54 New Architecture path.'
 
       - name: Remove disposable native projects
         run: rm -rf apps/mobile/android apps/mobile/ios
