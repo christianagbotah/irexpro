@@ -203,27 +203,36 @@ export class LiveAccountService {
       order: { createdAt: 'DESC' },
     });
 
-    const [accounts, openDiscrepancies, session, riskProfile, executionHealth] = await Promise.all([
-      this.loadAccountsForConnections(connections),
-      this.discrepancyRepo.find({
-        where: { userId, status: ReconciliationDiscrepancyStatus.OPEN },
-      }),
-      this.findLatestSession(userId),
-      this.riskProfileRepo.findOne({ where: { userId } }),
-      this.loadExecutionHealth(userId, now),
-    ]);
+    const [accounts, reconciliationRows, session, riskProfile, executionHealth] = await Promise.all(
+      [
+        this.loadAccountsForConnections(connections),
+        this.loadOpenDiscrepancyRows(userId),
+        this.findLatestSession(userId),
+        this.riskProfileRepo.findOne({ where: { userId } }),
+        this.loadExecutionHealth(userId, now),
+      ],
+    );
 
     const accountByConnection = new Map(
       accounts.map((account) => [account.brokerConnectionId, account]),
     );
-    const openDiscrepancyCounts = this.groupOpenDiscrepancies(openDiscrepancies);
+    const openDiscrepancyCounts = this.groupOpenDiscrepancies(reconciliationRows.rows);
 
+    // Phase F partial-failure tri-state: the latest-run lookups are guarded
+    // individually — a failed lookup degrades to `reconciliationLoaded: false`
+    // (never to a confident "zero discrepancies" rendering).
+    let runLookupsLoaded = true;
     const connectionViews = await Promise.all(
       connections.map(async (connection) => {
-        const lastRun = await this.runRepo.findOne({
-          where: { userId, brokerConnectionId: connection.id },
-          order: { startedAt: 'DESC', createdAt: 'DESC' },
-        });
+        let lastRun: ReconciliationRun | null = null;
+        try {
+          lastRun = await this.runRepo.findOne({
+            where: { userId, brokerConnectionId: connection.id },
+            order: { startedAt: 'DESC', createdAt: 'DESC' },
+          });
+        } catch {
+          runLookupsLoaded = false;
+        }
         return this.toConnectionView(
           connection,
           accountByConnection.get(connection.id),
@@ -245,6 +254,7 @@ export class LiveAccountService {
       alerts,
       environment: this.deriveEnvironment(connections),
       hasConnections: connections.length > 0,
+      reconciliationLoaded: reconciliationRows.loaded && runLookupsLoaded,
     };
   }
 
@@ -371,6 +381,24 @@ export class LiveAccountService {
     );
   }
 
+  /**
+   * Open discrepancy rows for the user, with a load tri-state: `loaded` is
+   * false when the LOOKUP itself failed (rows are then empty — callers must
+   * not interpret that as "zero discrepancies").
+   */
+  private async loadOpenDiscrepancyRows(
+    userId: string,
+  ): Promise<{ rows: ReconciliationDiscrepancy[]; loaded: boolean }> {
+    try {
+      const rows = await this.discrepancyRepo.find({
+        where: { userId, status: ReconciliationDiscrepancyStatus.OPEN },
+      });
+      return { rows, loaded: true };
+    } catch {
+      return { rows: [], loaded: false };
+    }
+  }
+
   /** Latest session for the user — prefer a non-ENDED one, else the latest ever. */
   private async findLatestSession(userId: string): Promise<TradingSession | null> {
     const nonEnded = await this.sessionRepo.findOne({
@@ -471,7 +499,6 @@ export class LiveAccountService {
       id: connection.id,
       brokerName: connection.brokerName,
       displayName: connection.displayName ?? null,
-      accountId: connection.accountId ?? null,
       maskedAccountId: maskAccountId(connection.accountId),
       accountType: connection.accountType,
       accountCurrency: connection.accountCurrency ?? null,
@@ -609,15 +636,29 @@ export class LiveAccountService {
     }
   }
 
-  /** Directive §36 worst-case banner: LIVE beats DEMO beats PAPER. */
+  /**
+   * Directive §36 worst-case banner. Presentation precedence is
+   * LIVE > DEMO > PAPER > UNKNOWN, but environment PROVENANCE is fail-closed:
+   * - no connections at all → UNKNOWN (no connection = no environment truth);
+   * - PAPER only when some connection is explicitly PAPER mode ('PAPER' is
+   *   defensive — `BrokerMode` currently defines DEMO/LIVE only);
+   * - connections whose mode cannot be proven are never downgraded to PAPER —
+   *   they roll up to UNKNOWN instead.
+   */
   private deriveEnvironment(connections: BrokerConnection[]): LiveAccountEnvironment {
+    if (connections.length === 0) {
+      return LiveAccountEnvironment.UNKNOWN;
+    }
     if (connections.some((connection) => connection.accountType === BrokerMode.LIVE)) {
       return LiveAccountEnvironment.LIVE;
     }
     if (connections.some((connection) => connection.accountType === BrokerMode.DEMO)) {
       return LiveAccountEnvironment.DEMO;
     }
-    return LiveAccountEnvironment.PAPER;
+    if (connections.some((connection) => (connection.accountType as string) === 'PAPER')) {
+      return LiveAccountEnvironment.PAPER;
+    }
+    return LiveAccountEnvironment.UNKNOWN;
   }
 
   // ─── Alert derivation (server-side, Directive §38) ─────────────────────────

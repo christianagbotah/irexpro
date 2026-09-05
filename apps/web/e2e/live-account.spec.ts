@@ -41,7 +41,6 @@ const mockOverview = {
       id: LIVE_CONNECTION_ID,
       brokerName: 'MetaTrader 5',
       displayName: 'Primary live account',
-      accountId: 'live-acc-4123',
       maskedAccountId: '•••4123',
       accountType: 'LIVE',
       accountCurrency: 'USD',
@@ -80,7 +79,6 @@ const mockOverview = {
       id: DEMO_CONNECTION_ID,
       brokerName: 'Paper Broker',
       displayName: 'Demo paper account',
-      accountId: 'demo-acc-9001',
       maskedAccountId: '•••9001',
       accountType: 'DEMO',
       accountCurrency: 'USD',
@@ -532,6 +530,37 @@ test.describe('Live Account dashboard (Sprint 50 PR-5)', () => {
     await expect(page.getByText(/backend-authoritative live account state/i)).toBeVisible();
 
     await assertNoHorizontalOverflow(page);
+    assertNoConsoleErrors(page);
+    assertNoFailedRequests(page);
+    assertNoExternalRequests(page);
+  });
+
+  test('renders the UNKNOWN environment banner when provenance is unprovable (§36 fail-closed)', async ({
+    page,
+  }) => {
+    setupErrorCollectors(page);
+    await setupLiveAccountRoutes(page);
+    // Later-registered routes take precedence: override ONLY the overview so
+    // the server reports UNKNOWN (no connection mode proven).
+    await page.route('**/api/v1/live-account/overview', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ...mockOverview, environment: 'UNKNOWN' }),
+      }),
+    );
+    await page.goto('/live-account');
+    await expect(page.getByRole('heading', { level: 1, name: 'Live Account' })).toBeVisible();
+
+    // §36 — UNKNOWN is its own cautionary banner, never a silent PAPER claim.
+    const banner = page.getByTestId('live-env-banner');
+    await expect(banner).toBeVisible();
+    await expect(banner).toHaveClass(/live-env-banner--unknown/);
+    await expect(
+      banner.getByText(/ACCOUNT ENVIRONMENT UNKNOWN — VERIFY BROKER CONNECTION/i),
+    ).toBeVisible();
+    await expect(banner.getByText(/PAPER TRADING/i)).toHaveCount(0);
+
     assertNoConsoleErrors(page);
     assertNoFailedRequests(page);
     assertNoExternalRequests(page);

@@ -19,6 +19,7 @@ import {
 import { AuditLog, AuditSeverity } from '../audit/entities/audit-log.entity';
 import { RiskProfile } from '../risk/entities/risk-profile.entity';
 import { LiveAccountAlertSeverity, LiveConnectionHealth } from './dto/live-account.enums';
+import { accountTypeToEnvironment } from './dto/live-account-positions-response.dto';
 import {
   clampPaginationLimit,
   clampPaginationOffset,
@@ -407,20 +408,73 @@ describe('LiveAccountService', () => {
       expect(overview.hasConnections).toBe(true);
     });
 
-    it('DEMO wins over PAPER when only DEMO connections exist', async () => {
-      connectionRepo.find.mockResolvedValue([connection({ accountType: BrokerMode.DEMO })]);
+    it('DEMO wins over an explicitly PAPER connection', async () => {
+      connectionRepo.find.mockResolvedValue([
+        connection({ id: 'conn-demo', accountType: BrokerMode.DEMO }),
+        connection({
+          id: 'conn-paper',
+          accountType: 'PAPER' as unknown as BrokerMode,
+        }),
+      ]);
 
       const overview = await service.getOverview(USER_ID, NOW);
 
       expect(overview.environment).toBe('DEMO');
     });
 
-    it('empty account rolls up to PAPER with hasConnections false', async () => {
+    it('rolls up to PAPER only when a connection is explicitly PAPER mode', async () => {
+      connectionRepo.find.mockResolvedValue([
+        connection({
+          id: 'conn-paper',
+          accountType: 'PAPER' as unknown as BrokerMode,
+        }),
+      ]);
+
       const overview = await service.getOverview(USER_ID, NOW);
 
       expect(overview.environment).toBe('PAPER');
+      expect(overview.hasConnections).toBe(true);
+    });
+
+    it('empty account rolls up to UNKNOWN with hasConnections false (fail-closed)', async () => {
+      const overview = await service.getOverview(USER_ID, NOW);
+
+      expect(overview.environment).toBe('UNKNOWN');
       expect(overview.hasConnections).toBe(false);
       expect(overview.connections).toEqual([]);
+    });
+
+    it('connections with an unprovable mode roll up to UNKNOWN, never PAPER', async () => {
+      connectionRepo.find.mockResolvedValue([
+        connection({
+          id: 'conn-mystery',
+          accountType: undefined as unknown as BrokerMode,
+        }),
+      ]);
+
+      const overview = await service.getOverview(USER_ID, NOW);
+
+      expect(overview.environment).toBe('UNKNOWN');
+    });
+  });
+
+  // ─── Position environment mapping (Directive §36 fail-closed provenance) ──
+
+  describe('accountTypeToEnvironment', () => {
+    it('maps explicit LIVE and DEMO modes to their environments', () => {
+      expect(accountTypeToEnvironment(BrokerMode.LIVE)).toBe('LIVE');
+      expect(accountTypeToEnvironment(BrokerMode.DEMO)).toBe('DEMO');
+    });
+
+    it('maps only an explicit PAPER mode to PAPER', () => {
+      expect(accountTypeToEnvironment('PAPER')).toBe('PAPER');
+    });
+
+    it('returns UNKNOWN for undefined and unrecognized account types (never PAPER)', () => {
+      expect(accountTypeToEnvironment(undefined)).toBe('UNKNOWN');
+      expect(accountTypeToEnvironment(null)).toBe('UNKNOWN');
+      expect(accountTypeToEnvironment('SOMETHING_ELSE')).toBe('UNKNOWN');
+      expect(accountTypeToEnvironment('')).toBe('UNKNOWN');
     });
   });
 
@@ -776,6 +830,18 @@ describe('LiveAccountService', () => {
       expect(overview.connections[0].maskedAccountId).toBe('•••4321');
       expect(overview.connections[0].maskedAccountId).not.toContain('98765');
     });
+
+    it('serializes NO full accountId — masked identifier only (Phase F minimization)', async () => {
+      connectionRepo.find.mockResolvedValue([connection({ accountId: '987654321' })]);
+
+      const overview = await service.getOverview(USER_ID, NOW);
+      const view = overview.connections[0];
+
+      expect(view.maskedAccountId).toBe('•••4321');
+      expect(view).not.toHaveProperty('accountId');
+      expect(JSON.stringify(view)).not.toContain('987654321');
+      expect(JSON.stringify(overview)).not.toContain('987654321');
+    });
   });
 
   // ─── Financial summary ────────────────────────────────────────────────────
@@ -852,6 +918,56 @@ describe('LiveAccountService', () => {
       expect(recon.lastRunStatus).toBeNull();
       expect(recon.openDiscrepancies).toBe(0);
       expect(recon.inSync).toBe(true);
+    });
+  });
+
+  // ─── reconciliationLoaded tri-state (Phase F partial-failure) ────────────
+
+  describe('reconciliationLoaded tri-state', () => {
+    it('is true when the reconciliation state was read (even with no runs/rows)', async () => {
+      connectionRepo.find.mockResolvedValue([connection()]);
+
+      const overview = await service.getOverview(USER_ID, NOW);
+
+      expect(overview.reconciliationLoaded).toBe(true);
+    });
+
+    it('is true for an empty account (definitive no-data read)', async () => {
+      const overview = await service.getOverview(USER_ID, NOW);
+
+      expect(overview.reconciliationLoaded).toBe(true);
+    });
+
+    it('is false when the latest-run lookup fails (never rendered as zero discrepancies)', async () => {
+      connectionRepo.find.mockResolvedValue([connection()]);
+      runRepo.findOne.mockRejectedValue(new Error('run store unavailable'));
+
+      const overview = await service.getOverview(USER_ID, NOW);
+
+      expect(overview.reconciliationLoaded).toBe(false);
+    });
+
+    it('is false when the open-discrepancy lookup fails', async () => {
+      connectionRepo.find.mockResolvedValue([connection()]);
+      discrepancyRepo.find.mockRejectedValue(new Error('discrepancy store unavailable'));
+
+      const overview = await service.getOverview(USER_ID, NOW);
+
+      expect(overview.reconciliationLoaded).toBe(false);
+    });
+
+    it('is false when only ONE of several per-connection run lookups fails', async () => {
+      connectionRepo.find.mockResolvedValue([
+        connection({ id: 'conn-1' }),
+        connection({ id: 'conn-2' }),
+      ]);
+      runRepo.findOne
+        .mockResolvedValueOnce(run())
+        .mockRejectedValueOnce(new Error('run store flaked'));
+
+      const overview = await service.getOverview(USER_ID, NOW);
+
+      expect(overview.reconciliationLoaded).toBe(false);
     });
   });
 
@@ -1064,7 +1180,9 @@ describe('LiveAccountService', () => {
       expect(view.positions[0].environment).toBe('LIVE');
       expect(view.positions[0].brokerName).toBe('MetaTrader 5');
       expect(view.positions[1].environment).toBe('DEMO');
-      expect(view.positions[2].environment).toBe('PAPER');
+      // Orphan (owning connection gone) has no environment truth — UNKNOWN,
+      // never a silent PAPER downgrade.
+      expect(view.positions[2].environment).toBe('UNKNOWN');
       expect(view.positions[2].brokerName).toBeNull();
     });
 

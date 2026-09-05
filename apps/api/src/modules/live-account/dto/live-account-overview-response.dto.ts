@@ -125,15 +125,11 @@ export class LiveAccountConnectionViewDto {
 
   @ApiPropertyOptional({
     nullable: true,
-    description:
-      'Broker-side account identifier (not a secret — the entity marks it safe to store).',
-  })
-  accountId: string | null;
-
-  @ApiPropertyOptional({
-    nullable: true,
     example: '•••4123',
-    description: 'Masked account identifier safe for display (last 4 characters only).',
+    description:
+      'Masked account identifier safe for display (last 4 characters only) — ' +
+      'the ONLY account identifier in this user-facing contract (Phase F ' +
+      'accountId minimization: the full id never ships here).',
   })
   maskedAccountId: string | null;
 
@@ -283,10 +279,22 @@ export class LiveAccountOverviewResponseDto {
 
   @ApiProperty({
     enum: LiveAccountEnvironment,
-    description: 'Worst-case environment banner (Directive §36): LIVE > DEMO > PAPER.',
+    description:
+      'Worst-case environment banner (Directive §36): LIVE > DEMO > PAPER > UNKNOWN. ' +
+      'UNKNOWN = environment provenance could not be established (no connections / ' +
+      'no explicit mode) — never presented as PAPER.',
   })
   environment: LiveAccountEnvironment;
 
   @ApiProperty({ description: 'True when at least one broker connection exists.' })
   hasConnections: boolean;
+
+  @ApiProperty({
+    description:
+      'Phase F partial-failure tri-state: true when the reconciliation state ' +
+      '(latest runs + open discrepancy counts) was actually read from the store; ' +
+      'false when the lookup itself failed — the zero-valued counts must never ' +
+      'be rendered as "zero discrepancies".',
+  })
+  reconciliationLoaded: boolean;
 }

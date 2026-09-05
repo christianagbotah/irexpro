@@ -5,6 +5,16 @@
 > This document is the engineering record for the adapter, the mapping
 > decisions, and the exact evidence required before OANDA may be promoted
 > to `SUPPORTED`.
+>
+> **Registry truth (architect Phase H):** the OANDA catalog entry carries
+> `productionLiveVerification: { status: 'UNVERIFIED' }`. BETA ≠ production-LIVE:
+> the implemented adapter makes OANDA **connectable for DEMO use**
+> (`isConnectable('oanda') === true`), but LIVE is **fail-closed by code** —
+> `isProductionLiveEligible('oanda') === false`, so `createConnection` with
+> `accountType: LIVE` and `enableLiveTrading` both reject with
+> `ForbiddenException` ("Broker oanda is not production-LIVE verified — …
+> BETA is DEMO-only"). No convention, no UI toggle — the server enforces it.
+> See `docs/brokers/provider-matrix.md` → "Production-LIVE verification".
 
 ## Scope
 
@@ -27,6 +37,12 @@ environments — asserted by contract-suite §AN-4 for every recorded request.
 Per-user OANDA personal access tokens are captured through the existing
 encrypted broker-credential store at connect time (`apiKey` field,
 in-memory only, redacted from all errors/logs/results — §AN-5).
+
+> The LIVE row above describes the adapter's URL mapping only. While
+> `productionLiveVerification` is `UNVERIFIED`, the **server rejects any
+> LIVE connection at creation time** (`BrokerService.createConnection` —
+> Phase H fail-closed gate), so `api-fxtrade.oanda.com` is unreachable from
+> iRexPro in practice. DEMO (fxpractice) is the only reachable environment.
 
 ## v20 endpoint mapping
 
@@ -107,14 +123,30 @@ streams are not implemented; the adapter is REST-polling only.
 
 ## Requirements before SUPPORTED (operator checklist)
 
+These same items are the **production-LIVE verification evidence** required
+before `productionLiveVerification` may be flipped to `VERIFIED` in
+`BROKER_CATALOG` (operator-attested practice-account validation records):
+
 1. Obtain an OANDA practice (fxpractice) personal access token and connect
-   a real DEMO BrokerConnection end-to-end.
-2. Verify the full order cycle: market fill, resting limit, SL/TP
-   modification, partial close, close-all, history.
+   a real DEMO BrokerConnection end-to-end (**connect**).
+2. Verify account-info reads for that connection (`GET
+   /v3/accounts/{id}/summary` — balance/margin fields) (**account-info
+   round-trip**) and the full order cycle: market fill, resting limit,
+   SL/TP modification, partial close, close-all, history (**order
+   round-trip on the practice account**).
 3. Verify reconciliation against live provider state for ≥ 24h.
 4. Add v20 streaming (SSE) or document its permanent omission.
 5. Confirm rate-limit behavior under production load and tune
    `rateLimitProfile` defaults.
 6. Re-run the shared §AN contract suite against a recording proxy for
    response-shape drift.
-7. Update `BROKER_CATALOG` + this matrix row with the evidence.
+7. Record the evidence here (dates, ticket ids, exported provider
+   confirmations — never secrets) and set
+   `productionLiveVerification: { status: 'VERIFIED', verifiedAt, evidenceRef }`
+   on the OANDA catalog entry; update the matrix row in
+   `docs/brokers/provider-matrix.md`.
+
+Until every required item is attested, the registry stays at
+`{ status: 'UNVERIFIED' }` and LIVE remains fail-closed. **No test in this
+repository fabricates a VERIFIED OANDA** — the only `VERIFIED` fixture is
+metatrader5 (live-proven production route).

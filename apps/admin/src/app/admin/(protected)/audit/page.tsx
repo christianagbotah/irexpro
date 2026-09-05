@@ -19,7 +19,9 @@ import {
  * Cross-user audit trail with severity filtering and actor/resource scoping.
  * The contract (AdminAuditRowView) carries NO metadata blobs, IPs, or user
  * agents — this page renders exactly the contract fields and nothing more.
- * Text filters (actorUserId, resourceType) apply on submit/Enter, trimmed.
+ * Text filters (actorUserId, resourceType) apply on submit/Enter, trimmed;
+ * the inputs are maxLength-bounded to the server-side filter bounds
+ * (64 actorUserId / 100 resourceType — server truncates defensively too).
  */
 
 const AUDIT_SEVERITY_FILTERS: AdminAuditLogFilter[] = ['ALL', 'CRITICAL', 'WARNING'];
@@ -214,6 +216,7 @@ export default function AdminAuditPage() {
                 placeholder="Exact user id"
                 autoComplete="off"
                 disabled={loading}
+                maxLength={64}
                 onChange={(event) => setActorInput(event.target.value)}
               />
             </div>
@@ -229,6 +232,7 @@ export default function AdminAuditPage() {
                 placeholder="e.g. BrokerConnection"
                 autoComplete="off"
                 disabled={loading}
+                maxLength={100}
                 onChange={(event) => setResourceInput(event.target.value)}
               />
             </div>

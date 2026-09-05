@@ -88,6 +88,106 @@ describe('BrokerProviderRegistryService', () => {
     });
   });
 
+  describe('production-LIVE verification (architect Phase H)', () => {
+    it('OANDA: BETA + adapter available + productionLiveVerification UNVERIFIED — DEMO connectable, LIVE ineligible', async () => {
+      const service = await buildService(['metatrader5', 'paper-broker', 'oanda']);
+      const oanda = service.getCatalog().find((e) => e.id === 'oanda');
+
+      // Implementation facts…
+      expect(oanda?.status).toBe(BrokerAvailabilityStatus.BETA);
+      expect(oanda?.adapterAvailable).toBe(true);
+      // …and the separate production-LIVE verification fact.
+      expect(oanda?.productionLiveVerification.status).toBe('UNVERIFIED');
+      expect(oanda?.productionLiveVerification.verifiedAt).toBeNull();
+      expect(oanda?.productionLiveVerification.evidenceRef).toBeNull();
+
+      // BETA ≠ production-LIVE: connectable (DEMO) but never LIVE-eligible.
+      expect(service.isConnectable('oanda')).toBe(true);
+      expect(service.isProductionLiveEligible('oanda')).toBe(false);
+    });
+
+    it('metatrader5: isProductionLiveEligible true only because VERIFIED evidence exists', async () => {
+      const service = await buildService(['metatrader5', 'paper-broker']);
+      const mt5 = service.getCatalog().find((e) => e.id === 'metatrader5');
+
+      expect(mt5?.status).toBe(BrokerAvailabilityStatus.SUPPORTED);
+      expect(mt5?.productionLiveVerification.status).toBe('VERIFIED');
+      // No fabricated attestation date — the evidence reference describes
+      // the live-proven production route instead.
+      expect(mt5?.productionLiveVerification.verifiedAt).toBeNull();
+      expect(mt5?.productionLiveVerification.evidenceRef).toContain('production');
+      expect(service.isProductionLiveEligible('metatrader5')).toBe(true);
+    });
+
+    it('metatrader5 is NOT LIVE-eligible when its adapter is not registered (fail closed)', async () => {
+      // VERIFIED catalog evidence alone is insufficient — without a runtime
+      // adapter the entry downgrades to NOT_STARTED and LIVE fails closed.
+      const service = await buildService(['paper-broker']);
+      const mt5 = service.getCatalog().find((e) => e.id === 'metatrader5');
+      expect(mt5?.status).toBe(BrokerAvailabilityStatus.NOT_STARTED);
+      expect(service.isProductionLiveEligible('metatrader5')).toBe(false);
+    });
+
+    it('entries without catalog evidence materialize UNVERIFIED and are ineligible (paper-broker, ctrader)', async () => {
+      const service = await buildService(['metatrader5', 'paper-broker']);
+
+      const paper = service.getCatalog().find((e) => e.id === 'paper-broker');
+      expect(paper?.productionLiveVerification).toEqual({
+        status: 'UNVERIFIED',
+        verifiedAt: null,
+        evidenceRef: null,
+      });
+      // Paper broker is DEMO-only by design — never LIVE-eligible.
+      expect(service.isProductionLiveEligible('paper-broker')).toBe(false);
+
+      const ctrader = service.getCatalog().find((e) => e.id === 'ctrader');
+      expect(ctrader?.productionLiveVerification.status).toBe('UNVERIFIED');
+      expect(service.isProductionLiveEligible('ctrader')).toBe(false);
+    });
+
+    it('unknown brokers are never production-LIVE eligible (fail closed)', async () => {
+      const service = await buildService(['metatrader5', 'paper-broker', 'oanda']);
+      expect(service.isProductionLiveEligible('unknown-broker')).toBe(false);
+      expect(service.isProductionLiveEligible('')).toBe(false);
+    });
+
+    it('every catalog entry serializes the materialized productionLiveVerification shape', async () => {
+      const service = await buildService(['metatrader5', 'paper-broker', 'oanda']);
+      const catalog = service.getCatalog();
+
+      expect(catalog.length).toBeGreaterThan(0);
+      for (const entry of catalog) {
+        // Always materialized (no undefined leakage into JSON payloads).
+        expect(entry.productionLiveVerification).toBeDefined();
+        expect(Object.keys(entry.productionLiveVerification).sort()).toEqual([
+          'evidenceRef',
+          'status',
+          'verifiedAt',
+        ]);
+        expect(['UNVERIFIED', 'VERIFIED']).toContain(entry.productionLiveVerification.status);
+        // Either-null contract: VERIFIED carries evidence; UNVERIFIED never does.
+        if (entry.productionLiveVerification.status === 'VERIFIED') {
+          expect(typeof entry.productionLiveVerification.evidenceRef).toBe('string');
+          expect(entry.productionLiveVerification.evidenceRef!.length).toBeGreaterThan(0);
+        } else {
+          expect(entry.productionLiveVerification.verifiedAt).toBeNull();
+          expect(entry.productionLiveVerification.evidenceRef).toBeNull();
+        }
+      }
+    });
+
+    it('metatrader5 is the ONLY VERIFIED entry — no test or catalog fixture fabricates OANDA LIVE evidence', async () => {
+      const service = await buildService(['metatrader5', 'paper-broker', 'oanda']);
+      const verified = service
+        .getCatalog()
+        .filter((e) => e.productionLiveVerification.status === 'VERIFIED')
+        .map((e) => e.id);
+
+      expect(verified).toEqual(['metatrader5']);
+      expect(service.isProductionLiveEligible('oanda')).toBe(false);
+    });
+  });
+
   describe('fail-closed connectability', () => {
     it('isConnectable true only for entries with a registered adapter', async () => {
       const service = await buildService(['metatrader5']);

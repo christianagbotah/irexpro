@@ -111,13 +111,27 @@ export function toLivePositionRowView(
   };
 }
 
-/** Map a connection account type to the banner environment (unknown → PAPER). */
+/**
+ * Map a connection account type to the position environment (Directive §36).
+ *
+ * Fail-closed provenance: ONLY an explicit LIVE/DEMO/PAPER mode maps to that
+ * environment. Unknown or absent accountType maps to UNKNOWN — it is never
+ * downgraded to PAPER (an unprovenanced environment must not be presented as
+ * the safe simulated mode). `BrokerMode` currently defines DEMO/LIVE; the
+ * explicit 'PAPER' comparison is defensive so a future paper mode value maps
+ * honestly instead of collapsing to UNKNOWN.
+ */
 export function accountTypeToEnvironment(
-  accountType: BrokerMode | undefined,
+  accountType: BrokerMode | string | null | undefined,
 ): LiveAccountEnvironment {
-  return accountType === BrokerMode.LIVE
-    ? LiveAccountEnvironment.LIVE
-    : accountType === BrokerMode.DEMO
-      ? LiveAccountEnvironment.DEMO
-      : LiveAccountEnvironment.PAPER;
+  switch (accountType) {
+    case BrokerMode.LIVE:
+      return LiveAccountEnvironment.LIVE;
+    case BrokerMode.DEMO:
+      return LiveAccountEnvironment.DEMO;
+    case 'PAPER':
+      return LiveAccountEnvironment.PAPER;
+    default:
+      return LiveAccountEnvironment.UNKNOWN;
+  }
 }

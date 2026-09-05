@@ -50,6 +50,9 @@ const mockProviderRegistry = () => ({
   isConnectable: jest.fn().mockReturnValue(true),
   hasCapability: jest.fn().mockReturnValue(true),
   supportsEnvironment: jest.fn().mockReturnValue(true),
+  // Phase H: fixtures are metatrader5 (the VERIFIED provider); the real
+  // fail-closed semantics are proven in broker-authorization-lifecycle.spec.
+  isProductionLiveEligible: jest.fn().mockReturnValue(true),
   catalogVersion: 'v1',
 });
 
@@ -84,6 +87,9 @@ const connectedConnection = (overrides: Partial<Record<string, unknown>> = {}) =
   accountType: BrokerMode.DEMO,
   status: BrokerConnectionStatus.CONNECTED,
   consecutiveFailureCount: 0,
+  // A3: usable credential state — the lifecycle gate must pass
+  credentialStatus: 'VERIFIED',
+  authorizationStatus: 'ACTIVE',
   encryptedCredentials: 'ciphertext',
   credentialIv: 'iv',
   credentialTag: 'tag',
@@ -307,12 +313,15 @@ describe('BrokerService', () => {
         credentialIv: 'iv',
         credentialTag: 'tag',
         encryptionKeyId: 'env-key-v1',
+        authorizationStatus: BrokerAuthorizationStatus.NOT_CONNECTED,
+        credentialStatus: 'CREATED',
         consecutiveFailureCount: 0,
       };
       connectionRepo.findOne
         .mockResolvedValueOnce(mockConn)
         .mockResolvedValueOnce({ ...mockConn, status: BrokerConnectionStatus.CONNECTED });
-      connectionRepo.update.mockResolvedValue({});
+      // A4: repository.update must resolve an UpdateResult with affected > 0
+      connectionRepo.update.mockResolvedValue({ affected: 1 });
       accountRepo.findOne.mockResolvedValue(null);
       accountRepo.create.mockReturnValue({});
       accountRepo.save.mockResolvedValue({});
@@ -360,16 +369,21 @@ describe('BrokerService', () => {
           accountType: BrokerMode.DEMO,
           demoValidated: true,
         });
-      connectionRepo.update.mockResolvedValue({});
+      // A4: repository.update must resolve an UpdateResult with affected > 0
+      // and the transition criteria now pins the expected authorization state.
+      connectionRepo.update.mockResolvedValue({ affected: 1 });
 
       await expect(service.enableLiveTrading('conn-live', 'user-1')).resolves.not.toThrow();
       // Sprint 50: dual-write — legacy boolean + authoritative state machine
-      expect(connectionRepo.update).toHaveBeenCalledWith('conn-live', {
-        liveTradingEnabled: true,
-        authorizationStatus: BrokerAuthorizationStatus.ACTIVE,
-        authorizedAt: expect.any(Date),
-        authorizationRevokedAt: null,
-      });
+      expect(connectionRepo.update).toHaveBeenCalledWith(
+        { id: 'conn-live', authorizationStatus: BrokerAuthorizationStatus.CONNECTED },
+        {
+          liveTradingEnabled: true,
+          authorizationStatus: BrokerAuthorizationStatus.ACTIVE,
+          authorizedAt: expect.any(Date),
+          authorizationRevokedAt: null,
+        },
+      );
     });
 
     it('rejects state-machine-invalid transitions with ConflictException (Sprint 50)', async () => {
@@ -478,9 +492,10 @@ describe('BrokerService', () => {
       const result = await service.healthCheck('conn-1');
 
       expect(result).toBe(false);
-      // Must call update with SUSPENDED status
+      // A4: the SUSPENDED transition is a guarded conditional write — the
+      // criteria pins the expected authorization state (ACTIVE here).
       expect(connectionRepo.update).toHaveBeenCalledWith(
-        'conn-1',
+        { id: 'conn-1', authorizationStatus: BrokerAuthorizationStatus.ACTIVE },
         expect.objectContaining({ status: BrokerConnectionStatus.SUSPENDED }),
       );
       // Must write a CRITICAL audit event

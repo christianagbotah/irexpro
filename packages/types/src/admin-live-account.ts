@@ -24,10 +24,13 @@ export interface AdminConnectionStateCounts {
   connecting: number;
   error: number;
   disconnected: number;
+  /** connectionStatus = SUSPENDED bucket (distinct from the authorizationStatus `suspended` bucket). */
+  suspendedConnectionStatus: number;
   /** authorizationStatus buckets */
   authorized: number;
   authorizationRequired: number;
   revoked: number;
+  /** authorizationStatus = SUSPENDED bucket (distinct from `suspendedConnectionStatus`). */
   suspended: number;
   /** environment buckets */
   demo: number;
@@ -51,6 +54,23 @@ export interface AdminExecutionControlView {
   activatedBy: string | null;
   activatedAt: string;
   expiresAt: string | null;
+  /**
+   * Lifecycle status: ACTIVE = currently blocking; EXPIRED = retained record
+   * (never blocking; reactivation replaces it). Optional for wire
+   * compatibility with payloads emitted before this field existed.
+   */
+  status?: 'ACTIVE' | 'EXPIRED';
+}
+
+/**
+ * Retained EXPIRED execution-control records (admin inventory). Expired rows
+ * never block execution; reactivation at the same scope replaces them.
+ */
+export interface AdminExpiredControlsView {
+  /** Total retained expired records (may exceed the bounded list below). */
+  count: number;
+  /** Most recent expired records by activatedAt desc (bounded payload). */
+  controls: AdminExecutionControlView[];
 }
 
 export interface AdminProviderRegistryEntry {
@@ -67,6 +87,11 @@ export interface AdminLiveOpsOverviewView {
   discrepancies: AdminDiscrepancyCounts;
   /** Active emergency execution controls (kill-switch inventory). */
   activeControls: AdminExecutionControlView[];
+  /**
+   * Retained expired execution-control records (never blocking). Optional for
+   * wire compatibility with payloads emitted before this field existed.
+   */
+  expiredControls?: AdminExpiredControlsView;
   providers: AdminProviderRegistryEntry[];
   automation: {
     activeSessions: number;
