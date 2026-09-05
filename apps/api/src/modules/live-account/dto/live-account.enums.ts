@@ -8,11 +8,18 @@
  * declared here.
  */
 
-/** Directive §36 — DEMO / PAPER / LIVE must be visually unmistakable. */
+/**
+ * Directive §36 — DEMO / PAPER / LIVE must be visually unmistakable.
+ *
+ * UNKNOWN is the fail-closed truth value: an environment whose provenance
+ * cannot be proven (no connections, or a connection with no explicit mode)
+ * is reported as UNKNOWN — it is NEVER presented as the safe PAPER mode.
+ */
 export enum LiveAccountEnvironment {
   DEMO = 'DEMO',
   LIVE = 'LIVE',
   PAPER = 'PAPER',
+  UNKNOWN = 'UNKNOWN',
 }
 
 /** Derived connection health roll-up (server-computed, fail-closed). */

@@ -25,6 +25,7 @@ const connection = {
   userId,
   brokerId: 'paper-broker',
   accountType: BrokerMode.DEMO,
+  credentialStatus: 'VERIFIED',
   encryptedCredentials: 'ciphertext',
   credentialIv: 'iv',
   credentialTag: 'tag',
@@ -80,7 +81,7 @@ describe('ExecutionOrchestrator', () => {
     markReconciliationPending: jest.Mock;
     generateIdempotencyKey: jest.Mock;
   };
-  let brokerService: { isConnectionExecutable: jest.Mock };
+  let brokerService: { isConnectionExecutable: jest.Mock; findConnectionById: jest.Mock };
   let controlService: { checkExecutionPermission: jest.Mock };
   let adapter: Record<string, jest.Mock>;
   let auditService: { log: jest.Mock };
@@ -113,7 +114,12 @@ describe('ExecutionOrchestrator', () => {
         .mockResolvedValue({ ...baseOrder, status: OrderStatus.RECONCILIATION_PENDING }),
       generateIdempotencyKey: jest.fn().mockReturnValue('hashed-idem-key'),
     };
-    brokerService = { isConnectionExecutable: jest.fn().mockReturnValue(true) };
+    brokerService = {
+      isConnectionExecutable: jest.fn().mockReturnValue(true),
+      // Phase D: assertDispatchable re-loads the persisted connection —
+      // default echo of the fixture (tests override for stale-snapshot cases)
+      findConnectionById: jest.fn().mockResolvedValue(connection),
+    };
     controlService = {
       checkExecutionPermission: jest.fn().mockResolvedValue({ allowed: true, blockedBy: null }),
     };
@@ -208,6 +214,8 @@ describe('ExecutionOrchestrator', () => {
 
     it('LIVE connection not executable → ForbiddenException (fail-closed)', async () => {
       brokerService.isConnectionExecutable.mockReturnValue(false);
+      // Phase D: the PERSISTED (re-loaded) connection is the LIVE one
+      brokerService.findConnectionById.mockResolvedValue(liveConnection);
       await expect(
         orchestrator.assertDispatchable({ userId, connection: liveConnection }),
       ).rejects.toThrow(ForbiddenException);
@@ -221,9 +229,87 @@ describe('ExecutionOrchestrator', () => {
 
     it('LIVE connection executable (ACTIVE) → passes', async () => {
       brokerService.isConnectionExecutable.mockReturnValue(true);
+      brokerService.findConnectionById.mockResolvedValue(liveConnection);
       await expect(
         orchestrator.assertDispatchable({ userId, connection: liveConnection }),
       ).resolves.toBeUndefined();
+    });
+
+    it('Phase D: stale snapshot defense — persisted state REVOKED blocks despite an ACTIVE snapshot', async () => {
+      // Caller's snapshot says ACTIVE, but the re-loaded persisted state is REVOKED
+      brokerService.findConnectionById.mockResolvedValue({
+        ...liveConnection,
+        authorizationStatus: 'REVOKED',
+      } as unknown as BrokerConnection);
+      brokerService.isConnectionExecutable.mockReturnValue(false);
+
+      await expect(
+        orchestrator.assertDispatchable({ userId, connection: liveConnection }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(auditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            reason: 'LIVE_AUTHORIZATION_REQUIRED',
+            authorizationStatus: 'REVOKED',
+          }),
+        }),
+      );
+    });
+
+    it('Phase D: connection deleted between load and dispatch → fail-closed Forbidden', async () => {
+      brokerService.findConnectionById.mockRejectedValue(new Error('not found'));
+      await expect(orchestrator.assertDispatchable({ userId, connection })).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('Phase D (A3 boundary): unusable credential lifecycle blocks BEFORE decrypt', async () => {
+      brokerService.findConnectionById.mockResolvedValue({
+        ...connection,
+        credentialStatus: 'REVOKED',
+      } as unknown as BrokerConnection);
+
+      await expect(orchestrator.assertDispatchable({ userId, connection })).rejects.toThrow(
+        ForbiddenException,
+      );
+      expect(auditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            reason: 'CREDENTIAL_LIFECYCLE_BLOCKED',
+            credentialStatus: 'REVOKED',
+          }),
+        }),
+      );
+    });
+
+    it('Phase D (A3 boundary): missing ciphertext blocks provider dispatch', async () => {
+      brokerService.findConnectionById.mockResolvedValue({
+        ...connection,
+        encryptedCredentials: null,
+      } as unknown as BrokerConnection);
+
+      await expect(orchestrator.assertDispatchable({ userId, connection })).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('Phase D: secret-like material in provider reject reasons is redacted', async () => {
+      adapter.placeOrder.mockResolvedValue({
+        success: false,
+        status: 'REJECTED',
+        brokerMessage: 'Auth failed for token AbCdEf1234567890GhIjKl (provider 8)',
+      });
+      const outcome = await orchestrator.dispatchOrder(intent, connection);
+
+      expect(outcome.outcome).toBe('REJECTED');
+      if (outcome.outcome === 'REJECTED') {
+        expect(outcome.reason).not.toMatch(/AbCdEf1234567890GhIjKl/);
+        expect(outcome.reason).toMatch(/\[redacted\]/);
+      }
+      expect(orderService.rejectOrder).toHaveBeenCalledWith(
+        'order-1',
+        expect.stringMatching(/\[redacted\]/),
+      );
     });
 
     it('DEMO connection passes even when the authorization machine is not ACTIVE', async () => {
