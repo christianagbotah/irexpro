@@ -34,12 +34,16 @@ env:
   NODE_VERSION: '22'
   PNPM_VERSION: '10.34.5'
   CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  CI: '1'
+  EXPO_NO_TELEMETRY: '1'
+  EXPO_OFFLINE: '1'
+  EXPO_PUBLIC_API_BASE_URL: 'http://127.0.0.1:3010/api/v1'
 
 jobs:
-  typecheck:
-    name: Mobile Typecheck
+  validate:
+    name: Mobile Typecheck & Bundle Smoke
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 25
 
     steps:
       - name: Checkout exact candidate
@@ -68,5 +72,43 @@ jobs:
       - name: Install dependencies from frozen lockfile
         run: pnpm install --frozen-lockfile
 
+      - name: Verify configured Expo assets exist
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const config = require('./apps/mobile/app.json').expo;
+          const assets = [
+            ['icon', config.icon],
+            ['splash.image', config.splash?.image],
+            ['android.adaptiveIcon.foregroundImage', config.android?.adaptiveIcon?.foregroundImage],
+          ];
+          for (const [label, relative] of assets) {
+            if (!relative || typeof relative !== 'string') {
+              throw new Error(`Missing Expo asset configuration: ${label}`);
+            }
+            const resolved = path.resolve('apps/mobile', relative);
+            if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) {
+              throw new Error(`Configured Expo asset does not exist: ${label} -> ${relative}`);
+            }
+          }
+          console.log(`Verified ${assets.length} configured Expo assets.`);
+          NODE
+
       - name: Typecheck mobile app against shared workspace contracts
         run: pnpm --filter @irexpro/mobile typecheck
+
+      - name: Export Android bundle with Metro
+        run: >-
+          pnpm --filter @irexpro/mobile exec expo export
+          --platform android
+          --output-dir "$RUNNER_TEMP/irexpro-mobile-android"
+          --clear
+
+      - name: Export iOS bundle with Metro
+        run: >-
+          pnpm --filter @irexpro/mobile exec expo export
+          --platform ios
+          --output-dir "$RUNNER_TEMP/irexpro-mobile-ios"
+          --clear
