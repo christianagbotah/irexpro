@@ -25,6 +25,7 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
   const apiPrefix = configService.get<string>('app.apiPrefix', 'api/v1');
   const port = configService.get<number>('app.port', 3000);
+  const host = configService.get<string>('app.host', '0.0.0.0');
   const corsOrigins = configService.get<string[]>('app.corsOrigins', ['http://localhost:3001']);
   const env = configService.get<string>('app.env', 'development');
 
@@ -71,10 +72,10 @@ async function bootstrap() {
     setupSwagger(app);
   }
 
-  await app.listen(port);
-  logger.log(`iRexPro API running on http://localhost:${port}/${apiPrefix}`);
+  await app.listen(port, host);
+  logger.log(`iRexPro API running on http://${host}:${port}/${apiPrefix}`);
   logger.log(
-    `Swagger docs: http://localhost:${port}/${configService.get('swagger.path', 'api/docs')}`,
+    `Swagger docs: http://${host}:${port}/${configService.get('swagger.path', 'api/docs')}`,
   );
 }
 
