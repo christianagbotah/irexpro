@@ -235,6 +235,7 @@ describe('ExecutionControlService', () => {
       const view = await service.activateControl(baseDto(), 'admin-1', '10.0.0.1');
 
       expect(view.scope).toBe(ExecutionControlScope.GLOBAL);
+      expect(view.status).toBe(ExecutionControlStatus.ACTIVE);
       expect(view.scopeKey).toBeNull();
       expect(controlRepo.save).toHaveBeenCalledTimes(1);
       expect(auditService.log).toHaveBeenCalledWith(
@@ -364,6 +365,53 @@ describe('ExecutionControlService', () => {
 
       const views = await service.listActiveControls();
       expect(views.map((v) => v.id)).toEqual(['ctl-a']);
+      // Every active-inventory view explicitly carries status = ACTIVE.
+      expect(views.every((v) => v.status === ExecutionControlStatus.ACTIVE)).toBe(true);
+    });
+  });
+
+  describe('listControlsIncludingExpired (admin inventory — G4)', () => {
+    it('returns ALL rows with their effective status (ACTIVE and EXPIRED both present)', async () => {
+      controlRepo.find.mockResolvedValue([
+        makeControl({ id: 'ctl-live' }),
+        makeControl({ id: 'ctl-old', status: ExecutionControlStatus.EXPIRED }),
+      ]);
+
+      const views = await service.listControlsIncludingExpired();
+      expect(views.map((v) => v.id)).toEqual(['ctl-live', 'ctl-old']);
+      expect(views.map((v) => v.status)).toEqual([
+        ExecutionControlStatus.ACTIVE,
+        ExecutionControlStatus.EXPIRED,
+      ]);
+    });
+
+    it('reports EXPIRED for a persisted-ACTIVE row whose expiry has passed (effective status is honest)', async () => {
+      controlRepo.find.mockResolvedValue([
+        makeControl({
+          id: 'ctl-stale',
+          expiresAt: new Date(Date.now() - 60_000),
+        }),
+      ]);
+
+      const views = await service.listControlsIncludingExpired();
+      // Reads already ignore this row — the inventory must not present it as ACTIVE.
+      expect(views[0].status).toBe(ExecutionControlStatus.EXPIRED);
+    });
+
+    it('carries the full view shape (scope/scopeKey/reason/activatedBy/dates/status)', async () => {
+      controlRepo.find.mockResolvedValue([makeControl({ id: 'ctl-full' })]);
+
+      const [view] = await service.listControlsIncludingExpired();
+      expect(view).toMatchObject({
+        id: 'ctl-full',
+        scope: ExecutionControlScope.GLOBAL,
+        scopeKey: null,
+        reason: 'incident',
+        activatedByUserId: 'admin-1',
+        status: ExecutionControlStatus.ACTIVE,
+      });
+      expect(view.activatedAt).toBeInstanceOf(Date);
+      expect(view.expiresAt).toBeNull();
     });
   });
 

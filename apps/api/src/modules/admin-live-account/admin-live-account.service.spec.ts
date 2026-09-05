@@ -7,7 +7,10 @@ import { BrokerAuthorizationStatus } from '../broker/authorization/broker-author
 import { BrokerCredentialStatus } from '../broker/authorization/broker-credential-status';
 import { BrokerProviderRegistryService } from '../broker/registry/broker-provider-registry.service';
 import { TradingSession, TradingSessionStatus } from '../execution/entities/trading-session.entity';
-import { ExecutionControlScope } from '../execution-control/entities/execution-control.entity';
+import {
+  ExecutionControlScope,
+  ExecutionControlStatus,
+} from '../execution-control/entities/execution-control.entity';
 import {
   ExecutionControlService,
   ExecutionControlView,
@@ -21,11 +24,15 @@ import {
 } from '../execution/reconciliation/reconciliation.enums';
 import { AuditLog, AuditSeverity } from '../audit/entities/audit-log.entity';
 import {
+  ADMIN_AUDIT_ACTOR_FILTER_MAX_LENGTH,
+  ADMIN_AUDIT_RESOURCE_FILTER_MAX_LENGTH,
   ADMIN_DESCRIPTION_MAX_LENGTH,
   ADMIN_ERROR_MESSAGE_MAX_LENGTH,
+  ADMIN_EXPIRED_CONTROLS_MAX_ROWS,
   ADMIN_RESOLVED_WINDOW_MS,
   ADMIN_UNKNOWN_BROKER_ID,
   AdminLiveAccountService,
+  boundAdminAuditFilter,
   clampPaginationLimit,
   clampPaginationOffset,
   maskControlScopeTarget,
@@ -85,7 +92,10 @@ describe('AdminLiveAccountService', () => {
   let runRepo: { find: jest.Mock };
   let discrepancyRepo: { find: jest.Mock; count: jest.Mock };
   let auditRepo: { find: jest.Mock; count: jest.Mock };
-  let executionControlService: { listActiveControls: jest.Mock };
+  let executionControlService: {
+    listActiveControls: jest.Mock;
+    listControlsIncludingExpired: jest.Mock;
+  };
   let providerRegistry: { getCatalog: jest.Mock };
   let brokerService: { isConnectionExecutable: jest.Mock };
 
@@ -173,6 +183,7 @@ describe('AdminLiveAccountService', () => {
       activatedByUserId: 'admin-1',
       activatedAt: new Date('2026-01-15T10:00:00Z'),
       expiresAt: null,
+      status: ExecutionControlStatus.ACTIVE,
       ...overrides,
     }) as ExecutionControlView;
 
@@ -203,7 +214,10 @@ describe('AdminLiveAccountService', () => {
       count: jest.fn().mockResolvedValue(0),
     };
     auditRepo = { find: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0) };
-    executionControlService = { listActiveControls: jest.fn().mockResolvedValue([]) };
+    executionControlService = {
+      listActiveControls: jest.fn().mockResolvedValue([]),
+      listControlsIncludingExpired: jest.fn().mockResolvedValue([]),
+    };
     providerRegistry = { getCatalog: jest.fn().mockReturnValue([]) };
     brokerService = { isConnectionExecutable: jest.fn().mockReturnValue(true) };
 
@@ -277,6 +291,7 @@ describe('AdminLiveAccountService', () => {
         connecting: 1,
         error: 1,
         disconnected: 1,
+        suspendedConnectionStatus: 1,
         authorized: 3,
         authorizationRequired: 1,
         revoked: 1,
@@ -286,7 +301,7 @@ describe('AdminLiveAccountService', () => {
       });
     });
 
-    it('counts connectionStatus SUSPENDED toward total but no status bucket (contract has none)', async () => {
+    it('counts connectionStatus SUSPENDED into suspendedConnectionStatus AND toward total (distinct from the authorizationStatus bucket)', async () => {
       connectionRepo.find.mockResolvedValue([
         connection({ status: BrokerConnectionStatus.SUSPENDED }),
       ]);
@@ -298,6 +313,41 @@ describe('AdminLiveAccountService', () => {
       expect(overview.connections.connecting).toBe(0);
       expect(overview.connections.error).toBe(0);
       expect(overview.connections.disconnected).toBe(0);
+      expect(overview.connections.suspendedConnectionStatus).toBe(1);
+    });
+
+    it('accounts for EVERY BrokerConnectionStatus enum value (exhaustiveness)', async () => {
+      // One connection per enum member: the counts matrix must account for
+      // each of them in an explicit bucket (nothing silently dropped).
+      connectionRepo.find.mockResolvedValue(
+        (
+          [
+            BrokerConnectionStatus.CONNECTING,
+            BrokerConnectionStatus.CONNECTED,
+            BrokerConnectionStatus.DISCONNECTED,
+            BrokerConnectionStatus.ERROR,
+            BrokerConnectionStatus.SUSPENDED,
+          ] as const
+        ).map((status, index) => connection({ id: `cx-${index}`, status })),
+      );
+
+      const overview = await service.getOverview(NOW);
+
+      expect(overview.connections.total).toBe(5);
+      expect(overview.connections.connecting).toBe(1);
+      expect(overview.connections.connected).toBe(1);
+      expect(overview.connections.disconnected).toBe(1);
+      expect(overview.connections.error).toBe(1);
+      expect(overview.connections.suspendedConnectionStatus).toBe(1);
+      // Every connectionStatus bucket is explicitly represented — the five
+      // buckets sum to total (no status counted twice, none missing).
+      expect(
+        overview.connections.connected +
+          overview.connections.connecting +
+          overview.connections.error +
+          overview.connections.disconnected +
+          overview.connections.suspendedConnectionStatus,
+      ).toBe(overview.connections.total);
     });
 
     it('reads ALL connections (admin scope — no user filter)', async () => {
@@ -387,6 +437,7 @@ describe('AdminLiveAccountService', () => {
           activatedBy: 'admin-1',
           activatedAt: '2026-01-15T10:00:00.000Z',
           expiresAt: null,
+          status: 'ACTIVE',
         },
         {
           id: 'ctl-provider',
@@ -396,6 +447,7 @@ describe('AdminLiveAccountService', () => {
           activatedBy: 'admin-1',
           activatedAt: '2026-01-15T10:00:00.000Z',
           expiresAt: null,
+          status: 'ACTIVE',
         },
         {
           id: 'ctl-user',
@@ -405,6 +457,7 @@ describe('AdminLiveAccountService', () => {
           activatedBy: 'admin-1',
           activatedAt: '2026-01-15T10:00:00.000Z',
           expiresAt: null,
+          status: 'ACTIVE',
         },
         {
           id: 'ctl-conn',
@@ -414,6 +467,7 @@ describe('AdminLiveAccountService', () => {
           activatedBy: 'admin-1',
           activatedAt: '2026-01-15T10:00:00.000Z',
           expiresAt: '2026-01-16T10:00:00.000Z',
+          status: 'ACTIVE',
         },
       ]);
     });
@@ -439,6 +493,79 @@ describe('AdminLiveAccountService', () => {
       const overview = await service.getOverview(NOW);
 
       expect(overview.activeControls[0].reason?.length).toBe(500);
+    });
+  });
+
+  describe('overview — expired controls (retained records, never blocking)', () => {
+    it('includes expiredControls with status EXPIRED rows; activeControls excludes them', async () => {
+      executionControlService.listActiveControls.mockResolvedValue([
+        controlView({ id: 'ctl-live', status: ExecutionControlStatus.ACTIVE }),
+      ]);
+      executionControlService.listControlsIncludingExpired.mockResolvedValue([
+        controlView({ id: 'ctl-live', status: ExecutionControlStatus.ACTIVE }),
+        controlView({
+          id: 'ctl-old',
+          status: ExecutionControlStatus.EXPIRED,
+          activatedAt: new Date('2026-01-10T10:00:00Z'),
+          expiresAt: new Date('2026-01-11T10:00:00Z'),
+        }),
+      ]);
+
+      const overview = await service.getOverview(NOW);
+
+      // Active inventory: ACTIVE only (the "currently blocking" list).
+      expect(overview.activeControls.map((control) => control.id)).toEqual(['ctl-live']);
+      expect(overview.activeControls.every((control) => control.status === 'ACTIVE')).toBe(true);
+      // Expired inventory: EXPIRED rows only, count + rows.
+      expect(overview.expiredControls.count).toBe(1);
+      expect(overview.expiredControls.controls).toEqual([
+        {
+          id: 'ctl-old',
+          scope: 'GLOBAL',
+          scopeTarget: null,
+          reason: 'incident response',
+          activatedBy: 'admin-1',
+          activatedAt: '2026-01-10T10:00:00.000Z',
+          expiresAt: '2026-01-11T10:00:00.000Z',
+          status: 'EXPIRED',
+        },
+      ]);
+    });
+
+    it('uses listActiveControls for the active inventory and listControlsIncludingExpired for the expired one', async () => {
+      await service.getOverview(NOW);
+
+      expect(executionControlService.listActiveControls).toHaveBeenCalledTimes(1);
+      expect(executionControlService.listControlsIncludingExpired).toHaveBeenCalledTimes(1);
+    });
+
+    it('bounds the expired list to the 50 most recent rows by activatedAt desc (count keeps the total)', async () => {
+      const expiredViews = Array.from({ length: ADMIN_EXPIRED_CONTROLS_MAX_ROWS + 20 }, (_, i) =>
+        controlView({
+          id: `ctl-exp-${i}`,
+          status: ExecutionControlStatus.EXPIRED,
+          activatedAt: new Date(Date.UTC(2026, 0, 1 + i, 10, 0, 0)),
+        }),
+      );
+      executionControlService.listControlsIncludingExpired.mockResolvedValue(expiredViews);
+
+      const overview = await service.getOverview(NOW);
+
+      expect(overview.expiredControls.count).toBe(ADMIN_EXPIRED_CONTROLS_MAX_ROWS + 20);
+      expect(overview.expiredControls.controls).toHaveLength(ADMIN_EXPIRED_CONTROLS_MAX_ROWS);
+      // Most recent first: the newest activation leads the bounded list.
+      expect(overview.expiredControls.controls[0].id).toBe(
+        `ctl-exp-${ADMIN_EXPIRED_CONTROLS_MAX_ROWS + 19}`,
+      );
+      expect(overview.expiredControls.controls[ADMIN_EXPIRED_CONTROLS_MAX_ROWS - 1].id).toBe(
+        'ctl-exp-20',
+      );
+    });
+
+    it('returns a zeroed expired inventory on an empty store', async () => {
+      const overview = await service.getOverview(NOW);
+
+      expect(overview.expiredControls).toEqual({ count: 0, controls: [] });
     });
   });
 
@@ -994,6 +1121,31 @@ describe('AdminLiveAccountService', () => {
         { severity: 'CRITICAL', actorUserId: 'user-9', resourceType: 'ExecutionControl' },
       );
     });
+
+    it('truncates an over-long actorUserId to the 64-char bound (trimmed first)', async () => {
+      const overLong = `x`.repeat(ADMIN_AUDIT_ACTOR_FILTER_MAX_LENGTH + 40);
+      await expectWhere(
+        { filter: 'ALL', actorUserId: overLong },
+        { actorUserId: overLong.slice(0, ADMIN_AUDIT_ACTOR_FILTER_MAX_LENGTH) },
+      );
+    });
+
+    it('truncates an over-long resourceType to the 100-char bound (trimmed first)', async () => {
+      const overLong = `R`.repeat(ADMIN_AUDIT_RESOURCE_FILTER_MAX_LENGTH + 75);
+      await expectWhere(
+        { filter: 'ALL', resourceType: overLong },
+        { resourceType: overLong.slice(0, ADMIN_AUDIT_RESOURCE_FILTER_MAX_LENGTH) },
+      );
+    });
+
+    it('keeps values at exactly the bound untouched (boundary)', async () => {
+      const actor = `a`.repeat(ADMIN_AUDIT_ACTOR_FILTER_MAX_LENGTH);
+      const resource = `r`.repeat(ADMIN_AUDIT_RESOURCE_FILTER_MAX_LENGTH);
+      await expectWhere(
+        { filter: 'ALL', actorUserId: actor, resourceType: resource },
+        { actorUserId: actor, resourceType: resource },
+      );
+    });
   });
 
   describe('audit — pagination', () => {
@@ -1143,6 +1295,16 @@ describe('AdminLiveAccountService', () => {
       expect(maskControlScopeTarget('a1b2c3d4-e5f6-7890-abcd-ef1234567890')).toBe('•••7890');
       expect(maskControlScopeTarget(null)).toBeNull();
       expect(maskControlScopeTarget('abc')).toBeNull();
+    });
+
+    it('boundAdminAuditFilter trims, truncates to the bound, and empties unusable values', () => {
+      expect(boundAdminAuditFilter(null, 64)).toBe('');
+      expect(boundAdminAuditFilter(undefined, 64)).toBe('');
+      expect(boundAdminAuditFilter('   ', 64)).toBe('');
+      expect(boundAdminAuditFilter('  user-9  ', 64)).toBe('user-9');
+      const overLong = 'x'.repeat(80);
+      expect(boundAdminAuditFilter(overLong, 64)).toBe(overLong.slice(0, 64));
+      expect(boundAdminAuditFilter(overLong, 64).length).toBe(64);
     });
 
     it('deriveDiscrepancyDescription prefers note → pairs → type', () => {

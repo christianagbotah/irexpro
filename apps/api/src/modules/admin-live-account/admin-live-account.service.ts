@@ -8,7 +8,10 @@ import { BrokerAuthorizationStatus } from '../broker/authorization/broker-author
 import { BrokerConnectionStatus, BrokerMode } from '../broker/interfaces/broker-adapter.interface';
 import { BrokerProviderRegistryService } from '../broker/registry/broker-provider-registry.service';
 import { TradingSession, TradingSessionStatus } from '../execution/entities/trading-session.entity';
-import { ExecutionControlScope } from '../execution-control/entities/execution-control.entity';
+import {
+  ExecutionControlScope,
+  ExecutionControlStatus,
+} from '../execution-control/entities/execution-control.entity';
 import {
   ExecutionControlService,
   ExecutionControlView,
@@ -28,6 +31,7 @@ import {
 import {
   AdminDiscrepancyCountsDto,
   AdminExecutionControlViewDto,
+  AdminExpiredControlsViewDto,
   AdminLiveOpsOverviewViewDto,
   AdminProviderRegistryEntryDto,
   AdminConnectionStateCountsDto,
@@ -57,8 +61,14 @@ export const ADMIN_ERROR_MESSAGE_MAX_LENGTH = 200;
 export const ADMIN_DESCRIPTION_MAX_LENGTH = 300;
 /** Sanitized control reason never exceeds this length (entity column max). */
 export const ADMIN_CONTROL_REASON_MAX_LENGTH = 500;
+/** Max expired-control rows returned in the overview (most recent first). */
+export const ADMIN_EXPIRED_CONTROLS_MAX_ROWS = 50;
 /** BrokerId fallback for orphaned discrepancies (connection row gone). */
 export const ADMIN_UNKNOWN_BROKER_ID = 'unknown';
+/** Audit investigation actorUserId filter is truncated to this bound (uuid-like length + margin). */
+export const ADMIN_AUDIT_ACTOR_FILTER_MAX_LENGTH = 64;
+/** Audit investigation resourceType filter is truncated to this bound (resource names stay readable). */
+export const ADMIN_AUDIT_RESOURCE_FILTER_MAX_LENGTH = 100;
 
 /** Alphanumeric runs of 16+ chars are treated as key/token material (Directive §40). */
 const SECRET_LIKE_RUN = /[A-Za-z0-9]{16,}/g;
@@ -143,6 +153,16 @@ export function maskControlScopeTarget(scopeKey: string | null): string | null {
 }
 
 /**
+ * Trim + truncate a client-supplied audit investigation filter so over-long
+ * values can never bloat queries or logs. Returns '' when the value is not a
+ * usable string (the caller then omits the filter entirely).
+ */
+export function boundAdminAuditFilter(value: string | null | undefined, maxLength: number): string {
+  const trimmed = typeof value === 'string' ? value.trim() : '';
+  return trimmed.length > maxLength ? trimmed.slice(0, maxLength) : trimmed;
+}
+
+/**
  * AdminLiveAccountService — read-only ADMIN visibility over the live-account
  * architecture (Sprint 50 PR-6 — Directive PHASE L §39).
  *
@@ -192,6 +212,7 @@ export class AdminLiveAccountService {
       openDiscrepancies,
       resolvedLast24h,
       activeControls,
+      expiredControls,
       activeSessions,
       suspendedSessions,
     ] = await Promise.all([
@@ -206,6 +227,7 @@ export class AdminLiveAccountService {
         },
       }),
       this.loadActiveControls(),
+      this.loadExpiredControls(),
       this.sessionRepo.count({ where: { status: TradingSessionStatus.ACTIVE } }),
       this.sessionRepo.count({
         where: {
@@ -235,6 +257,7 @@ export class AdminLiveAccountService {
       connections: this.countConnectionStates(connections),
       discrepancies,
       activeControls,
+      expiredControls,
       providers: this.mapProviders(),
       automation: {
         activeSessions,
@@ -363,16 +386,18 @@ export class AdminLiveAccountService {
     const safeOffset = clampPaginationOffset(offset);
 
     // Investigation filters are equality-only and only applied when they are
-    // non-empty strings — never trusted for anything broader.
+    // non-empty strings — never trusted for anything broader. Over-long values
+    // are trimmed + truncated to the declared bounds (G3) before entering the
+    // where clause.
     const where: FindOptionsWhere<AuditLog> = {};
     if (safeFilter === AdminAuditLogFilter.CRITICAL) {
       where.severity = AuditSeverity.CRITICAL;
     } else if (safeFilter === AdminAuditLogFilter.WARNING) {
       where.severity = AuditSeverity.WARNING;
     }
-    const actor = typeof actorUserId === 'string' ? actorUserId.trim() : '';
+    const actor = boundAdminAuditFilter(actorUserId, ADMIN_AUDIT_ACTOR_FILTER_MAX_LENGTH);
     if (actor.length > 0) where.actorUserId = actor;
-    const resource = typeof resourceType === 'string' ? resourceType.trim() : '';
+    const resource = boundAdminAuditFilter(resourceType, ADMIN_AUDIT_RESOURCE_FILTER_MAX_LENGTH);
     if (resource.length > 0) where.resourceType = resource;
 
     const [logs, total] = await Promise.all([
@@ -403,6 +428,7 @@ export class AdminLiveAccountService {
       connecting: 0,
       error: 0,
       disconnected: 0,
+      suspendedConnectionStatus: 0,
       authorized: 0,
       authorizationRequired: 0,
       revoked: 0,
@@ -416,8 +442,8 @@ export class AdminLiveAccountService {
       else if (connection.status === BrokerConnectionStatus.CONNECTING) counts.connecting += 1;
       else if (connection.status === BrokerConnectionStatus.ERROR) counts.error += 1;
       else if (connection.status === BrokerConnectionStatus.DISCONNECTED) counts.disconnected += 1;
-      // BrokerConnectionStatus.SUSPENDED has no dedicated bucket in the
-      // frozen contract — it still counts toward `total`.
+      else if (connection.status === BrokerConnectionStatus.SUSPENDED)
+        counts.suspendedConnectionStatus += 1;
 
       if (AUTHORIZED_AUTHORIZATION_STATUSES.includes(connection.authorizationStatus)) {
         counts.authorized += 1;
@@ -440,13 +466,40 @@ export class AdminLiveAccountService {
 
   /**
    * REUSED active-control inventory — delegates to
-   * ExecutionControlService.listActiveControls() and maps to the admin view
-   * (normalized scope target + sanitized reason + ISO dates).
+   * ExecutionControlService.listActiveControls() (ACTIVE + unexpired only:
+   * the "currently blocking" inventory) and maps to the admin view
+   * (normalized scope target + sanitized reason + ISO dates + status).
    */
   private async loadActiveControls(): Promise<AdminExecutionControlViewDto[]> {
     const controls: ExecutionControlView[] =
       await this.executionControlService.listActiveControls();
-    return controls.map((control) => ({
+    return controls.map((control) => this.toAdminControlView(control));
+  }
+
+  /**
+   * Expired-control inventory — delegates to
+   * ExecutionControlService.listControlsIncludingExpired() and keeps only the
+   * EXPIRED rows (retained records — never blocking; reactivation replaces
+   * them). Payload stays bounded: the most recent
+   * ADMIN_EXPIRED_CONTROLS_MAX_ROWS rows by activatedAt desc, plus the total
+   * retained count.
+   */
+  private async loadExpiredControls(): Promise<AdminExpiredControlsViewDto> {
+    const controls: ExecutionControlView[] =
+      await this.executionControlService.listControlsIncludingExpired();
+    const expired = controls.filter((control) => control.status === ExecutionControlStatus.EXPIRED);
+    expired.sort((a, b) => b.activatedAt.getTime() - a.activatedAt.getTime());
+    return {
+      count: expired.length,
+      controls: expired
+        .slice(0, ADMIN_EXPIRED_CONTROLS_MAX_ROWS)
+        .map((control) => this.toAdminControlView(control)),
+    };
+  }
+
+  /** Admin view mapping for a single control view (shared by both lists). */
+  private toAdminControlView(control: ExecutionControlView): AdminExecutionControlViewDto {
+    return {
       id: control.id,
       scope: control.scope,
       scopeTarget: this.normalizeControlScopeTarget(control.scope, control.scopeKey),
@@ -454,7 +507,8 @@ export class AdminLiveAccountService {
       activatedBy: control.activatedByUserId ?? null,
       activatedAt: control.activatedAt.toISOString(),
       expiresAt: control.expiresAt ? control.expiresAt.toISOString() : null,
-    }));
+      status: control.status,
+    };
   }
 
   /** Normalized display target: broker id / masked user or connection / null. */

@@ -253,6 +253,7 @@ export default function AdminLiveOpsPage() {
   const connections = overview?.connections ?? null;
   const discrepancies = overview?.discrepancies ?? null;
   const activeControls = overview?.activeControls ?? [];
+  const expiredControls = overview?.expiredControls ?? null;
   const providers = overview?.providers ?? [];
   const automation = overview?.automation ?? null;
 
@@ -302,10 +303,17 @@ export default function AdminLiveOpsPage() {
               value={connections.connected}
               variant={connections.connected > 0 ? 'success' : undefined}
             />
+            <StatTile label="Connecting" value={connections.connecting} />
+            <StatTile label="Disconnected" value={connections.disconnected} />
             <StatTile
               label="Error"
               value={connections.error}
               variant={connections.error > 0 ? 'error' : undefined}
+            />
+            <StatTile
+              label="Suspended (conn.)"
+              value={connections.suspendedConnectionStatus}
+              variant={connections.suspendedConnectionStatus > 0 ? 'warning' : undefined}
             />
             <StatTile
               label="Authorization required"
@@ -384,6 +392,24 @@ export default function AdminLiveOpsPage() {
           </div>
         )}
       </Card>
+
+      {/* §39 — expired execution controls (retained records, never blocking) */}
+      {expiredControls && expiredControls.controls.length > 0 && (
+        <Card
+          title={`Expired controls (retained as records) — ${expiredControls.count}`}
+        >
+          <p className="muted text-sm" style={{ marginBottom: '1rem' }}>
+            Expired controls are retained as records — never blocking, reactivation replaces them.
+            Showing the {expiredControls.controls.length} most recent of {expiredControls.count}{' '}
+            retained records.
+          </p>
+          <div className="admin-control-list">
+            {expiredControls.controls.map((control) => (
+              <ControlCard key={control.id} control={control} />
+            ))}
+          </div>
+        </Card>
+      )}
 
       {/* §39 — provider registry */}
       <Card title={`Provider registry (${providers.length})`}>

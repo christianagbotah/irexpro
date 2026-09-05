@@ -14,6 +14,7 @@ import type {
   AdminDiscrepancyFilter,
   AdminDiscrepancyRowView,
   AdminExecutionControlView,
+  AdminExpiredControlsView,
   AdminLiveOpsOverviewView,
   AdminProviderRegistryEntry,
 } from '@irexpro/types/admin-live-account';
@@ -43,6 +44,7 @@ export type {
   AdminDiscrepancyFilter,
   AdminDiscrepancyRowView,
   AdminExecutionControlView,
+  AdminExpiredControlsView,
   AdminLiveOpsOverviewView,
   AdminProviderRegistryEntry,
 } from '@irexpro/types/admin-live-account';
@@ -167,6 +169,12 @@ function isControlScope(value: unknown): value is AdminExecutionControlView['sco
   );
 }
 
+function isControlStatus(value: unknown): value is AdminExecutionControlView['status'] {
+  // Optional on the wire (older payloads) — but when present it must be a
+  // known lifecycle value; anything else fails closed.
+  return value === 'ACTIVE' || value === 'EXPIRED';
+}
+
 function isExecutionControlView(value: unknown): value is AdminExecutionControlView {
   if (!isRecord(value)) return false;
   return (
@@ -176,7 +184,17 @@ function isExecutionControlView(value: unknown): value is AdminExecutionControlV
     isNullableString(value.reason) &&
     isNullableString(value.activatedBy) &&
     isString(value.activatedAt) &&
-    isNullableString(value.expiresAt)
+    isNullableString(value.expiresAt) &&
+    (value.status === undefined || isControlStatus(value.status))
+  );
+}
+
+function isExpiredControlsView(value: unknown): value is AdminExpiredControlsView {
+  if (!isRecord(value)) return false;
+  return (
+    isNonNegativeInteger(value.count) &&
+    Array.isArray(value.controls) &&
+    value.controls.every(isExecutionControlView)
   );
 }
 
@@ -202,6 +220,7 @@ function isConnectionStateCounts(
     isNonNegativeInteger(value.connecting) &&
     isNonNegativeInteger(value.error) &&
     isNonNegativeInteger(value.disconnected) &&
+    isNonNegativeInteger(value.suspendedConnectionStatus) &&
     isNonNegativeInteger(value.authorized) &&
     isNonNegativeInteger(value.authorizationRequired) &&
     isNonNegativeInteger(value.revoked) &&
@@ -232,6 +251,8 @@ function isLiveOpsOverviewView(value: unknown): value is AdminLiveOpsOverviewVie
     isDiscrepancyCounts(value.discrepancies) &&
     Array.isArray(value.activeControls) &&
     value.activeControls.every(isExecutionControlView) &&
+    // Optional field (wire compat): accepted absent, validated when present.
+    (value.expiredControls === undefined || isExpiredControlsView(value.expiredControls)) &&
     Array.isArray(value.providers) &&
     value.providers.every(isProviderRegistryEntry) &&
     isRecord(value.automation) &&
@@ -335,8 +356,8 @@ function isAuditPage(value: unknown): value is AdminAuditPage {
 
 /**
  * GET /admin/live-account/overview — §39 operational overview
- * (connection state, discrepancies, active emergency controls, provider
- * registry, automation session counts).
+ * (connection state, discrepancies, active emergency controls, retained
+ * expired controls, provider registry, automation session counts).
  */
 export async function loadAdminLiveOpsOverview(): Promise<AdminLiveOpsOverviewView> {
   const payload = await api.request<unknown>('/admin/live-account/overview');
