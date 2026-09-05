@@ -41,6 +41,8 @@ describe('PasswordResetService phone-code hardening', () => {
     release: jest.fn(),
     isTransactionActive: true,
     manager: {
+      findOne: jest.fn(),
+      getRepository: jest.fn(),
       update: jest.fn(),
       save: jest.fn(async (entity) => entity),
     },
@@ -66,6 +68,8 @@ describe('PasswordResetService phone-code hardening', () => {
     jest.clearAllMocks();
     deliveryService.deliver.mockResolvedValue(true);
     resetTokenRepo.update.mockResolvedValue({ affected: 1 });
+    queryRunner.manager.findOne.mockResolvedValue({ id: 'locked-user' });
+    queryRunner.manager.getRepository.mockReturnValue(resetTokenRepo);
     queryRunner.manager.update.mockResolvedValue({ affected: 1 });
     queryRunner.isTransactionActive = true;
   });
@@ -78,13 +82,27 @@ describe('PasswordResetService phone-code hardening', () => {
       status: UserStatus.ACTIVE,
     });
     await service.requestReset('+233241234567');
-    return {
+
+    const result = {
       rawCode: deliveryService.deliver.mock.calls[0][0].rawToken as string,
       token: resetTokenRepo.create.mock.results[0].value as PasswordResetToken,
     };
+
+    // Isolate subsequent verification-transaction assertions from the issuance
+    // transaction that now serializes reset-token creation.
+    queryRunner.connect.mockClear();
+    queryRunner.startTransaction.mockClear();
+    queryRunner.commitTransaction.mockClear();
+    queryRunner.rollbackTransaction.mockClear();
+    queryRunner.release.mockClear();
+    queryRunner.manager.findOne.mockClear();
+    queryRunner.manager.getRepository.mockClear();
+    queryRunner.manager.update.mockClear();
+
+    return result;
   }
 
-  it('fails closed when phone reset pepper is unavailable', async () => {
+  it('fails closed before invalidating an active token when phone reset pepper is unavailable', async () => {
     const { module, service } = await createService(undefined);
     userRepo.findOne.mockResolvedValueOnce({
       id: 'phone-user',
@@ -96,6 +114,9 @@ describe('PasswordResetService phone-code hardening', () => {
     await expect(service.requestReset('+233241234567')).rejects.toThrow(
       ServiceUnavailableException,
     );
+    expect(dataSource.createQueryRunner).not.toHaveBeenCalled();
+    expect(resetTokenRepo.update).not.toHaveBeenCalled();
+    expect(resetTokenRepo.save).not.toHaveBeenCalled();
     expect(deliveryService.deliver).not.toHaveBeenCalled();
     await module.close();
   });
