@@ -15,17 +15,21 @@ import {
  * Access + refresh tokens live only in platform secure storage (iOS Keychain /
  * Android Keystore) and in memory while the app is active. On app launch we
  * first validate a stored access token. A 401 may be recovered by rotating the
- * stored refresh token through /auth/refresh. Transient network/server failures
- * never erase otherwise valid SecureStore credentials.
+ * stored refresh token through /auth/refresh. Explicit logout revokes the
+ * server-side session generation before local credentials are removed.
  *
- * AsyncStorage is NEVER used for tokens (prohibited — mobile equivalent of
- * localStorage, not encrypted at rest).
+ * Transient network/server failures never erase otherwise valid SecureStore
+ * credentials. AsyncStorage is NEVER used for tokens.
  */
 
 const RESTORE_TRANSIENT_ERROR =
   'Unable to restore your session right now. Check your connection and try again.';
+const LOGOUT_TRANSIENT_ERROR =
+  'Unable to revoke your session right now. Check your connection and try again.';
 const SECURE_STORAGE_ERROR =
   'Secure session storage is unavailable. Please sign in again.';
+const LOGOUT_STORAGE_ERROR =
+  'Secure storage is unavailable and server logout could not be confirmed. Please retry while the app remains open.';
 
 interface AuthState {
   user: AuthUser | null;
@@ -35,6 +39,7 @@ interface AuthState {
   setSession: (user: AuthUser, accessToken: string) => void;
   clearSession: () => void;
   restoreSession: () => Promise<void>;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | undefined>(undefined);
@@ -160,6 +165,76 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [clearInMemorySession, setSession]);
 
+  const logout = useCallback(async () => {
+    setError(null);
+
+    try {
+      await api.logout();
+      await clearSession();
+      return;
+    } catch (logoutError) {
+      if (!isUnauthorized(logoutError)) {
+        // Do not claim a full logout if the backend could not be reached. Keep
+        // the SecureStore credentials so the user can retry server revocation.
+        setError(LOGOUT_TRANSIENT_ERROR);
+        return;
+      }
+    }
+
+    // The current access token is no longer usable. A still-valid refresh token
+    // can rotate once to obtain an access token capable of revoking the server
+    // session generation. Do not send the rejected access token with refresh.
+    const storedRefreshToken = await getRefreshToken();
+    if (!storedRefreshToken) {
+      await clearSession();
+      return;
+    }
+
+    setAccessToken(null);
+
+    let rotatedTokens: AuthTokens;
+    try {
+      rotatedTokens = await api.refresh(storedRefreshToken);
+    } catch (refreshError) {
+      if (isUnauthorized(refreshError)) {
+        // Both access and refresh credentials are rejected, so the retained
+        // local session is already unusable and can be removed safely.
+        await clearSession();
+        return;
+      }
+
+      setError(LOGOUT_TRANSIENT_ERROR);
+      return;
+    }
+
+    // Persist the rotated generation before the retry. If the retry hits a
+    // transient outage, the user must retain a valid credential pair for a
+    // later logout attempt rather than falling back to the now-stale refresh.
+    let rotatedPersisted = true;
+    try {
+      await saveTokens(rotatedTokens);
+    } catch {
+      rotatedPersisted = false;
+    }
+
+    setAccessToken(rotatedTokens.accessToken);
+    setAccessTokenState(rotatedTokens.accessToken);
+
+    try {
+      await api.logout();
+      await clearSession();
+    } catch (retryError) {
+      if (isUnauthorized(retryError)) {
+        // A concurrent revocation can make the freshly rotated access token
+        // invalid before this call. The server session is already unusable.
+        await clearSession();
+        return;
+      }
+
+      setError(rotatedPersisted ? LOGOUT_TRANSIENT_ERROR : LOGOUT_STORAGE_ERROR);
+    }
+  }, [clearSession]);
+
   // Restore session on mount (app launch).
   useEffect(() => {
     void restoreSession();
@@ -174,8 +249,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession,
       clearSession,
       restoreSession,
+      logout,
     }),
-    [user, accessToken, loading, error, setSession, clearSession, restoreSession],
+    [
+      user,
+      accessToken,
+      loading,
+      error,
+      setSession,
+      clearSession,
+      restoreSession,
+      logout,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
