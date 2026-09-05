@@ -75,15 +75,18 @@ jobs:
         run: >-
           pnpm --filter @irexpro/mobile exec expo export
           --platform android
-          --output-dir "$RUNNER_TEMP/irexpro-sdk53-android"
+          --output-dir .sdk53-export-android
           --clear
 
       - name: Export iOS bundle with Metro
         run: >-
           pnpm --filter @irexpro/mobile exec expo export
           --platform ios
-          --output-dir "$RUNNER_TEMP/irexpro-sdk53-ios"
+          --output-dir .sdk53-export-ios
           --clear
+
+      - name: Remove disposable Metro export directories
+        run: rm -rf apps/mobile/.sdk53-export-android apps/mobile/.sdk53-export-ios
 
       - name: Capture generated dependency evidence
         shell: bash
