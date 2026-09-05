@@ -75,6 +75,8 @@ The artifact set is part of the release record. A candidate without the expected
 
 ## 5. Health contracts
 
+The public health routes intentionally return status-oriented payloads only. Detailed application version, runtime environment, PostgreSQL state, Redis state, hostnames, connection details, and other operational topology must not be exposed to unauthenticated callers. Dependency checks still run internally; the public readiness result communicates their aggregate outcome through status and HTTP semantics.
+
 ### `GET /api/v1/health/live`
 
 Purpose: process liveness only.
@@ -82,35 +84,33 @@ Purpose: process liveness only.
 Expected healthy response:
 
 - HTTP 2xx.
-- `status: "alive"`.
-- safe timestamp/version metadata only.
-- no PostgreSQL or Redis dependency requirement.
+- body exactly `{"status":"alive"}` modulo JSON whitespace/formatting.
+- no dependency, version, environment, host, or connection metadata.
 
 Use liveness to detect a process that is no longer serving requests. Do not use it as proof that dependencies are ready.
 
 ### `GET /api/v1/health/ready`
 
-Purpose: dependency readiness.
+Purpose: aggregate dependency readiness.
 
 Expected ready response:
 
 - HTTP 2xx.
-- `status: "ready"`.
-- PostgreSQL reports `connected`.
-- Redis reports `connected`.
+- body exactly `{"status":"ready"}` modulo JSON whitespace/formatting.
 
 Expected unready response:
 
 - HTTP 503.
-- `status: "not_ready"`.
-- dependency state is reported only as `connected` / `disconnected`.
-- no exception stacks, credentials, DSNs, internal hostnames, tokens, or secret values.
+- response status communicates `not_ready` without naming or describing the failed dependency.
+- no exception stacks, credentials, DSNs, internal hostnames, tokens, versions, environments, database identity, Redis identity, or secret values.
+
+Use server-side logs/approved operational diagnostics to investigate which dependency is unavailable. Do not weaken the public response contract for troubleshooting convenience.
 
 ### `GET /api/v1/health`
 
 Purpose: compatibility aggregate.
 
-Expected healthy state is HTTP 2xx with `status: "ok"`. A dependency problem may produce the documented safe degraded aggregate, but `/health/ready` is the authoritative promotion/readiness probe.
+Expected healthy state is HTTP 2xx with `status: "ok"`. A dependency problem may produce `status: "degraded"`, but the public payload remains status-only and `/health/ready` remains the authoritative promotion/readiness probe.
 
 ## 6. Pre-promotion verification
 
@@ -134,7 +134,7 @@ Do not continue if the checkout is dirty, the fast-forward fails, or the SHA dif
 
 ## 7. Health verification after process start/restart
 
-Use local loopback for dependency-aware API verification before relying on the public proxy:
+Use local loopback for dependency-aware API verification before relying on the public proxy. These commands rely on HTTP status and the minimal status contract; they must not require detailed dependency fields:
 
 ```bash
 curl -fsS http://127.0.0.1:3010/api/v1/health/live
@@ -163,8 +163,8 @@ Hold the release immediately if any of the following is true:
 - SBOM generation/evidence is missing.
 - API build, UI build, migration compatibility, concurrency, or responsive E2E gate fails.
 - `/health/ready` is non-2xx after the normal startup window.
-- PostgreSQL or Redis readiness is disconnected.
-- Health output exposes secrets, internal hosts, stack traces, or connection strings.
+- Required dependency readiness remains unavailable, as confirmed through approved internal diagnostics.
+- Public health output exposes version/environment details, named dependency state, secrets, internal hosts, stack traces, or connection strings.
 - VPS checkout SHA does not equal the verified candidate SHA.
 - A temporary write-capable CI maintenance workflow still exists in the candidate.
 
