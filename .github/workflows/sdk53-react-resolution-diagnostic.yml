@@ -42,29 +42,14 @@ jobs:
           set -Eeuo pipefail
           for dir in . apps/web apps/admin apps/mobile; do
             echo "===== $dir ====="
-            (
-              cd "$dir"
-              node - <<'NODE'
-              const fs = require('fs');
-              const path = require('path');
-              const cwd = process.cwd();
-              const own = fs.existsSync(path.join(cwd, 'package.json')) ? require(path.join(cwd, 'package.json')) : {};
-              console.log('declared react:', own.dependencies?.react ?? own.devDependencies?.react ?? '<none>');
-              console.log('declared react-dom:', own.dependencies?.['react-dom'] ?? own.devDependencies?.['react-dom'] ?? '<none>');
-              for (const pkg of ['react', 'react-dom']) {
-                try {
-                  const resolved = require.resolve(`${pkg}/package.json`, { paths: [cwd] });
-                  const meta = require(resolved);
-                  console.log(`${pkg}:`, meta.version, resolved);
-                } catch (error) {
-                  console.log(`${pkg}: <unresolved>`, error.code || error.message);
-                }
-              }
-NODE
-            )
+            cd "$GITHUB_WORKSPACE/$dir"
+            node -p "'declared react: ' + ((require('./package.json').dependencies || {}).react || (require('./package.json').devDependencies || {}).react || '<none>')"
+            node -p "'declared react-dom: ' + ((require('./package.json').dependencies || {})['react-dom'] || (require('./package.json').devDependencies || {})['react-dom'] || '<none>')"
+            node -p "'resolved react: ' + require(require.resolve('react/package.json')).version + ' ' + require.resolve('react/package.json')" || true
+            node -p "'resolved react-dom: ' + require(require.resolve('react-dom/package.json')).version + ' ' + require.resolve('react-dom/package.json')" || true
           done
       - name: Show relevant node_modules placements
         shell: bash
         run: |
           set -Eeuo pipefail
-          find . -maxdepth 4 -type f \( -path '*/react/package.json' -o -path '*/react-dom/package.json' \) -print | sort
+          find . -maxdepth 5 -type f \( -path '*/react/package.json' -o -path '*/react-dom/package.json' \) -print | sort
