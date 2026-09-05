@@ -1,8 +1,4 @@
-const TRUSTED_LOOPBACK_PROXY_ADDRESSES = new Set([
-  '127.0.0.1',
-  '::1',
-  '::ffff:127.0.0.1',
-]);
+const TRUSTED_LOOPBACK_PROXY_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 
 /**
  * Express `trust proxy` predicate for the verified single-VPS topology.
