@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { AuthProvider, useAuth } from '@/context/auth-context';
+import AppErrorBoundary from '@/components/AppErrorBoundary';
 import LoginScreen from './src/screens/LoginScreen';
 import ForgotPasswordScreen from './src/screens/ForgotPasswordScreen';
 import DashboardScreen from './src/screens/DashboardScreen';
@@ -28,9 +29,11 @@ type Tab = 'dashboard' | 'account' | 'payments';
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AppShell />
-    </AuthProvider>
+    <AppErrorBoundary>
+      <AuthProvider>
+        <AppShell />
+      </AuthProvider>
+    </AppErrorBoundary>
   );
 }
 
@@ -42,7 +45,7 @@ function AppShell() {
   if (loading && !user) {
     return (
       <View style={styles.shell}>
-        <View style={styles.loading}>
+        <View style={styles.loading} accessibilityLiveRegion="polite">
           <Text style={styles.loadingText}>Restoring session…</Text>
         </View>
       </View>
@@ -53,10 +56,15 @@ function AppShell() {
     return (
       <View style={styles.shell}>
         {error ? (
-          <View style={styles.restoreAlert}>
+          <View
+            style={styles.restoreAlert}
+            accessibilityRole="alert"
+            accessibilityLiveRegion="assertive"
+          >
             <Text style={styles.restoreAlertText}>{error}</Text>
             <Pressable
               accessibilityRole="button"
+              accessibilityLabel="Retry session restoration"
               style={styles.retryButton}
               onPress={() => void restoreSession()}
             >
@@ -80,7 +88,7 @@ function AppShell() {
         {tab === 'account' && <AccountScreen />}
         {tab === 'payments' && <PaymentsScreen />}
       </View>
-      <View style={styles.tabBar}>
+      <View style={styles.tabBar} accessibilityRole="tablist">
         <TabButton
           label="Dashboard"
           active={tab === 'dashboard'}
@@ -111,7 +119,13 @@ function TabButton({
   onPress: () => void;
 }) {
   return (
-    <Pressable onPress={onPress} style={[styles.tab, active && styles.tabActive]}>
+    <Pressable
+      accessibilityRole="tab"
+      accessibilityLabel={label}
+      accessibilityState={{ selected: active }}
+      onPress={onPress}
+      style={[styles.tab, active && styles.tabActive]}
+    >
       <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{label}</Text>
     </Pressable>
   );
