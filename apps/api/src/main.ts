@@ -3,7 +3,6 @@ import { ClassSerializerInterceptor, Logger, ValidationPipe } from '@nestjs/comm
 import { ConfigService } from '@nestjs/config';
 import { NestFactory, Reflector } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import { IoAdapter } from '@nestjs/platform-socket.io';
 import * as compression from 'compression';
 import * as cookieParser from 'cookie-parser';
 import type { Express, NextFunction, Request, Response } from 'express';
@@ -13,6 +12,7 @@ import { createCorrelationId, runWithCorrelationId } from './common/utils/reques
 import { getBootstrapLogLevels, isSwaggerAvailable } from './config/bootstrap-diagnostics';
 import { handleBootstrapFailure } from './config/bootstrap-failure';
 import { isTrustedReverseProxy } from './config/proxy-trust';
+import { RealtimeIoAdapter } from './config/realtime-io.adapter';
 import { setupSwagger } from './config/swagger.config';
 
 const bootstrapLogger = new Logger('Bootstrap');
@@ -59,7 +59,7 @@ async function bootstrap() {
   expressApp.set('trust proxy', isTrustedReverseProxy);
 
   app.setGlobalPrefix(apiPrefix);
-  app.useWebSocketAdapter(new IoAdapter(app));
+  app.useWebSocketAdapter(new RealtimeIoAdapter(app, corsOrigins));
 
   // Server-owned request correlation. Never reuse a caller-supplied request ID:
   // doing so would allow forged correlation between unrelated audit/log events.

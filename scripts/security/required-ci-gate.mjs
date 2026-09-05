@@ -64,6 +64,18 @@ const WORKFLOW_RULES = [
       '.github/workflows/web-e2e.yml',
     ],
   },
+  {
+    name: 'Mobile CI',
+    patterns: [
+      'apps/mobile/**',
+      'packages/api-client/**',
+      'packages/types/**',
+      'pnpm-lock.yaml',
+      'pnpm-workspace.yaml',
+      'package.json',
+      '.github/workflows/mobile-ci.yml',
+    ],
+  },
 ];
 
 function escapeRegExp(value) {
@@ -129,6 +141,21 @@ export function runSelfTests() {
     'web change',
   );
   assertEqual(
+    requiredWorkflowNames(['apps/mobile/src/screens/LoginScreen.tsx']),
+    ['Release Security', 'Mobile CI'],
+    'mobile change',
+  );
+  assertEqual(
+    requiredWorkflowNames(['packages/api-client/src/index.ts']),
+    ['Release Security', 'UI E2E', 'Mobile CI'],
+    'shared API client change',
+  );
+  assertEqual(
+    requiredWorkflowNames(['packages/types/src/index.ts']),
+    ['Release Security', 'UI E2E', 'Mobile CI'],
+    'shared types change',
+  );
+  assertEqual(
     requiredWorkflowNames(['package.json']),
     [
       'Release Security',
@@ -136,6 +163,7 @@ export function runSelfTests() {
       'Risk Execution Concurrency',
       'Database Migration Compatibility',
       'UI E2E',
+      'Mobile CI',
     ],
     'root package change',
   );

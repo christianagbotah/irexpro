@@ -7,7 +7,6 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  View,
 } from 'react-native';
 import { api, setAccessToken } from '@/lib/api';
 import { saveTokens } from '@/lib/secure-storage';
@@ -76,23 +75,39 @@ export default function LoginScreen({ onForgotPassword }: { onForgotPassword?: (
       </Pressable>
 
       <Text style={styles.muted}>
-        Auth is handled by the backend at /api/v1/auth/login. The mobile app
-        holds the access token in memory (foundation). Production should use
-        expo-secure-store — see the integration spec.
+        Your session tokens are stored with Expo SecureStore using the iOS Keychain or Android
+        Keystore. They are never stored in AsyncStorage.
       </Text>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0b1020', padding: 24, justifyContent: 'center' },
+  container: {
+    flex: 1,
+    backgroundColor: '#0b1020',
+    padding: 24,
+    justifyContent: 'center',
+  },
   title: { fontSize: 28, fontWeight: '700', color: '#e8edff', marginBottom: 4 },
   subtitle: { fontSize: 15, color: '#9aa7c7', marginBottom: 24 },
   input: {
-    backgroundColor: '#131a2e', borderColor: '#243049', borderWidth: 1,
-    borderRadius: 10, padding: 14, color: '#e8edff', marginBottom: 12, fontSize: 16,
+    backgroundColor: '#131a2e',
+    borderColor: '#243049',
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 14,
+    color: '#e8edff',
+    marginBottom: 12,
+    fontSize: 16,
   },
-  button: { backgroundColor: '#14b8a6', borderRadius: 10, padding: 14, alignItems: 'center', marginBottom: 16 },
+  button: {
+    backgroundColor: '#14b8a6',
+    borderRadius: 10,
+    padding: 14,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
   buttonText: { color: '#06231f', fontWeight: '700', fontSize: 16 },
   error: { color: '#f87171', fontSize: 14, marginBottom: 12 },
   muted: { color: '#6b7494', fontSize: 12, lineHeight: 18 },
