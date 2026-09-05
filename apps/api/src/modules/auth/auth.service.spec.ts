@@ -252,7 +252,12 @@ describe('AuthService', () => {
 
   describe('refreshTokens (Sprint 25 — mobile JSON body + web/admin cookie)', () => {
     it('should return new tokens when given a valid refresh token (mobile flow)', async () => {
-      const mockPayload = { sub: 'user-id', email: 'test@example.com', roles: [RoleName.USER] };
+      const mockPayload = {
+        sub: 'user-id',
+        email: 'test@example.com',
+        roles: [RoleName.USER],
+        tokenType: 'refresh' as const,
+      };
       mockJwtService.verify.mockReturnValueOnce(mockPayload);
       mockUserRepo.findOne.mockResolvedValueOnce({
         id: 'user-id',
@@ -265,8 +270,6 @@ describe('AuthService', () => {
 
       expect(result).toHaveProperty('accessToken');
       expect(result).toHaveProperty('refreshToken');
-      // Hotfix: verify() is called WITHOUT { secret } — the JwtModule already
-      // has the secret configured in AuthModule.registerAsync.
       expect(mockJwtService.verify).toHaveBeenCalledWith('valid-refresh-token');
     });
 
@@ -278,8 +281,38 @@ describe('AuthService', () => {
       await expect(service.refreshTokens('invalid-token')).rejects.toThrow(UnauthorizedException);
     });
 
+    it('should reject a signed JWT with no explicit tokenType before user lookup', async () => {
+      mockJwtService.verify.mockReturnValueOnce({
+        sub: 'user-id',
+        email: 'test@example.com',
+        roles: [RoleName.USER],
+        sessionVersion: 1,
+      });
+
+      await expect(service.refreshTokens('untyped-token')).rejects.toThrow(UnauthorizedException);
+      expect(mockUserRepo.findOne).not.toHaveBeenCalled();
+    });
+
+    it('should reject an access token at the refresh boundary before user lookup', async () => {
+      mockJwtService.verify.mockReturnValueOnce({
+        sub: 'user-id',
+        email: 'test@example.com',
+        roles: [RoleName.USER],
+        tokenType: 'access',
+        sessionVersion: 1,
+      });
+
+      await expect(service.refreshTokens('access-token')).rejects.toThrow(UnauthorizedException);
+      expect(mockUserRepo.findOne).not.toHaveBeenCalled();
+    });
+
     it('should throw UnauthorizedException if user is not found', async () => {
-      const mockPayload = { sub: 'nonexistent', email: 'x@example.com', roles: [] };
+      const mockPayload = {
+        sub: 'nonexistent',
+        email: 'x@example.com',
+        roles: [],
+        tokenType: 'refresh' as const,
+      };
       mockJwtService.verify.mockReturnValueOnce(mockPayload);
       mockUserRepo.findOne.mockResolvedValueOnce(null);
 
@@ -287,7 +320,12 @@ describe('AuthService', () => {
     });
 
     it('should throw UnauthorizedException if user status is SUSPENDED', async () => {
-      const mockPayload = { sub: 'user-id', email: 'test@example.com', roles: [] };
+      const mockPayload = {
+        sub: 'user-id',
+        email: 'test@example.com',
+        roles: [],
+        tokenType: 'refresh' as const,
+      };
       mockJwtService.verify.mockReturnValueOnce(mockPayload);
       mockUserRepo.findOne.mockResolvedValueOnce({
         id: 'user-id',
@@ -299,7 +337,12 @@ describe('AuthService', () => {
     });
 
     it('should throw UnauthorizedException if user status is CLOSED', async () => {
-      const mockPayload = { sub: 'user-id', email: 'test@example.com', roles: [] };
+      const mockPayload = {
+        sub: 'user-id',
+        email: 'test@example.com',
+        roles: [],
+        tokenType: 'refresh' as const,
+      };
       mockJwtService.verify.mockReturnValueOnce(mockPayload);
       mockUserRepo.findOne.mockResolvedValueOnce({
         id: 'user-id',
@@ -311,7 +354,12 @@ describe('AuthService', () => {
     });
 
     it('should throw UnauthorizedException if user status is PERMANENTLY_LOCKED', async () => {
-      const mockPayload = { sub: 'user-id', email: 'test@example.com', roles: [] };
+      const mockPayload = {
+        sub: 'user-id',
+        email: 'test@example.com',
+        roles: [],
+        tokenType: 'refresh' as const,
+      };
       mockJwtService.verify.mockReturnValueOnce(mockPayload);
       mockUserRepo.findOne.mockResolvedValueOnce({
         id: 'user-id',
@@ -325,7 +373,12 @@ describe('AuthService', () => {
     // ── Hotfix: refresh works for phone-only users (email is null) ──────────
 
     it('should refresh successfully when user email is null (phone-only user)', async () => {
-      const mockPayload = { sub: 'phone-user-id', email: null, roles: [RoleName.USER] };
+      const mockPayload = {
+        sub: 'phone-user-id',
+        email: null,
+        roles: [RoleName.USER],
+        tokenType: 'refresh' as const,
+      };
       mockJwtService.verify.mockReturnValueOnce(mockPayload);
       mockUserRepo.findOne.mockResolvedValueOnce({
         id: 'phone-user-id',
@@ -344,13 +397,18 @@ describe('AuthService', () => {
     // ── Hotfix: refresh works when roles array is empty ─────────────────────
 
     it('should refresh successfully when roles array is empty', async () => {
-      const mockPayload = { sub: 'user-id', email: 'test@example.com', roles: [] };
+      const mockPayload = {
+        sub: 'user-id',
+        email: 'test@example.com',
+        roles: [],
+        tokenType: 'refresh' as const,
+      };
       mockJwtService.verify.mockReturnValueOnce(mockPayload);
       mockUserRepo.findOne.mockResolvedValueOnce({
         id: 'user-id',
         email: 'test@example.com',
         status: UserStatus.ACTIVE,
-        userRoles: [], // no roles loaded — generateTokens falls back to [USER]
+        userRoles: [],
       });
 
       const result = await service.refreshTokens('empty-roles-refresh-token');
@@ -362,11 +420,16 @@ describe('AuthService', () => {
     // ── Hotfix: refresh loads user by sub (not by email) ────────────────────
 
     it('should load the user by payload.sub (not by email)', async () => {
-      const mockPayload = { sub: 'sub-user-id', email: 'old@example.com', roles: [] };
+      const mockPayload = {
+        sub: 'sub-user-id',
+        email: 'old@example.com',
+        roles: [],
+        tokenType: 'refresh' as const,
+      };
       mockJwtService.verify.mockReturnValueOnce(mockPayload);
       mockUserRepo.findOne.mockResolvedValueOnce({
         id: 'sub-user-id',
-        email: 'new@example.com', // email may have changed — lookup is by sub/id
+        email: 'new@example.com',
         status: UserStatus.ACTIVE,
         userRoles: [{ role: { name: RoleName.USER } }],
       });
@@ -384,7 +447,12 @@ describe('AuthService', () => {
     // ── Hotfix: PENDING_VERIFICATION users can refresh (no activation flow) ─
 
     it('should allow refresh for PENDING_VERIFICATION users (no activation flow exists)', async () => {
-      const mockPayload = { sub: 'user-id', email: 'test@example.com', roles: [] };
+      const mockPayload = {
+        sub: 'user-id',
+        email: 'test@example.com',
+        roles: [],
+        tokenType: 'refresh' as const,
+      };
       mockJwtService.verify.mockReturnValueOnce(mockPayload);
       mockUserRepo.findOne.mockResolvedValueOnce({
         id: 'user-id',
@@ -414,7 +482,12 @@ describe('AuthService', () => {
     // ── Hotfix: refresh does not expose sensitive fields ────────────────────
 
     it('should not include passwordHash or mfaSecret in the generated token payload', async () => {
-      const mockPayload = { sub: 'user-id', email: 'test@example.com', roles: [] };
+      const mockPayload = {
+        sub: 'user-id',
+        email: 'test@example.com',
+        roles: [],
+        tokenType: 'refresh' as const,
+      };
       mockJwtService.verify.mockReturnValueOnce(mockPayload);
       mockUserRepo.findOne.mockResolvedValueOnce({
         id: 'user-id',
@@ -427,8 +500,6 @@ describe('AuthService', () => {
 
       await service.refreshTokens('token');
 
-      // sign() should be called with a payload that does NOT contain
-      // passwordHash or mfaSecret — only sub, email, roles.
       const calls = mockJwtService.sign.mock.calls as unknown as Array<
         [Record<string, unknown>, unknown]
       >;
@@ -464,7 +535,6 @@ describe('AuthService', () => {
 
       const dto = await service.getAuthUserDto('user-123', [RoleName.USER]);
 
-      // Safe fields are present
       expect(dto.id).toBe('user-123');
       expect(dto.email).toBe('trader@example.com');
       expect(dto.firstName).toBe('John');
@@ -476,7 +546,6 @@ describe('AuthService', () => {
       expect(dto.lastLoginAt).toBe('2026-01-15T10:00:00.000Z');
       expect(dto.createdAt).toBe('2026-01-01T00:00:00.000Z');
 
-      // Sensitive fields are NOT present on the DTO
       expect(dto).not.toHaveProperty('passwordHash');
       expect(dto).not.toHaveProperty('mfaSecret');
       expect(dto).not.toHaveProperty('deletedAt');
@@ -532,7 +601,6 @@ describe('AuthService', () => {
 
       const dto = await service.getAuthUserDto('user-456', [RoleName.USER]);
 
-      // The DTO must not carry any of these
       const serialized = JSON.stringify(dto);
       expect(serialized).not.toContain('passwordHash');
       expect(serialized).not.toContain('mfaSecret');

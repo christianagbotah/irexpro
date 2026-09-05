@@ -1,5 +1,4 @@
 import { Logger, UseGuards } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import {
   ConnectedSocket,
   MessageBody,
@@ -16,13 +15,6 @@ import { WsJwtGuard } from './guards/ws-jwt.guard';
 import { RealtimeService } from './realtime.service';
 
 /**
- * Module-level allowlist snapshot shared with the decorator's CORS callback.
- * Populated in the constructor from the same fail-closed parseCorsOrigins
- * allowlist used by the HTTP API (app.corsOrigins).
- */
-let wsCorsOrigins: string[] = ['http://localhost:3001'];
-
-/**
  * RealtimeGateway — WebSocket gateway for real-time events.
  *
  * Namespace: /realtime
@@ -35,31 +27,20 @@ let wsCorsOrigins: string[] = ['http://localhost:3001'];
  * Authentication:
  *   All connections must provide a valid JWT in:
  *     socket.handshake.auth.token  OR  Authorization: Bearer <token>
- *   Unauthenticated connections are rejected immediately in handleConnection().
+ *   Invalid, expired, revoked, or unauthenticated connections are rejected
+ *   immediately in handleConnection(). Guarded messages revalidate the same
+ *   server-side session state so revocation after connection still fails closed.
  *
  * Security rules:
  *   - Users can only join their own rooms (enforced by extracting userId from JWT)
  *   - No broker secrets, tokens, or stack traces are ever emitted
  *   - Payloads are type-checked via RealtimeService methods
- *   - CORS uses the SAME fail-closed allowlist as the HTTP API (Sprint 50
- *     hardening: the previous `origin: '*'` wildcard let any origin open a
- *     socket; it is now parsed via parseCorsOrigins from CORS_ORIGINS).
+ *   - Browser-origin policy is owned centrally by RealtimeIoAdapter at bootstrap
  *
  * See: docs/architecture/06-realtime-event-layer.md
  */
 @WebSocketGateway({
   namespace: '/realtime',
-  cors: {
-    origin: (origin, callback) => {
-      // Fail closed: missing/unknown origins are rejected in production.
-      // Same-origin server-to-server socket clients pass with no Origin header.
-      if (!origin || wsCorsOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-      return callback(new Error('Origin not allowed by WebSocket CORS policy'), false);
-    },
-    credentials: true,
-  },
   transports: ['websocket', 'polling'],
 })
 export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
@@ -71,35 +52,20 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   constructor(
     private readonly realtimeService: RealtimeService,
     private readonly wsJwtGuard: WsJwtGuard,
-    configService: ConfigService,
-  ) {
-    // Snapshot the fail-closed allowlist at gateway construction (module init
-    // order guarantees ConfigService is registered before gateway creation).
-    wsCorsOrigins = configService.get<string[]>('app.corsOrigins', ['http://localhost:3001']);
-  }
+  ) {}
 
   afterInit(server: Server): void {
     this.realtimeService.setServer(server);
     this.logger.log('RealtimeGateway initialised — namespace: /realtime');
   }
 
-  handleConnection(client: Socket): void {
+  async handleConnection(client: Socket): Promise<void> {
     try {
-      // Manually invoke WsJwtGuard logic for connection-time auth
-      const token = this.extractToken(client);
-      if (!token) {
-        this.logger.warn(`Rejecting unauthenticated socket: ${client.id}`);
-        client.emit('error', { message: 'Unauthorized: no token provided' });
-        client.disconnect(true);
-        return;
-      }
-
-      // Store auth result on socket.data (guard will verify on each message)
-      // For connection, we use a lightweight inline check via the guard service
-      // The guard is used on @SubscribeMessage handlers for per-message auth
-      this.logger.log(`Socket connected: ${client.id} (pending JWT validation)`);
+      await this.wsJwtGuard.authenticateClient(client);
+      this.logger.log(`Socket authenticated: ${client.id}`);
     } catch {
-      this.logger.warn(`Connection error for socket ${client.id}`);
+      this.logger.warn(`Rejecting unauthorized socket: ${client.id}`);
+      client.emit('error', { message: 'Unauthorized' });
       client.disconnect(true);
     }
   }
@@ -175,13 +141,5 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     client.leave(roomName);
     this.logger.log(`Socket ${client.id} left room: ${roomName}`);
     return { status: 'left' };
-  }
-
-  private extractToken(client: Socket): string | null {
-    const authToken = client.handshake?.auth?.token as string | undefined;
-    if (authToken) return authToken;
-    const authHeader = client.handshake?.headers?.authorization as string | undefined;
-    if (authHeader?.startsWith('Bearer ')) return authHeader.substring(7);
-    return null;
   }
 }

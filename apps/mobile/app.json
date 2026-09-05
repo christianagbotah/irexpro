@@ -7,24 +7,27 @@
     "icon": "./assets/icon.png",
     "scheme": "irexpro",
     "userInterfaceStyle": "dark",
+    "newArchEnabled": false,
     "splash": {
+      "image": "./assets/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#0b1020"
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.irexpro.mobile"
+      "bundleIdentifier": "com.irexpro.mobile",
+      "buildNumber": "1"
     },
     "android": {
       "package": "com.irexpro.mobile",
+      "versionCode": 1,
       "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0b1020"
       }
     },
-    "extra": {
-      "eas": {
-        "projectId": ""
-      }
-    }
+    "plugins": [
+      "expo-secure-store"
+    ]
   }
 }
