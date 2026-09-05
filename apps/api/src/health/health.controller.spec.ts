@@ -2,6 +2,14 @@ import { ServiceUnavailableException } from '@nestjs/common';
 import { HealthController } from './health.controller';
 import { HealthService, ReadinessView } from './health.service';
 
+const FORBIDDEN_PUBLIC_HEALTH_DETAILS =
+  /version|environment|database|redis|hostname|password|secret|dsn|connection string/i;
+
+function expectStatusOnly(response: unknown, status: string) {
+  expect(response).toEqual({ status });
+  expect(JSON.stringify(response)).not.toMatch(FORBIDDEN_PUBLIC_HEALTH_DETAILS);
+}
+
 describe('HealthController', () => {
   const createController = () => {
     const healthService = {
@@ -20,7 +28,23 @@ describe('HealthController', () => {
     };
   };
 
-  it('returns a ready payload when all required dependencies are healthy', async () => {
+  it('returns a minimal aggregate public payload', async () => {
+    const { controller, healthService } = createController();
+    healthService.check.mockResolvedValue({
+      status: 'ok',
+      timestamp: '2026-09-01T16:00:00.000Z',
+      environment: 'production',
+      version: '49.0.0-test',
+      database: 'connected',
+      redis: 'connected',
+    });
+
+    const response = await controller.check();
+
+    expectStatusOnly(response, 'ok');
+  });
+
+  it('returns a ready status without exposing dependency details', async () => {
     const { controller, healthService } = createController();
     const response: ReadinessView = {
       status: 'ready',
@@ -30,10 +54,12 @@ describe('HealthController', () => {
     };
     healthService.readiness.mockResolvedValue(response);
 
-    await expect(controller.ready()).resolves.toEqual(response);
+    const publicResponse = await controller.ready();
+
+    expectStatusOnly(publicResponse, 'ready');
   });
 
-  it('returns HTTP 503 semantics when a required dependency is unavailable', async () => {
+  it('returns minimal HTTP 503 semantics when a required dependency is unavailable', async () => {
     const { controller, healthService } = createController();
     const response: ReadinessView = {
       status: 'not_ready',
@@ -50,22 +76,21 @@ describe('HealthController', () => {
       expect(error).toBeInstanceOf(ServiceUnavailableException);
       const exception = error as ServiceUnavailableException;
       expect(exception.getStatus()).toBe(503);
-      expect(exception.getResponse()).toEqual(response);
-      expect(JSON.stringify(exception.getResponse())).not.toContain('password');
-      expect(JSON.stringify(exception.getResponse())).not.toContain('hostname');
+      expectStatusOnly(exception.getResponse(), 'not_ready');
     }
   });
 
-  it('delegates liveness without dependency checks', () => {
+  it('returns minimal liveness without performing dependency checks', () => {
     const { controller, healthService } = createController();
-    const response = {
-      status: 'alive' as const,
+    healthService.liveness.mockReturnValue({
+      status: 'alive',
       timestamp: '2026-09-01T16:00:00.000Z',
-      version: '47.0.0-test',
-    };
-    healthService.liveness.mockReturnValue(response);
+      version: '49.0.0-test',
+    });
 
-    expect(controller.live()).toEqual(response);
+    const response = controller.live();
+
+    expectStatusOnly(response, 'alive');
     expect(healthService.readiness).not.toHaveBeenCalled();
   });
 });
