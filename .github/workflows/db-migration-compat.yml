@@ -28,7 +28,7 @@ env:
 jobs:
   real-postgres-uuid-ossp:
     name: Real PostgreSQL 16 + uuid-ossp (Scenario D)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
 
     env:
@@ -101,7 +101,7 @@ jobs:
 
   existing-db-upgrade:
     name: Existing PostgreSQL 16 Upgrade (Scenario E)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
 
     env:
@@ -174,7 +174,7 @@ jobs:
 
   existing-db-domain-upgrade:
     name: Existing PostgreSQL 16 Domain Upgrade (Scenario F)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
 
     env:
