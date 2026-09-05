@@ -145,10 +145,17 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          grep -q '^newArchEnabled=true$' apps/mobile/android/gradle.properties
+          echo 'Android New Architecture markers:'
+          grep -n 'newArchEnabled' apps/mobile/android/gradle.properties || true
+          echo 'Android System UI markers:'
+          grep -n 'expo_system_ui_user_interface_style' apps/mobile/android/app/src/main/res/values/strings.xml
+          echo 'iOS New Architecture markers:'
+          grep -nE 'newArchEnabled|RCT_NEW_ARCH_ENABLED' apps/mobile/ios/Podfile apps/mobile/ios/Podfile.properties.json || true
+
+          ! grep -Eq '^newArchEnabled=false$' apps/mobile/android/gradle.properties
           grep -q 'expo_system_ui_user_interface_style' apps/mobile/android/app/src/main/res/values/strings.xml
           grep -Eq '>dark<|>Dark<' apps/mobile/android/app/src/main/res/values/strings.xml
-          grep -Eq "RCT_NEW_ARCH_ENABLED.*newArchEnabled.*false" apps/mobile/ios/Podfile
+          ! grep -Eq 'newArchEnabled[^\n]*false' apps/mobile/ios/Podfile
           node <<'NODE'
           const fs = require('node:fs');
           const props = JSON.parse(fs.readFileSync('apps/mobile/ios/Podfile.properties.json', 'utf8'));
@@ -156,15 +163,18 @@ jobs:
           console.log(`Generated iOS project does not opt out of New Architecture (property=${JSON.stringify(props.newArchEnabled)}).`);
           NODE
           ! grep -R --include='*.json' --include='*.properties' --include='*.gradle' --include='Podfile*' -n 'useHermesV1.*true' apps/mobile/android apps/mobile/ios
-          echo 'Generated Android/iOS projects use the SDK 55 New Architecture path and Android System UI dark configuration.'
+          echo 'Generated Android/iOS projects contain no Legacy Architecture opt-out, Android System UI is dark, and Hermes v1 is not opted in.'
 
       - name: Restore disposable prebuild source mutation
+        if: ${{ always() }}
         run: git checkout -- apps/mobile/package.json
 
       - name: Remove disposable native projects
-        run: rm -rf apps/mobile/android apps/mobile/ios
+        if: ${{ always() }}
+        run: rm -rf apps/mobile/android apps/mobile/ios apps/mobile/.ci-export-android apps/mobile/.ci-export-ios
 
       - name: Require clean tracked tree
+        if: ${{ always() }}
         shell: bash
         run: |
           set -Eeuo pipefail
