@@ -81,8 +81,15 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
     @Query('refreshTransport') refreshTransport?: string,
   ) {
+    const browserCookieTransport = refreshTransport === COOKIE_REFRESH_TRANSPORT;
+    if (browserCookieTransport) {
+      this.authCookieService.assertTrustedBrowserRequest(req);
+    }
+
     const tokens = await this.authService.register(dto, req.ip);
-    this.authCookieService.setRefreshCookie(res, tokens.refreshToken, dto.rememberMe);
+    if (browserCookieTransport) {
+      this.authCookieService.setRefreshCookie(res, tokens.refreshToken, dto.rememberMe);
+    }
     return authResponseForTransport(tokens, refreshTransport);
   }
 
@@ -104,8 +111,15 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
     @Query('refreshTransport') refreshTransport?: string,
   ) {
+    const browserCookieTransport = refreshTransport === COOKIE_REFRESH_TRANSPORT;
+    if (browserCookieTransport) {
+      this.authCookieService.assertTrustedBrowserRequest(req);
+    }
+
     const tokens = await this.authService.login(dto, req.ip);
-    this.authCookieService.setRefreshCookie(res, tokens.refreshToken, dto.rememberMe);
+    if (browserCookieTransport) {
+      this.authCookieService.setRefreshCookie(res, tokens.refreshToken, dto.rememberMe);
+    }
     return authResponseForTransport(tokens, refreshTransport);
   }
 
@@ -128,6 +142,10 @@ export class AuthController {
     @Res({ passthrough: true }) res?: Response,
   ) {
     const cookieRefreshToken = this.authCookieService.getRefreshTokenFromCookie(req);
+    if (cookieRefreshToken) {
+      this.authCookieService.assertTrustedBrowserRequest(req);
+    }
+
     const refreshToken = cookieRefreshToken ?? dto?.refreshToken;
 
     if (!refreshToken) {
@@ -136,7 +154,7 @@ export class AuthController {
 
     const tokens = await this.authService.refreshTokens(refreshToken);
 
-    if (res) {
+    if (res && cookieRefreshToken) {
       this.authCookieService.setRefreshCookie(res, tokens.refreshToken);
     }
 
@@ -151,7 +169,11 @@ export class AuthController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @Throttle({ default: { ttl: 60 * 1000, limit: 30 } })
   @ApiOperation({ summary: 'Idempotently clear the browser HttpOnly refresh cookie' })
-  clearBrowserSession(@Res({ passthrough: true }) res: Response): void {
+  clearBrowserSession(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): void {
+    this.authCookieService.assertTrustedBrowserRequest(req);
     this.authCookieService.clearRefreshCookie(res);
   }
 
@@ -165,6 +187,9 @@ export class AuthController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
+    if (this.authCookieService.getRefreshTokenFromCookie(req)) {
+      this.authCookieService.assertTrustedBrowserRequest(req);
+    }
     await this.authService.logout(principal.userId, req.ip);
     this.authCookieService.clearRefreshCookie(res);
     return { message: 'Logged out successfully' };
