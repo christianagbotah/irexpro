@@ -10,10 +10,7 @@ describe('parseCorsOrigins', () => {
       parseCorsOrigins(
         ' https://irexpro.lightworldtech.com/ , https://admin.irexpro.lightworldtech.com ',
       ),
-    ).toEqual([
-      'https://irexpro.lightworldtech.com',
-      'https://admin.irexpro.lightworldtech.com',
-    ]);
+    ).toEqual(['https://irexpro.lightworldtech.com', 'https://admin.irexpro.lightworldtech.com']);
   });
 
   it('deduplicates equivalent canonical origins while preserving order', () => {
