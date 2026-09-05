@@ -1,0 +1,163 @@
+name: SDK 54 Validated Dependency Writer
+
+on:
+  push:
+    branches:
+      - mobile/sprint52-expo54-upgrade
+    paths:
+      - '.github/workflows/sdk54-commit.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sdk54-writer-${{ github.sha }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '22'
+  PNPM_VERSION: '10.34.5'
+  CI: '1'
+  EXPO_NO_TELEMETRY: '1'
+  EXPO_PUBLIC_API_BASE_URL: 'http://127.0.0.1:3010/api/v1'
+
+jobs:
+  commit:
+    name: Validate and commit Expo SDK 54 graph
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout exact writer commit
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install SDK 53 baseline from frozen lockfile
+        run: pnpm install --frozen-lockfile
+
+      - name: Materialize validated SDK 54-compatible dependencies
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          pnpm --dir apps/mobile add 'expo@^54.0.0'
+          pnpm --dir apps/mobile exec expo install --fix --pnpm
+          pnpm --dir apps/mobile exec expo install react-native-safe-area-context --pnpm
+
+      - name: Enforce exact generated dependency scope and versions
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mapfile -t changed < <(git diff --name-only)
+          for path in "${changed[@]}"; do
+            case "$path" in
+              apps/mobile/package.json|pnpm-lock.yaml) ;;
+              *) echo "Unexpected generated file: $path" >&2; exit 1 ;;
+            esac
+          done
+          test "${#changed[@]}" -eq 2
+          node <<'NODE'
+          const pkg = require('./apps/mobile/package.json');
+          const expected = {
+            expo: '~54.0.37',
+            'expo-secure-store': '~15.0.8',
+            react: '19.1.0',
+            'react-native': '0.81.5',
+            'react-native-safe-area-context': '~5.6.2',
+          };
+          for (const [name, version] of Object.entries(expected)) {
+            if (pkg.dependencies[name] !== version) throw new Error(`${name}: expected ${version}, got ${pkg.dependencies[name]}`);
+          }
+          if (pkg.devDependencies['@types/react'] !== '~19.1.17') throw new Error(`@types/react mismatch: ${pkg.devDependencies['@types/react']}`);
+          if (pkg.devDependencies.typescript !== '~5.9.3') throw new Error(`typescript mismatch: ${pkg.devDependencies.typescript}`);
+          NODE
+
+      - name: Validate Expo dependency alignment
+        run: pnpm --filter @irexpro/mobile exec expo install --check
+
+      - name: Validate workspace React runtime isolation
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          node <<'NODE'
+          const path = require('node:path');
+          const { createRequire } = require('node:module');
+          function version(workspace, packageName) {
+            return createRequire(path.resolve(workspace, 'package.json'))(`${packageName}/package.json`).version;
+          }
+          const checks = {
+            rootReact: version('.', 'react'),
+            rootReactDOM: version('.', 'react-dom'),
+            webReact: version('apps/web', 'react'),
+            webReactDOM: version('apps/web', 'react-dom'),
+            adminReact: version('apps/admin', 'react'),
+            adminReactDOM: version('apps/admin', 'react-dom'),
+            mobileReact: version('apps/mobile', 'react'),
+            mobileReactNative: version('apps/mobile', 'react-native'),
+            mobileExpo: version('apps/mobile', 'expo'),
+          };
+          console.log(checks);
+          for (const key of ['rootReact','rootReactDOM','webReact','webReactDOM','adminReact','adminReactDOM']) {
+            if (checks[key] !== '19.2.8') throw new Error(`${key} must remain 19.2.8, got ${checks[key]}`);
+          }
+          if (checks.mobileReact !== '19.1.0') throw new Error(`Mobile React must be 19.1.0, got ${checks.mobileReact}`);
+          if (checks.mobileReactNative !== '0.81.5') throw new Error(`Mobile RN must be 0.81.5, got ${checks.mobileReactNative}`);
+          if (checks.mobileExpo !== '54.0.37') throw new Error(`Mobile Expo must be 54.0.37, got ${checks.mobileExpo}`);
+          NODE
+
+      - name: Validate mobile release configuration
+        run: pnpm --filter @irexpro/mobile validate:release-config
+
+      - name: Typecheck mobile app
+        run: pnpm --filter @irexpro/mobile typecheck
+
+      - name: Export Android bundle
+        run: >-
+          pnpm --filter @irexpro/mobile exec expo export
+          --platform android
+          --output-dir .ci-export-android
+          --clear
+
+      - name: Export iOS bundle
+        run: >-
+          pnpm --filter @irexpro/mobile exec expo export
+          --platform ios
+          --output-dir .ci-export-ios
+          --clear
+
+      - name: Build web app against candidate lock
+        env:
+          NEXT_PUBLIC_API_BASE_URL: 'http://localhost:3999/api/v1'
+        run: pnpm --filter @irexpro/web build
+
+      - name: Build admin app against candidate lock
+        env:
+          NEXT_PUBLIC_API_BASE_URL: 'http://localhost:3998/api/v1'
+        run: pnpm --filter @irexpro/admin build
+
+      - name: Remove disposable Metro exports
+        run: rm -rf apps/mobile/.ci-export-android apps/mobile/.ci-export-ios
+
+      - name: Commit generated dependency files only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git status --short
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps/mobile/package.json pnpm-lock.yaml
+          test -z "$(git diff --cached --name-only | grep -Ev '^(apps/mobile/package.json|pnpm-lock.yaml)$' || true)"
+          git commit -m 'chore(mobile): upgrade Expo baseline to SDK 54'
+          git push origin HEAD:mobile/sprint52-expo54-upgrade
