@@ -365,7 +365,7 @@ export class PasswordResetService {
       metadata: { channel, sessionsRevoked: true },
     });
 
-    this.logger.log(`Password reset completed for user ${userId} via ${channel}`);
+    this.logger.log('Password reset completed');
   }
 }
 
