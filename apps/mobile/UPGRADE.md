@@ -44,15 +44,22 @@ Required proof for this checkpoint:
 6. Pass mobile TypeScript, Android export, iOS export, and all exact-head repository gates.
 7. Once accepted, release configuration must reject any attempt to restore the Legacy Architecture opt-out.
 
+## SDK 54 monorepo resolution baseline
+
+The Sprint 53 compatibility probe demonstrated that the old SDK-51-era Metro overrides and forced pnpm hoisting are no longer appropriate on SDK 54. With those legacy settings present, Expo Doctor reported a Metro-default mismatch and duplicate React/native-module resolution. The validated SDK 54 baseline therefore:
+
+- uses Expo's default `getDefaultConfig(__dirname)` Metro configuration without custom `watchFolders` or `resolver.nodeModulesPaths`
+- uses pnpm's isolated dependency layout by removing the workspace-level `nodeLinker: hoisted` override
+- keeps root/web/admin React and ReactDOM on 19.2.8 while mobile resolves its Expo-aligned React 19.1.0 independently
+- retains the existing lockfile because the isolated layout installs successfully from the frozen SDK 54 lock
+
+This combination passed Expo Doctor, Expo dependency alignment, mobile TypeScript, Android and iOS Metro exports, Web and Admin production builds, and disposable Android/iOS native generation before being committed.
+
 ## Remaining SDK checkpoints
 
 After New Architecture is proven on SDK 54, continue in order: SDK 54 → 55, SDK 55 → 56, then SDK 56 → 57. Read each release's current migration notes before changing dependencies because minimum tooling and platform requirements can advance between releases.
 
-Do not remove compatibility workarounds merely because a newer SDK supports a cleaner default. Remove each workaround only in the PR where CI/build evidence proves the default replacement works in this monorepo.
-
-## Metro monorepo cleanup
-
-The repository still carries manual monorepo `watchFolders` / `nodeModulesPaths` overrides originally introduced for the older Expo baseline. Newer Expo releases provide automatic monorepo Metro configuration, but that cleanup remains an evidence-driven change. Do not combine it with New Architecture adoption unless validation proves the old override blocks the migration.
+Do not remove compatibility workarounds merely because a newer SDK supports a cleaner default. Remove each workaround only in the checkpoint where CI/build evidence proves the default replacement works in this monorepo.
 
 ## EAS/native proof boundary
 
