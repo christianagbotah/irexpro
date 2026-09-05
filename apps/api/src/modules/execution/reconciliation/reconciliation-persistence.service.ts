@@ -41,7 +41,19 @@ export class ReconciliationPersistenceService {
     return digest.readUInt32BE(0) & 0x7fffffff;
   }
 
-  // ─── Runs ──────────────────────────────────────────────────────────────────
+  /**
+   * Unwrap TypeORM's Postgres driver result shape. UPDATE queries return
+   * `[rows, rowCount]` (even with RETURNING — the PR-3 applyFill lesson);
+   * other queries return the rows array directly. Shape-aware so both work.
+   */
+  private unwrapQueryRows(result: unknown): Array<Record<string, unknown>> {
+    if (Array.isArray(result) && Array.isArray(result[0])) {
+      return result[0] as Array<Record<string, unknown>>;
+    }
+    return (result as Array<Record<string, unknown>>) ?? [];
+  }
+
+  // ─── Runs ──────────────────────────────────────────────────────────────────────
 
   async createRun(input: {
     userId: string;
@@ -179,18 +191,19 @@ export class ReconciliationPersistenceService {
           ],
         );
 
-        // TypeORM/pg returns rows; an insert reports inserted_new = true,
-        // an update reports false (xmax heuristic).
-        const row = result?.[0];
+        // Shape-aware: INSERT ... RETURNING may arrive as rows or as
+        // [rows, rowCount] depending on driver/statement shape.
+        const rows = this.unwrapQueryRows(result);
+        const row = rows[0];
         if (row?.inserted_new === true || row?.inserted_new === 'true') {
           inserted++;
           newRows.push({
             id: String(row.id),
             type: String(row.discrepancy_type),
             severity: String(row.severity),
-            internalRefId: row.internal_ref_id ?? null,
-            providerRef: row.provider_ref ?? null,
-            clientOrderId: row.client_order_id ?? null,
+            internalRefId: (row.internal_ref_id as string | null) ?? null,
+            providerRef: (row.provider_ref as string | null) ?? null,
+            clientOrderId: (row.client_order_id as string | null) ?? null,
           });
         } else {
           refreshed++;
@@ -257,12 +270,15 @@ export class ReconciliationPersistenceService {
             ref.providerRef,
           ],
         );
-        for (const row of result ?? []) {
+        // UPDATE ... RETURNING arrives as [rows, rowCount] on the Postgres
+        // driver — unwrap before reading (PR-3 applyFill lesson).
+        const rows = this.unwrapQueryRows(result);
+        for (const row of rows) {
           resolved.push({
             id: String(row.id),
             type: String(row.discrepancy_type),
-            internalRefId: row.internal_ref_id ?? null,
-            providerRef: row.provider_ref ?? null,
+            internalRefId: (row.internal_ref_id as string | null) ?? null,
+            providerRef: (row.provider_ref as string | null) ?? null,
           });
         }
       }

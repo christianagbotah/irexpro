@@ -2,7 +2,12 @@ import { DataSource } from 'typeorm';
 import { ReconciliationPersistenceService } from './reconciliation-persistence.service';
 import { ReconciliationRun } from './entities/reconciliation-run.entity';
 import { ReconciliationDiscrepancy } from './entities/reconciliation-discrepancy.entity';
-import { ReconciliationRunStatus, ReconciliationDiscrepancySeverity, ReconciliationRefType, ReconciliationDiscrepancyType } from './reconciliation.enums';
+import {
+  ReconciliationRunStatus,
+  ReconciliationDiscrepancySeverity,
+  ReconciliationRefType,
+  ReconciliationDiscrepancyType,
+} from './reconciliation.enums';
 import { DiscrepancyCandidate } from './reconciliation-comparator';
 
 /**
