@@ -56,7 +56,9 @@ export class WsJwtGuard implements CanActivate {
       if (!payload.sub || typeof payload.sub !== 'string') {
         throw new Error('missing subject');
       }
-      if (payload.tokenType && payload.tokenType !== 'access') {
+      // Token purpose is explicit and fail-closed, matching the HTTP bearer
+      // boundary. Missing tokenType is not treated as a legacy access token.
+      if (payload.tokenType !== 'access') {
         throw new Error('wrong token type');
       }
 
