@@ -6,6 +6,8 @@ import { BrokerAccount } from '../../broker/entities/broker-account.entity';
 import { BrokerService } from '../../broker/broker.service';
 import { BrokerAdapterRegistry } from '../../broker/adapters/broker-adapter.registry';
 import { CredentialEncryptionService } from '../../broker/services/credential-encryption.service';
+import { BrokerCredentialLifecycle } from '../../broker/authorization/broker-credential-status';
+import { ConflictException } from '@nestjs/common';
 import { AuditService } from '../../audit/audit.service';
 import { AuditAction } from '../../../common/enums/audit-action.enum';
 import { AuditSeverity } from '../../audit/entities/audit-log.entity';
@@ -462,13 +464,29 @@ export class StateReconciliationService {
     return this.brokerService.findConnectionsByIds(Array.from(ids));
   }
 
-  /** Decrypt stored credentials; fall back to the safe account reference. */
+  /**
+   * Decrypt stored credentials; fall back to the safe account reference.
+   *
+   * A3 (architect correction): the credential lifecycle is AUTHORITATIVE —
+   * reconciliation never bypasses it. Unusable lifecycle states (INVALID /
+   * EXPIRED / REVOKED / missing) fail closed BEFORE any decryption or
+   * provider call; the run is recorded FAILED with this honest reason and
+   * the connection's discrepancies remain un-reconciled (surfaced, never
+   * fabricated).
+   */
   private buildCredentials(connection: BrokerConnection): {
     accountId: string;
     apiKey?: string;
     apiSecret?: string;
     serverUrl?: string;
   } {
+    if (!BrokerCredentialLifecycle.isUsable(connection.credentialStatus)) {
+      throw new ConflictException(
+        `Reconciliation skipped for connection ${connection.id}: credential ` +
+          `lifecycle state is ${connection.credentialStatus ?? 'MISSING'} ` +
+          '(fail-closed — rotate credentials to restore reconciliation)',
+      );
+    }
     if (
       connection.encryptedCredentials &&
       connection.credentialIv &&

@@ -3,6 +3,7 @@ import { BrokerConnection } from '../../broker/entities/broker-connection.entity
 import { BrokerService } from '../../broker/broker.service';
 import { BrokerAdapterRegistry } from '../../broker/adapters/broker-adapter.registry';
 import { CredentialEncryptionService } from '../../broker/services/credential-encryption.service';
+import { BrokerCredentialLifecycle } from '../../broker/authorization/broker-credential-status';
 import {
   BrokerMode,
   BrokerOrderRequest,
@@ -25,6 +26,21 @@ import { mapProviderOrderResponse } from './provider-response.mapper';
 const EXECUTION_TIMEOUT_MS = 10_000;
 const MAX_RETRY_ATTEMPTS = 3;
 const RETRY_DELAYS_MS = [1_000, 3_000, 9_000];
+
+/** Secret-like token runs (same heuristic as the admin live-ops sanitizer). */
+const SECRET_LIKE_RUN = /[A-Za-z0-9]{16,}/g;
+const PROVIDER_REASON_MAX_LENGTH = 500;
+
+/**
+ * Redact secret-like material from provider messages BEFORE they enter
+ * order reject reasons, audit metadata, or realtime event payloads
+ * (architect review Phase D: no credential material or secret-bearing
+ * provider errors in logs/audits/events).
+ */
+function sanitizeProviderReason(reason: string | null | undefined): string {
+  const bounded = (reason ?? 'Unknown provider reason').slice(0, PROVIDER_REASON_MAX_LENGTH);
+  return bounded.replace(SECRET_LIKE_RUN, '[redacted]');
+}
 
 /**
  * ExecutionOrchestrator — Directive PHASE D "execution foundation".
@@ -111,14 +127,32 @@ export class ExecutionOrchestrator {
       );
     }
 
-    // ── Gate B: LIVE authorization state machine (fail-closed) ────────────
+    // ── Re-load the PERSISTED connection (architect correction, Phase D):
+    // the caller's snapshot can be stale — a concurrent revoke/suspend
+    // between the caller's load and this boundary must NOT be bypassed.
+    // Fail-closed when the row is gone or the store is unreadable.
+    let connection: BrokerConnection;
+    try {
+      connection = await this.brokerService.findConnectionById(ctx.connection.id, ctx.userId);
+    } catch (err) {
+      this.logger.warn(
+        `Dispatch blocked: connection ${ctx.connection.id} could not be re-loaded ` +
+          `for user ${ctx.userId} (${(err as Error).message}) — fail-closed`,
+      );
+      throw new ForbiddenException(
+        'Broker connection is no longer available for dispatch (fail-closed).',
+      );
+    }
+
+    // ── Gate B: LIVE authorization state machine (fail-closed, checked
+    // against the PERSISTED state — not the caller's snapshot) ─────────────
     if (
-      ctx.connection.accountType === BrokerMode.LIVE &&
-      !this.brokerService.isConnectionExecutable(ctx.connection)
+      connection.accountType === BrokerMode.LIVE &&
+      !this.brokerService.isConnectionExecutable(connection)
     ) {
       this.logger.warn(
         `Dispatch blocked: LIVE connection ${ctx.connection.id} is not executable ` +
-          `(authorizationStatus: ${ctx.connection.authorizationStatus ?? 'UNKNOWN'})`,
+          `(authorizationStatus: ${connection.authorizationStatus ?? 'UNKNOWN'})`,
       );
       await this.auditService.log({
         actorUserId: ctx.userId,
@@ -127,7 +161,7 @@ export class ExecutionOrchestrator {
         resourceId: 'not-dispatched',
         metadata: {
           reason: 'LIVE_AUTHORIZATION_REQUIRED',
-          authorizationStatus: ctx.connection.authorizationStatus ?? 'UNKNOWN',
+          authorizationStatus: connection.authorizationStatus ?? 'UNKNOWN',
           brokerConnectionId: ctx.connection.id,
         },
         severity: AuditSeverity.WARNING,
@@ -135,6 +169,39 @@ export class ExecutionOrchestrator {
       throw new ForbiddenException(
         'Live account is not authorized for execution (authorization state is not ACTIVE).',
       );
+    }
+
+    // ── Gate C: credential lifecycle (architect correction A3 enforced at
+    // the downstream boundary): persisted credentials may only be decrypted
+    // when the lifecycle state is usable AND the ciphertext is present.
+    // INVALID / EXPIRED / REVOKED / missing states never reach the provider. ─
+    if (!BrokerCredentialLifecycle.isUsable(connection.credentialStatus)) {
+      this.logger.warn(
+        `Dispatch blocked: connection ${ctx.connection.id} credential status is ` +
+          `${connection.credentialStatus ?? 'MISSING'} — refusing to decrypt (fail-closed)`,
+      );
+      await this.auditService.log({
+        actorUserId: ctx.userId,
+        action: AuditAction.ORDER_REJECTED,
+        resourceType: 'Order',
+        resourceId: 'not-dispatched',
+        metadata: {
+          reason: 'CREDENTIAL_LIFECYCLE_BLOCKED',
+          credentialStatus: connection.credentialStatus ?? 'MISSING',
+          brokerConnectionId: ctx.connection.id,
+        },
+        severity: AuditSeverity.WARNING,
+      });
+      throw new ForbiddenException(
+        'Broker credentials are not usable for execution (credential lifecycle is not active).',
+      );
+    }
+    if (!connection.encryptedCredentials || !connection.credentialIv || !connection.credentialTag) {
+      this.logger.warn(
+        `Dispatch blocked: connection ${ctx.connection.id} has no stored credential ` +
+          'ciphertext — refusing provider dispatch (fail-closed)',
+      );
+      throw new ForbiddenException('Broker connection credentials unavailable (fail-closed).');
     }
   }
 
@@ -272,10 +339,13 @@ export class ExecutionOrchestrator {
         }
 
         case 'REJECT': {
-          order = await this.orderService.rejectOrder(order.id, action.reason);
+          // Provider messages are sanitized BEFORE persisting/ordering —
+          // no secret-bearing material in reject reasons (Phase D).
+          const sanitizedReason = sanitizeProviderReason(action.reason);
+          order = await this.orderService.rejectOrder(order.id, sanitizedReason);
           await this.emitOrderEvent(DomainEventType.ORDER_REJECTED, intent, order, {
             status: OrderStatus.REJECTED,
-            reason: action.reason,
+            reason: sanitizedReason,
           });
           await this.auditService.log({
             actorUserId: intent.userId,
@@ -284,12 +354,12 @@ export class ExecutionOrchestrator {
             resourceId: order.id,
             metadata: {
               clientOrderId: intent.clientOrderId,
-              reason: action.reason,
+              reason: sanitizedReason,
               orderStatus: OrderStatus.REJECTED,
             },
             severity: AuditSeverity.WARNING,
           });
-          return { outcome: 'REJECTED', order, orderId: order.id, reason: action.reason };
+          return { outcome: 'REJECTED', order, orderId: order.id, reason: sanitizedReason };
         }
 
         case 'RECONCILIATION_PENDING': {
