@@ -35,14 +35,14 @@
 // fields (passwordHash, mfaSecret, deletedAt, profile PII, userRoles) are
 // never included.
 
-export type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'USER';
+export type UserRole = "SUPER_ADMIN" | "ADMIN" | "USER";
 
 export type UserStatus =
-  | 'PENDING_VERIFICATION'
-  | 'ACTIVE'
-  | 'SUSPENDED'
-  | 'PERMANENTLY_LOCKED'
-  | 'CLOSED';
+  | "PENDING_VERIFICATION"
+  | "ACTIVE"
+  | "SUSPENDED"
+  | "PERMANENTLY_LOCKED"
+  | "CLOSED";
 
 /**
  * The user object returned by GET /auth/me (Sprint 25 — frontend-safe DTO).
@@ -181,9 +181,12 @@ export interface SubmitAccountAppealResponse {
   message: string;
 }
 
-export type AccountAppealStatus = 'PENDING' | 'RESOLVED';
-export type AccountAppealDecision = 'REACTIVATE' | 'PERMANENTLY_LOCK' | 'DELETE';
-export type AccountStatusAction = 'DEACTIVATE' | 'PERMANENTLY_LOCK' | 'DELETE';
+export type AccountAppealStatus = "PENDING" | "RESOLVED";
+export type AccountAppealDecision =
+  | "REACTIVATE"
+  | "PERMANENTLY_LOCK"
+  | "DELETE";
+export type AccountStatusAction = "DEACTIVATE" | "PERMANENTLY_LOCK" | "DELETE";
 
 // Admin-only, frontend-safe view. No credentials, session tokens, or broker data.
 export interface AccountAppealAdminView {
@@ -236,7 +239,7 @@ export interface AdminAccountStatusView {
  *   Subscriptions are no longer sold. Retained for historical compatibility
  *   with existing database rows and migrations only.
  */
-export type BillingInterval = 'MONTHLY' | 'QUARTERLY' | 'ANNUAL';
+export type BillingInterval = "MONTHLY" | "QUARTERLY" | "ANNUAL";
 
 /**
  * @deprecated Subscription-retirement (SUBSCRIPTION-RETIREMENT-IMPL):
@@ -258,11 +261,11 @@ export interface SubscriptionPlan {
  *   for historical compatibility only — do not use in new code.
  */
 export type SubscriptionStatus =
-  | 'ACTIVE'
-  | 'TRIAL'
-  | 'PAST_DUE'
-  | 'CANCELLED'
-  | 'EXPIRED';
+  | "ACTIVE"
+  | "TRIAL"
+  | "PAST_DUE"
+  | "CANCELLED"
+  | "EXPIRED";
 
 /**
  * @deprecated Subscription-retirement (SUBSCRIPTION-RETIREMENT-IMPL):
@@ -284,33 +287,28 @@ export interface UserSubscription {
 // ── Payments / invoices ─────────────────────────────────────────────────────
 
 export type PaymentProvider =
-  | 'stripe'
-  | 'paystack'
-  | 'flutterwave'
-  | 'hubtel'
-  | 'paypal'
-  | 'wise'
-  | 'manual';
+  | "stripe"
+  | "paystack"
+  | "flutterwave"
+  | "hubtel"
+  | "paypal"
+  | "wise"
+  | "manual";
 
 export type PaymentPurpose =
-  | 'SUBSCRIPTION_INITIAL'
-  | 'SUBSCRIPTION_RENEWAL'
-  | 'PERFORMANCE_FEE';
+  | "SUBSCRIPTION_INITIAL"
+  | "SUBSCRIPTION_RENEWAL"
+  | "PERFORMANCE_FEE";
 
 export type PaymentTransactionStatus =
-  | 'PENDING'
-  | 'PROCESSING'
-  | 'SUCCEEDED'
-  | 'FAILED'
-  | 'CANCELLED'
-  | 'REFUNDED';
+  | "PENDING"
+  | "PROCESSING"
+  | "SUCCEEDED"
+  | "FAILED"
+  | "CANCELLED"
+  | "REFUNDED";
 
-export type InvoiceStatus =
-  | 'DRAFT'
-  | 'ISSUED'
-  | 'OVERDUE'
-  | 'PAID'
-  | 'VOID';
+export type InvoiceStatus = "DRAFT" | "ISSUED" | "OVERDUE" | "PAID" | "VOID";
 
 export interface Invoice {
   id: string;
@@ -368,11 +366,11 @@ export interface PaymentProviderInfo {
  * (apps/api/src/modules/broker/interfaces/broker-adapter.interface.ts).
  */
 export type BrokerConnectionStatus =
-  | 'CONNECTING'
-  | 'CONNECTED'
-  | 'DISCONNECTED'
-  | 'ERROR'
-  | 'SUSPENDED';
+  | "CONNECTING"
+  | "CONNECTED"
+  | "DISCONNECTED"
+  | "ERROR"
+  | "SUSPENDED";
 
 /**
  * Sprint 50 — authorization state machine (Directive §15).
@@ -380,30 +378,30 @@ export type BrokerConnectionStatus =
  * Backend-authoritative: frontend state can never enable execution.
  */
 export type BrokerAuthorizationStatus =
-  | 'NOT_CONNECTED'
-  | 'CONNECTING'
-  | 'CONNECTED'
-  | 'VERIFYING'
-  | 'AUTHORIZATION_REQUIRED'
-  | 'AUTHORIZED'
-  | 'READY'
-  | 'ACTIVE'
-  | 'SUSPENDED'
-  | 'REVOKED'
-  | 'ERROR'
-  | 'DISCONNECTED';
+  | "NOT_CONNECTED"
+  | "CONNECTING"
+  | "CONNECTED"
+  | "VERIFYING"
+  | "AUTHORIZATION_REQUIRED"
+  | "AUTHORIZED"
+  | "READY"
+  | "ACTIVE"
+  | "SUSPENDED"
+  | "REVOKED"
+  | "ERROR"
+  | "DISCONNECTED";
 
 /**
  * Sprint 50 — credential lifecycle (Directive §14). Metadata only;
  * never carries credential material.
  */
 export type BrokerCredentialStatus =
-  | 'CREATED'
-  | 'VERIFIED'
-  | 'ROTATED'
-  | 'REVOKED'
-  | 'EXPIRED'
-  | 'INVALID';
+  | "CREATED"
+  | "VERIFIED"
+  | "ROTATED"
+  | "REVOKED"
+  | "EXPIRED"
+  | "INVALID";
 
 export interface BrokerConnectionView {
   id: string;
@@ -412,7 +410,7 @@ export interface BrokerConnectionView {
   brokerName: string;
   displayName: string | null;
   accountId: string | null;
-  accountType: 'DEMO' | 'LIVE';
+  accountType: "DEMO" | "LIVE";
   accountCurrency: string | null;
   accountLeverage: number | null;
   status: BrokerConnectionStatus;
@@ -443,7 +441,7 @@ export interface SupportedBroker {
 /** Request body for POST /broker/connections (create connection). */
 export interface CreateBrokerConnectionRequest {
   brokerId: string;
-  accountType: 'DEMO' | 'LIVE';
+  accountType: "DEMO" | "LIVE";
   accountId: string;
   apiKey?: string;
   apiSecret?: string;
@@ -461,8 +459,8 @@ export interface BrokerTestResult {
 // ── Sprint 29: Onboarding + Risk Profile ─────────────────────────────────────
 
 /** Onboarding step identifiers. */
-export type OnboardingStep = 'PROFILE' | 'RISK_PROFILE' | 'BROKER_CONNECTION';
-export type OnboardingNextStep = OnboardingStep | 'READY';
+export type OnboardingStep = "PROFILE" | "RISK_PROFILE" | "BROKER_CONNECTION";
+export type OnboardingNextStep = OnboardingStep | "READY";
 
 /** GET /users/me/onboarding-status response. */
 export interface OnboardingStatus {
@@ -476,7 +474,11 @@ export interface OnboardingStatus {
 }
 
 /** Self-reported trading experience level. */
-export type TradingExperienceLevel = 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED' | 'PROFESSIONAL';
+export type TradingExperienceLevel =
+  | "BEGINNER"
+  | "INTERMEDIATE"
+  | "ADVANCED"
+  | "PROFESSIONAL";
 
 /** PATCH /users/me request body (onboarding profile update). */
 export interface UpdateMyProfileRequest {
@@ -489,7 +491,7 @@ export interface UpdateMyProfileRequest {
 }
 
 /** Allowed trading mode (Sprint 29). */
-export type AllowedTradingMode = 'PAPER_ONLY' | 'SEMI_AUTO' | 'FULL_AUTO';
+export type AllowedTradingMode = "PAPER_ONLY" | "SEMI_AUTO" | "FULL_AUTO";
 
 /** GET /risk/profile response (frontend-safe — no secrets). */
 export interface RiskProfile {
@@ -537,11 +539,11 @@ export interface UpdateRiskProfileRequest {
 // ── Health ──────────────────────────────────────────────────────────────────
 
 export interface HealthResponse {
-  status: 'ok' | 'degraded';
+  status: "ok" | "degraded";
   timestamp: string;
   environment: string;
   version: string;
-  database: 'connected' | 'disconnected';
+  database: "connected" | "disconnected";
 }
 
 // ── API error ───────────────────────────────────────────────────────────────
@@ -584,12 +586,22 @@ export interface ApiError {
  * backend/domain enum.
  */
 export function formatEnumLabel(value: string | null | undefined): string {
-  if (!value) return '';
+  if (!value) return "";
   // Split on underscores, trim, and title-case each token.
   return value
-    .split('_')
+    .split("_")
     .map((word) => word.trim())
     .filter(Boolean)
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-    .join(' ');
+    .join(" ");
 }
+
+// ─── Sprint 50/51: broker registry (server-authoritative catalog) ───────────
+// Directive §AU: web, admin and mobile all render this same registry —
+// never maintain independent client-side broker lists.
+export * from "./broker-registry";
+
+// ─── Sprint 50/51: live account views (§36/§38 contracts) ───────────────────
+// Re-exported from the main entry so Metro (which does not resolve package
+// `exports` subpaths) can import them from '@irexpro/types' directly.
+export * from "./live-account";
