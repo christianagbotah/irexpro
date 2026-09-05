@@ -18,8 +18,14 @@ export function validatePythonLockWorkflow(source) {
   }
 
   const compileStep = source.slice(compileStepStart, verifyStepStart);
-  const seedIndex = compileStep.indexOf(SEED_COMMAND);
-  const compileIndex = compileStep.indexOf(COMPILE_COMMAND);
+  const runStart = compileStep.indexOf('run: |');
+  if (runStart < 0) {
+    return ['Python lock compile step is missing its run body.'];
+  }
+
+  const runBody = compileStep.slice(runStart);
+  const seedIndex = runBody.indexOf(SEED_COMMAND);
+  const compileIndex = runBody.indexOf(COMPILE_COMMAND);
   const failures = [];
 
   if (seedIndex < 0) {
@@ -31,7 +37,7 @@ export function validatePythonLockWorkflow(source) {
   if (seedIndex >= 0 && compileIndex >= 0 && seedIndex > compileIndex) {
     failures.push('Python lock seed must run before pip-compile.');
   }
-  if (/\s--upgrade(?:\s|\\|$)/u.test(compileStep) || /\s-U(?:\s|\\|$)/u.test(compileStep)) {
+  if (/\s--upgrade(?:\s|\\|$)/u.test(runBody) || /\s-U(?:\s|\\|$)/u.test(runBody)) {
     failures.push('Integrity verification must not upgrade dependencies.');
   }
 
@@ -41,6 +47,8 @@ export function validatePythonLockWorkflow(source) {
 function runSelfTest() {
   const valid = `
 - name: Compile deterministic Python runtime lock
+  env:
+    CUSTOM_COMPILE_COMMAND: "${COMPILE_COMMAND} services/ai-engine/pyproject.toml --generate-hashes"
   run: |
     mkdir -p security-artifacts
     ${SEED_COMMAND}
