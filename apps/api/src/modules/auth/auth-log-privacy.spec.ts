@@ -8,6 +8,10 @@ describe('Auth routine log privacy', () => {
     resolve(__dirname, 'password-reset-delivery.service.ts'),
     'utf8',
   );
+  const emailVerificationDeliverySource = readFileSync(
+    resolve(__dirname, 'email-verification-delivery.service.ts'),
+    'utf8',
+  );
 
   it('keeps registration success logging identifier-free', () => {
     expect(authServiceSource).toContain("this.logger.log('New user registered');");
@@ -37,6 +41,24 @@ describe('Auth routine log privacy', () => {
   it('does not serialize raw provider exception messages into password-reset delivery logs', () => {
     expect(passwordResetDeliverySource).not.toMatch(
       /this\.logger\.(?:log|warn|error|debug|verbose)\([^;]*(?:err|error)[^;]*\.message/s,
+    );
+  });
+
+  it('does not serialize raw provider exception messages into verification-email logs', () => {
+    expect(emailVerificationDeliverySource).not.toMatch(
+      /this\.logger\.(?:log|warn|error|debug|verbose)\([^;]*(?:err|error)[^;]*\.message/s,
+    );
+    expect(emailVerificationDeliverySource).not.toMatch(
+      /this\.logger\.(?:log|warn|error|debug|verbose)\([^;]*(?:err|error)\b/s,
+    );
+  });
+
+  it('retains only masked recipient logging for successful verification email delivery', () => {
+    expect(emailVerificationDeliverySource).toContain(
+      'this.logger.log(`Verification email sent to ${this.maskEmail(params.to)}`);',
+    );
+    expect(emailVerificationDeliverySource).not.toContain(
+      'this.logger.log(`Verification email sent to ${params.to}`);',
     );
   });
 });
