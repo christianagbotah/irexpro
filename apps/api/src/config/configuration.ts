@@ -1,3 +1,5 @@
+import { parseCorsOrigins } from './cors-origins';
+
 export default () => ({
   app: {
     port: parseInt(process.env.APP_PORT ?? '3000', 10),
@@ -6,7 +8,7 @@ export default () => ({
     version: process.env.APP_VERSION ?? '0.1.0',
     env: process.env.NODE_ENV ?? 'development',
     apiPrefix: process.env.API_PREFIX ?? 'api/v1',
-    corsOrigins: (process.env.CORS_ORIGINS ?? 'http://localhost:3001').split(','),
+    corsOrigins: parseCorsOrigins(process.env.CORS_ORIGINS),
     // Sprint 28: base URL of the web app, used to build password reset links.
     // e.g. https://irexpro.lightworldtech.com
     // All reset links (web + admin) use this single base URL — admin users
