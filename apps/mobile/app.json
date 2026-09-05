@@ -8,6 +8,7 @@
     "scheme": "irexpro",
     "userInterfaceStyle": "dark",
     "splash": {
+      "image": "./assets/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#0b1020"
     },
@@ -18,6 +19,7 @@
     "android": {
       "package": "com.irexpro.mobile",
       "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0b1020"
       }
     },
