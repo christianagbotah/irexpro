@@ -7,7 +7,6 @@
     "icon": "./assets/icon.png",
     "scheme": "irexpro",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": false,
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
