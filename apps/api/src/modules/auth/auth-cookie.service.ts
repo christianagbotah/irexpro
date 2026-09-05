@@ -39,9 +39,7 @@ export class AuthCookieService {
     // rememberMe controls cookie maxAge.
     //   - rememberMe = false (default): session cookie (cleared on browser close)
     //   - rememberMe = true: 7-day persistent cookie
-    const maxAge = rememberMe
-      ? 7 * 24 * 60 * 60 * 1000
-      : undefined;
+    const maxAge = rememberMe ? 7 * 24 * 60 * 60 * 1000 : undefined;
     return {
       httpOnly: true,
       secure: isProd,
