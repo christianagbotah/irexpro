@@ -53,6 +53,8 @@ const mockQueryRunner = {
   rollbackTransaction: jest.fn(),
   release: jest.fn(),
   manager: {
+    findOne: jest.fn(),
+    getRepository: jest.fn(),
     update: jest.fn(),
     save: jest.fn(async (entity) => entity),
   },
@@ -66,6 +68,8 @@ describe('PasswordResetService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     mockDeliveryService.deliver = jest.fn().mockResolvedValue(true);
+    mockQueryRunner.manager.findOne.mockResolvedValue({ id: 'locked-user' });
+    mockQueryRunner.manager.getRepository.mockReturnValue(mockResetTokenRepo);
     mockQueryRunner.manager.update.mockResolvedValue({ affected: 1 });
 
     module = await Test.createTestingModule({

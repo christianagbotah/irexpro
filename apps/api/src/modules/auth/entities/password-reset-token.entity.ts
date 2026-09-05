@@ -28,9 +28,10 @@ import {
  * Indexes: user_id (lookup + invalidation), token_hash (email verification
  * lookup and digest indexing), expires_at (cleanup of expired tokens).
  *
- * When a new token is issued, all previous UNUSED tokens for the same user
- * are invalidated (used_at set to now()) — only one active reset token per
- * user at a time.
+ * When a new token is issued, the service serializes issuance with a
+ * transaction-scoped pessimistic lock on the user row, invalidates all prior
+ * UNUSED tokens for that user, and then persists the replacement token. This
+ * keeps only one service-issued active reset token per user at a time.
  */
 export enum ResetChannel {
   EMAIL = 'EMAIL',
