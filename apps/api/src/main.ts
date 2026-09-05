@@ -5,11 +5,12 @@ import { NestFactory, Reflector } from '@nestjs/core';
 import { IoAdapter } from '@nestjs/platform-socket.io';
 import * as compression from 'compression';
 import * as cookieParser from 'cookie-parser';
-import { NextFunction, Request, Response } from 'express';
+import type { Express, NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
-import { setupSwagger } from './config/swagger.config';
 import { createCorrelationId, runWithCorrelationId } from './common/utils/request-correlation.util';
+import { isTrustedReverseProxy } from './config/proxy-trust';
+import { setupSwagger } from './config/swagger.config';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -31,6 +32,13 @@ async function bootstrap() {
     env === 'production' ? '127.0.0.1' : '0.0.0.0',
   );
   const corsOrigins = configService.get<string[]>('app.corsOrigins', ['http://localhost:3001']);
+
+  // The verified VPS topology has exactly one reverse proxy hop: same-host
+  // Nginx connects to NestJS over loopback. Trust forwarded client metadata
+  // only from that immediate loopback peer; direct/public/private-network
+  // callers cannot make Express honor arbitrary X-Forwarded-For values.
+  const expressApp = app.getHttpAdapter().getInstance() as Express;
+  expressApp.set('trust proxy', isTrustedReverseProxy);
 
   app.setGlobalPrefix(apiPrefix);
   app.useWebSocketAdapter(new IoAdapter(app));
