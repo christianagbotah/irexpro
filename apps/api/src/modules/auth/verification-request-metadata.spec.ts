@@ -28,6 +28,21 @@ describe('VerificationService request metadata bounds', () => {
       create: jest.fn((value: Partial<AuthVerificationToken>) => value),
       save: jest.fn(async (value: Partial<AuthVerificationToken>) => value),
     };
+    const queryRunner = {
+      connect: jest.fn(),
+      startTransaction: jest.fn(),
+      commitTransaction: jest.fn(),
+      rollbackTransaction: jest.fn(),
+      release: jest.fn(),
+      isTransactionActive: true,
+      manager: {
+        findOne: jest.fn().mockResolvedValue({ id: user.id }),
+        getRepository: jest.fn().mockReturnValue(tokenRepo),
+      },
+    };
+    const dataSource = {
+      createQueryRunner: jest.fn().mockReturnValue(queryRunner),
+    } as unknown as DataSource;
     const emailDelivery = {
       isConfigured: jest.fn().mockReturnValue(true),
       send: jest.fn().mockResolvedValue(true),
@@ -53,7 +68,7 @@ describe('VerificationService request metadata bounds', () => {
       phoneDelivery as unknown as PhoneVerificationDeliveryService,
       configService,
       auditService as unknown as AuditService,
-      {} as DataSource,
+      dataSource,
     );
 
     const context = {

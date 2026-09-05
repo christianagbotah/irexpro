@@ -12,6 +12,28 @@ import { VerificationService } from './verification.service';
 describe('VerificationService request flow', () => {
   const verificationPepper = 'phone-verification-pepper-32-bytes-minimum';
 
+  function createIssuanceDataSource(
+    user: User,
+    tokenRepo: {
+      update: jest.Mock;
+      save: jest.Mock;
+    },
+  ): DataSource {
+    const queryRunner = {
+      connect: jest.fn(),
+      startTransaction: jest.fn(),
+      commitTransaction: jest.fn(),
+      rollbackTransaction: jest.fn(),
+      release: jest.fn(),
+      isTransactionActive: true,
+      manager: {
+        findOne: jest.fn().mockResolvedValue({ id: user.id }),
+        getRepository: jest.fn().mockReturnValue(tokenRepo),
+      },
+    };
+    return { createQueryRunner: jest.fn().mockReturnValue(queryRunner) } as unknown as DataSource;
+  }
+
   it('persists only a SHA-256 email token hash and keeps the raw token out of the request URL query', async () => {
     const user = {
       id: '11111111-1111-4111-8111-111111111111',
@@ -57,7 +79,7 @@ describe('VerificationService request flow', () => {
       phoneDelivery as unknown as PhoneVerificationDeliveryService,
       configService,
       auditService as unknown as AuditService,
-      {} as DataSource,
+      createIssuanceDataSource(user, tokenRepo),
     );
 
     await service.requestEmailVerification(user.id, {
@@ -130,7 +152,7 @@ describe('VerificationService request flow', () => {
       phoneDelivery as unknown as PhoneVerificationDeliveryService,
       configService,
       auditService as unknown as AuditService,
-      {} as DataSource,
+      createIssuanceDataSource(user, tokenRepo),
     );
 
     await service.requestPhoneVerification(user.id, {
@@ -191,7 +213,7 @@ describe('VerificationService request flow', () => {
       phoneDelivery as unknown as PhoneVerificationDeliveryService,
       configService,
       auditService as unknown as AuditService,
-      {} as DataSource,
+      createIssuanceDataSource(user, tokenRepo),
     );
 
     await expect(service.requestPhoneVerification(user.id, {})).rejects.toThrow(
