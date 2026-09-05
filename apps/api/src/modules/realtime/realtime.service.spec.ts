@@ -126,6 +126,89 @@ describe('RealtimeService', () => {
       );
     });
 
+    // ─── Sprint 50 PR-3 — normalized order lifecycle forwarding ──────────────
+
+    it('forwards ORDER_SUBMITTED to user room (safe payload — no idempotency keys)', () => {
+      eventBus.publish(DomainEventType.ORDER_SUBMITTED, 'user-1', {
+        orderId: 'o-1',
+        userId: 'user-1',
+        clientOrderId: 'sig-signal-1',
+        instrument: 'EURUSD',
+        direction: 'BUY',
+        orderKind: 'MARKET',
+        status: 'SUBMITTED',
+        requestedQuantity: '0.05',
+        tradeId: 't-1',
+      });
+      expect(mockRoom.emit).toHaveBeenCalledWith(
+        RealtimeEvent.ORDER_SUBMITTED,
+        expect.objectContaining({
+          orderId: 'o-1',
+          clientOrderId: 'sig-signal-1',
+          orderKind: 'MARKET',
+          requestedQuantity: '0.05',
+        }),
+      );
+      const emittedPayload = mockRoom.emit.mock.calls[0][1] as Record<string, unknown>;
+      expect(emittedPayload).not.toHaveProperty('idempotencyKey');
+      expect(emittedPayload).not.toHaveProperty('userId');
+    });
+
+    it('forwards ORDER_FILLED to user room with decimal-string fill fields', () => {
+      eventBus.publish(DomainEventType.ORDER_FILLED, 'user-1', {
+        orderId: 'o-1',
+        userId: 'user-1',
+        clientOrderId: 'sig-signal-1',
+        instrument: 'EURUSD',
+        direction: 'BUY',
+        orderKind: 'MARKET',
+        status: 'FILLED',
+        requestedQuantity: '0.05',
+        filledQuantity: '0.05',
+        avgFillPrice: '1.08500',
+      });
+      expect(mockRoom.emit).toHaveBeenCalledWith(
+        RealtimeEvent.ORDER_FILLED,
+        expect.objectContaining({ filledQuantity: '0.05', avgFillPrice: '1.08500' }),
+      );
+    });
+
+    it('forwards ORDER_REJECTED to user room with the reason', () => {
+      eventBus.publish(DomainEventType.ORDER_REJECTED, 'user-1', {
+        orderId: 'o-2',
+        userId: 'user-1',
+        clientOrderId: 'sig-signal-2',
+        instrument: 'EURUSD',
+        direction: 'BUY',
+        orderKind: 'MARKET',
+        status: 'REJECTED',
+        requestedQuantity: '0.05',
+        reason: 'Insufficient margin',
+      });
+      expect(mockRoom.emit).toHaveBeenCalledWith(
+        RealtimeEvent.ORDER_REJECTED,
+        expect.objectContaining({ orderId: 'o-2', reason: 'Insufficient margin' }),
+      );
+    });
+
+    it('forwards ORDER_RECONCILIATION_PENDING to user room', () => {
+      eventBus.publish(DomainEventType.ORDER_RECONCILIATION_PENDING, 'user-1', {
+        orderId: 'o-3',
+        userId: 'user-1',
+        clientOrderId: 'sig-signal-3',
+        instrument: 'EURUSD',
+        direction: 'BUY',
+        orderKind: 'MARKET',
+        status: 'RECONCILIATION_PENDING',
+        requestedQuantity: '0.05',
+        reason: 'dispatch timeout',
+      });
+      expect(mockRoom.emit).toHaveBeenCalledWith(
+        RealtimeEvent.ORDER_RECONCILIATION_PENDING,
+        expect.objectContaining({ orderId: 'o-3', status: 'RECONCILIATION_PENDING' }),
+      );
+    });
+
     it('cleans up subscriptions on onModuleDestroy', () => {
       service.onModuleDestroy();
       mockRoom.emit.mockClear();

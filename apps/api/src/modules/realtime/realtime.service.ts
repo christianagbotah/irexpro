@@ -5,6 +5,7 @@ import { DomainEventType } from '../events/enums/domain-event-type.enum';
 import {
   TradingSessionEventPayload,
   TradeEventPayload,
+  OrderEventPayload,
   RiskDecisionEventPayload,
   BrokerStatusEventPayload,
   BrokerAuthorizationEventPayload,
@@ -192,6 +193,76 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
             decision: payload.decision,
             rejectionCode: payload.rejectionCode,
             rejectionReason: payload.rejectionReason,
+          });
+        },
+      ),
+
+      // Sprint 50 PR-3 — normalized order lifecycle (safe fields only;
+      // mirrors the frontend-safe OrderView projection)
+      this.eventBus.subscribe<OrderEventPayload>(
+        DomainEventType.ORDER_SUBMITTED,
+        ({ userId, payload }) => {
+          this.emitToUser(userId, RealtimeEvent.ORDER_SUBMITTED, {
+            orderId: payload.orderId,
+            clientOrderId: payload.clientOrderId,
+            instrument: payload.instrument,
+            direction: payload.direction,
+            orderKind: payload.orderKind,
+            status: payload.status,
+            requestedQuantity: payload.requestedQuantity,
+          });
+        },
+      ),
+
+      this.eventBus.subscribe<OrderEventPayload>(
+        DomainEventType.ORDER_ACKNOWLEDGED,
+        ({ userId, payload }) => {
+          this.emitToUser(userId, RealtimeEvent.ORDER_ACKNOWLEDGED, {
+            orderId: payload.orderId,
+            clientOrderId: payload.clientOrderId,
+            instrument: payload.instrument,
+            status: payload.status,
+            providerOrderId: payload.providerOrderId ?? null,
+          });
+        },
+      ),
+
+      this.eventBus.subscribe<OrderEventPayload>(
+        DomainEventType.ORDER_FILLED,
+        ({ userId, payload }) => {
+          this.emitToUser(userId, RealtimeEvent.ORDER_FILLED, {
+            orderId: payload.orderId,
+            clientOrderId: payload.clientOrderId,
+            instrument: payload.instrument,
+            status: payload.status,
+            filledQuantity: payload.filledQuantity,
+            avgFillPrice: payload.avgFillPrice,
+          });
+        },
+      ),
+
+      this.eventBus.subscribe<OrderEventPayload>(
+        DomainEventType.ORDER_REJECTED,
+        ({ userId, payload }) => {
+          this.emitToUser(userId, RealtimeEvent.ORDER_REJECTED, {
+            orderId: payload.orderId,
+            clientOrderId: payload.clientOrderId,
+            instrument: payload.instrument,
+            status: payload.status,
+            reason: payload.reason,
+          });
+        },
+      ),
+
+      this.eventBus.subscribe<OrderEventPayload>(
+        DomainEventType.ORDER_RECONCILIATION_PENDING,
+        ({ userId, payload }) => {
+          this.emitToUser(userId, RealtimeEvent.ORDER_RECONCILIATION_PENDING, {
+            orderId: payload.orderId,
+            clientOrderId: payload.clientOrderId,
+            instrument: payload.instrument,
+            status: payload.status,
+            reason: payload.reason,
           });
         },
       ),
