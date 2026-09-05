@@ -150,9 +150,9 @@ describe('AuthCookieService (hybrid httpOnly cookie)', () => {
 
     it('rejects an untrusted origin even outside production', () => {
       configure('test');
-      expect(() => service.assertTrustedBrowserRequest(request('https://attacker.example'))).toThrow(
-        ForbiddenException,
-      );
+      expect(() =>
+        service.assertTrustedBrowserRequest(request('https://attacker.example')),
+      ).toThrow(ForbiddenException);
     });
 
     it('rejects origin-suffix confusion', () => {
@@ -164,10 +164,15 @@ describe('AuthCookieService (hybrid httpOnly cookie)', () => {
       ).toThrow(ForbiddenException);
     });
 
-    it.each(['null', 'not a url', '://broken'])('rejects malformed/unusable origin %s', (origin) => {
-      configure('production');
-      expect(() => service.assertTrustedBrowserRequest(request(origin))).toThrow(ForbiddenException);
-    });
+    it.each(['null', 'not a url', '://broken'])(
+      'rejects malformed/unusable origin %s',
+      (origin) => {
+        configure('production');
+        expect(() => service.assertTrustedBrowserRequest(request(origin))).toThrow(
+          ForbiddenException,
+        );
+      },
+    );
 
     it('fails closed when production browser provenance is missing', () => {
       configure('production');
