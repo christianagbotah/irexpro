@@ -11,6 +11,8 @@ describe('Nginx security policy', () => {
       encoding: 'utf8',
     });
 
-    expect(output).toContain('Nginx transport-security and API boundary policy passed.');
+    expect(output).toContain(
+      'Nginx transport-security, API boundary, and server-token policy passed.',
+    );
   });
 });

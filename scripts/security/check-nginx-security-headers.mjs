@@ -65,9 +65,21 @@ if (/\bpreload\b/i.test(activeDirectives)) {
   fail('HSTS preload must not be enabled without separate operational validation');
 }
 
-const httpsServers = extractBlocks(source, 'server {').filter((block) =>
-  block.includes('listen 443 ssl http2;'),
-);
+const allServers = extractBlocks(activeDirectives, 'server {');
+if (allServers.length !== 4) {
+  fail(`expected exactly 4 iRexPro server blocks, found ${allServers.length}`);
+}
+
+for (const block of allServers) {
+  const tokenDirectives = [...block.matchAll(/\bserver_tokens\s+([^;]+);/g)];
+  if (tokenDirectives.length !== 1) {
+    fail(`expected exactly 1 server_tokens directive per server block, found ${tokenDirectives.length}`);
+  } else if (tokenDirectives[0][1].trim() !== 'off') {
+    fail(`server_tokens must remain off, found ${tokenDirectives[0][1].trim()}`);
+  }
+}
+
+const httpsServers = allServers.filter((block) => block.includes('listen 443 ssl http2;'));
 
 if (httpsServers.length !== 2) {
   fail(`expected exactly 2 HTTPS server blocks, found ${httpsServers.length}`);
@@ -108,5 +120,5 @@ for (const block of staticLocations) {
 }
 
 if (!process.exitCode) {
-  console.log('Nginx transport-security and API boundary policy passed.');
+  console.log('Nginx transport-security, API boundary, and server-token policy passed.');
 }
