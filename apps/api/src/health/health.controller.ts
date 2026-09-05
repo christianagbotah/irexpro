@@ -12,14 +12,18 @@ export class HealthController {
   @Public()
   @ApiOperation({ summary: 'Application aggregate health check' })
   async check() {
-    return this.healthService.check();
+    const health = await this.healthService.check();
+
+    return { status: health.status };
   }
 
   @Get('live')
   @Public()
   @ApiOperation({ summary: 'Application process liveness check' })
   live() {
-    return this.healthService.liveness();
+    const liveness = this.healthService.liveness();
+
+    return { status: liveness.status };
   }
 
   @Get('ready')
@@ -27,11 +31,12 @@ export class HealthController {
   @ApiOperation({ summary: 'Application dependency readiness check' })
   async ready() {
     const readiness = await this.healthService.readiness();
+    const publicReadiness = { status: readiness.status };
 
     if (readiness.status !== 'ready') {
-      throw new ServiceUnavailableException(readiness);
+      throw new ServiceUnavailableException(publicReadiness);
     }
 
-    return readiness;
+    return publicReadiness;
   }
 }
