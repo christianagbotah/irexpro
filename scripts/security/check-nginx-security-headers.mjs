@@ -5,6 +5,7 @@ const nginxPath = fileURLToPath(
   new URL('../../infrastructure/nginx/irexpro-staging.example.conf', import.meta.url),
 );
 const source = readFileSync(nginxPath, 'utf8');
+const activeDirectives = source.replace(/#.*$/gm, '');
 
 const HSTS = 'add_header Strict-Transport-Security "max-age=31536000" always;';
 const REQUIRED_STATIC_HEADERS = [
@@ -57,10 +58,10 @@ function extractBlocks(text, opening) {
   return blocks;
 }
 
-if (/\bincludeSubDomains\b/i.test(source)) {
+if (/\bincludeSubDomains\b/i.test(activeDirectives)) {
   fail('includeSubDomains must not be enabled without separate operational validation');
 }
-if (/\bpreload\b/i.test(source)) {
+if (/\bpreload\b/i.test(activeDirectives)) {
   fail('HSTS preload must not be enabled without separate operational validation');
 }
 
