@@ -300,6 +300,15 @@ export class OrderService {
     return this.orderRepo.findOne({ where: { idempotencyKey: key } });
   }
 
+  /**
+   * Find the order linked to a position (trade). Used by the trade
+   * reconciliation job to resolve order-side RECONCILIATION_PENDING states
+   * once the provider-observed position state is known.
+   */
+  async findByTradeId(tradeId: string): Promise<Order | null> {
+    return this.orderRepo.findOne({ where: { tradeId } });
+  }
+
   async listOrdersByUser(userId: string, limit = 50): Promise<Order[]> {
     return this.orderRepo.find({
       where: { userId },
@@ -421,8 +430,12 @@ export class OrderService {
     }
   }
 
-  /** Deterministic client-facing idempotency key. */
-  private generateIdempotencyKey(userId: string, clientOrderId: string): string {
+  /**
+   * Deterministic client-facing idempotency key (SHA-256(userId:clientOrderId)).
+   * Public: the execution orchestrator embeds the same key in the provider
+   * order request for broker-side deduplication.
+   */
+  generateIdempotencyKey(userId: string, clientOrderId: string): string {
     return crypto.createHash('sha256').update(`${userId}:${clientOrderId}`).digest('hex');
   }
 
