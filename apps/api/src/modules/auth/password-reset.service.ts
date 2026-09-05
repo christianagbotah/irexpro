@@ -1,8 +1,14 @@
-import { Injectable, Logger, BadRequestException, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, IsNull, DataSource } from 'typeorm';
-import { createHash, randomBytes, randomInt } from 'crypto';
+import { createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from 'crypto';
 import * as argon2 from 'argon2';
 import { PasswordResetToken, ResetChannel } from './entities/password-reset-token.entity';
 import { User, UserStatus } from '../users/entities/user.entity';
@@ -15,13 +21,16 @@ import { PasswordResetDeliveryService } from './password-reset-delivery.service'
  * PasswordResetService — secure password reset flow.
  *
  * Security properties:
- *   - Raw token/code is NEVER stored. Only SHA-256 hash is persisted.
+ *   - Raw token/code is NEVER stored.
+ *   - High-entropy email tokens use SHA-256 lookup digests.
+ *   - Low-entropy phone codes use a domain-separated HMAC-SHA-256 digest with
+ *     the production-required AUTH_VERIFICATION_PEPPER.
  *   - Email token is 32 random bytes; phone code is 6 digits.
  *   - Email link expires in 15 minutes; phone code in 10 minutes.
  *   - Reset tokens are single-use and prior unused tokens are invalidated.
  *   - Phone code is invalidated after 5 failed attempts.
  *   - Request response is generic to prevent account enumeration.
- *   - Raw token/code is NEVER logged.
+ *   - Raw token/code/pepper is NEVER logged.
  *   - Successful password reset advances User.sessionVersion in the same DB
  *     transaction as the password change, immediately revoking all access and
  *     refresh JWTs issued before the reset.
@@ -77,7 +86,7 @@ export class PasswordResetService {
 
     await this.invalidatePriorTokens(user.id);
 
-    const { rawToken, tokenHash } = this.generateToken(channel);
+    const { rawToken, tokenHash } = this.generateToken(channel, user.id, destination);
 
     const expiresAt = new Date(
       Date.now() +
@@ -141,30 +150,48 @@ export class PasswordResetService {
     }
 
     const user = await this.findUserByIdentifier(trimmed);
-    if (!user) {
+    if (!user || !user.phone) {
       throw new UnauthorizedException('Invalid or expired reset code');
     }
 
-    const codeHash = this.hashToken(code);
+    // Find the active record independently of the caller-supplied code so an
+    // incorrect guess still reaches the token's attempt counter.
     const resetToken = await this.resetTokenRepo.findOne({
-      where: { tokenHash: codeHash, userId: user.id, channel: ResetChannel.PHONE },
+      where: { userId: user.id, channel: ResetChannel.PHONE, usedAt: IsNull() },
+      order: { createdAt: 'DESC' },
     });
 
     if (!resetToken) {
       throw new UnauthorizedException('Invalid or expired reset code');
     }
 
-    if (!this.verifyCode(resetToken, code)) {
-      resetToken.attemptCount += 1;
-      if (resetToken.attemptCount >= PasswordResetService.MAX_PHONE_CODE_ATTEMPTS) {
-        resetToken.usedAt = new Date();
-      }
-      await this.resetTokenRepo.save(resetToken);
+    if (resetToken.expiresAt.getTime() <= Date.now()) {
+      await this.resetTokenRepo.update(
+        { id: resetToken.id, usedAt: IsNull() },
+        { usedAt: new Date() },
+      );
       throw new UnauthorizedException('Invalid or expired reset code');
     }
 
-    this.validateTokenUsable(resetToken);
-    await this.applyPasswordReset(resetToken, password);
+    const pepper = this.verificationPepper();
+    const candidateHash = this.hashPhoneCode(user.id, user.phone, code, pepper);
+    if (!this.safeDigestEqual(resetToken.tokenHash, candidateHash)) {
+      const nextAttemptCount = resetToken.attemptCount + 1;
+      const exhausted = nextAttemptCount >= PasswordResetService.MAX_PHONE_CODE_ATTEMPTS;
+      const updated = await this.resetTokenRepo.update(
+        { id: resetToken.id, usedAt: IsNull(), attemptCount: resetToken.attemptCount },
+        {
+          attemptCount: nextAttemptCount,
+          ...(exhausted ? { usedAt: new Date() } : {}),
+        },
+      );
+      if (updated?.affected !== undefined && updated.affected !== 1) {
+        throw new UnauthorizedException('Invalid or expired reset code');
+      }
+      throw new UnauthorizedException('Invalid or expired reset code');
+    }
+
+    await this.applyPhonePasswordReset(resetToken, password);
   }
 
   private async findUserByIdentifier(identifier: string): Promise<User | null> {
@@ -180,7 +207,11 @@ export class PasswordResetService {
     await this.resetTokenRepo.update({ userId, usedAt: IsNull() }, { usedAt: new Date() });
   }
 
-  private generateToken(channel: ResetChannel): { rawToken: string; tokenHash: string } {
+  private generateToken(
+    channel: ResetChannel,
+    userId: string,
+    destination: string,
+  ): { rawToken: string; tokenHash: string } {
     if (channel === ResetChannel.EMAIL) {
       const rawToken = randomBytes(PasswordResetService.EMAIL_TOKEN_BYTES).toString('hex');
       return { rawToken, tokenHash: this.hashToken(rawToken) };
@@ -189,7 +220,13 @@ export class PasswordResetService {
       PasswordResetService.PHONE_CODE_LENGTH,
       '0',
     );
-    return { rawToken, tokenHash: this.hashToken(rawToken) };
+    const tokenHash = this.hashPhoneCode(
+      userId,
+      destination,
+      rawToken,
+      this.verificationPepper(),
+    );
+    return { rawToken, tokenHash };
   }
 
   private hashToken(rawToken: string): string {
@@ -200,9 +237,24 @@ export class PasswordResetService {
     return createHash('sha256').update(destination.toLowerCase()).digest('hex');
   }
 
-  private verifyCode(resetToken: PasswordResetToken, code: string): boolean {
-    const codeHash = this.hashToken(code);
-    return resetToken.tokenHash === codeHash;
+  private verificationPepper(): string {
+    const pepper = this.configService.get<string>('auth.verificationPepper');
+    if (!pepper || pepper.length < 32) {
+      throw new ServiceUnavailableException('Phone password reset is temporarily unavailable');
+    }
+    return pepper;
+  }
+
+  private hashPhoneCode(userId: string, destination: string, code: string, pepper: string): string {
+    return createHmac('sha256', pepper)
+      .update(`password-reset:${userId}:${destination.toLowerCase()}:${code}`, 'utf8')
+      .digest('hex');
+  }
+
+  private safeDigestEqual(storedHex: string, candidateHex: string): boolean {
+    const stored = Buffer.from(storedHex, 'hex');
+    const candidate = Buffer.from(candidateHex, 'hex');
+    return stored.length === 32 && candidate.length === 32 && timingSafeEqual(stored, candidate);
   }
 
   private validateTokenUsable(resetToken: PasswordResetToken): void {
@@ -211,6 +263,48 @@ export class PasswordResetService {
     }
     if (new Date() > resetToken.expiresAt) {
       throw new UnauthorizedException('Invalid or expired reset token');
+    }
+  }
+
+  private async applyPhonePasswordReset(
+    resetToken: PasswordResetToken,
+    password: string,
+  ): Promise<void> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      const consumedAt = new Date();
+      const consumed = await queryRunner.manager.update(
+        PasswordResetToken,
+        {
+          id: resetToken.id,
+          usedAt: IsNull(),
+          attemptCount: resetToken.attemptCount,
+        },
+        { usedAt: consumedAt },
+      );
+      if (consumed?.affected !== undefined && consumed.affected !== 1) {
+        throw new UnauthorizedException('Invalid or expired reset code');
+      }
+
+      const passwordHash = await this.hashNewPassword(password);
+      await queryRunner.manager.update(User, resetToken.userId, { passwordHash });
+      await queryRunner.manager.update(User, resetToken.userId, {
+        sessionVersion: () => '"session_version" + 1',
+      });
+
+      await queryRunner.commitTransaction();
+
+      await this.logCompletedReset(resetToken.userId, resetToken.channel);
+    } catch (err) {
+      if (queryRunner.isTransactionActive) {
+        await queryRunner.rollbackTransaction();
+      }
+      throw err;
+    } finally {
+      await queryRunner.release();
     }
   }
 
@@ -223,11 +317,7 @@ export class PasswordResetService {
     await queryRunner.startTransaction();
 
     try {
-      const passwordHash = await argon2.hash(password, {
-        memoryCost: this.configService.get<number>('auth.argon2MemoryCost', 65536),
-        timeCost: this.configService.get<number>('auth.argon2TimeCost', 3),
-        parallelism: this.configService.get<number>('auth.argon2Parallelism', 1),
-      });
+      const passwordHash = await this.hashNewPassword(password);
 
       // Keep the password update as a separate statement so audit/tests can
       // verify that only the hash is written here.
@@ -245,23 +335,33 @@ export class PasswordResetService {
 
       await queryRunner.commitTransaction();
 
-      await this.auditService.log({
-        actorUserId: resetToken.userId,
-        action: AuditAction.USER_PASSWORD_RESET_COMPLETED,
-        resourceType: 'User',
-        resourceId: resetToken.userId,
-        metadata: { channel: resetToken.channel, sessionsRevoked: true },
-      });
-
-      this.logger.log(
-        `Password reset completed for user ${resetToken.userId} via ${resetToken.channel}`,
-      );
+      await this.logCompletedReset(resetToken.userId, resetToken.channel);
     } catch (err) {
       await queryRunner.rollbackTransaction();
       throw err;
     } finally {
       await queryRunner.release();
     }
+  }
+
+  private async hashNewPassword(password: string): Promise<string> {
+    return argon2.hash(password, {
+      memoryCost: this.configService.get<number>('auth.argon2MemoryCost', 65536),
+      timeCost: this.configService.get<number>('auth.argon2TimeCost', 3),
+      parallelism: this.configService.get<number>('auth.argon2Parallelism', 1),
+    });
+  }
+
+  private async logCompletedReset(userId: string, channel: ResetChannel): Promise<void> {
+    await this.auditService.log({
+      actorUserId: userId,
+      action: AuditAction.USER_PASSWORD_RESET_COMPLETED,
+      resourceType: 'User',
+      resourceId: userId,
+      metadata: { channel, sessionsRevoked: true },
+    });
+
+    this.logger.log(`Password reset completed for user ${userId} via ${channel}`);
   }
 }
 
