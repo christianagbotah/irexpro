@@ -10,23 +10,23 @@ import {
 /**
  * PasswordResetToken — secure password reset token storage.
  *
- * Sprint 28: stores ONLY the hash of the reset token/code. The raw token is
- * NEVER persisted. The raw token is returned to the user only via the
- * forgot-password response (email link) or SMS (phone code) — never in the
- * API JSON response.
+ * Stores ONLY a one-way digest of the reset token/code. The raw token/code is
+ * NEVER persisted and is delivered only through the configured email/SMS path.
  *
  * Security properties:
- *   - token_hash: SHA-256 hash of the raw token (argon2 is not needed here
- *     because the token is high-entropy random — SHA-256 is sufficient and
- *     faster than argon2 for lookup-by-hash queries).
+ *   - EMAIL token_hash: SHA-256 of a high-entropy 32-byte random token, which
+ *     supports lookup-by-hash without storing the raw secret.
+ *   - PHONE token_hash: domain-separated HMAC-SHA-256 using the external
+ *     AUTH_VERIFICATION_PEPPER because a six-digit code is low entropy and an
+ *     unkeyed digest would be cheaply enumerable from a DB-only snapshot.
  *   - expires_at: 15 minutes for email link, 10 minutes for phone code.
  *   - used_at: non-null after the token has been consumed (single-use).
- *   - attempt_count: incremented on each failed verification attempt
- *     (phone code abuse guard; max 5 attempts before invalidation).
+ *   - attempt_count: atomically incremented on failed phone-code verification;
+ *     max 5 attempts before invalidation.
  *   - user_id: the user who requested the reset (FK to identity.users).
  *
- * Indexes: user_id (lookup + invalidation), token_hash (verification lookup),
- * expires_at (cleanup of expired tokens).
+ * Indexes: user_id (lookup + invalidation), token_hash (email verification
+ * lookup and digest indexing), expires_at (cleanup of expired tokens).
  *
  * When a new token is issued, all previous UNUSED tokens for the same user
  * are invalidated (used_at set to now()) — only one active reset token per
@@ -48,7 +48,7 @@ export class PasswordResetToken {
   @Column({ name: 'user_id', type: 'uuid' })
   userId: string;
 
-  /** SHA-256 hash of the raw token (email link) or numeric code (phone). */
+  /** Channel-specific one-way digest; raw token/code is never stored. */
   @Column({ name: 'token_hash', type: 'varchar', length: 255 })
   tokenHash: string;
 
