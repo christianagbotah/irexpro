@@ -1,6 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  poweredByHeader: false,
   // Transpile the shared workspace packages so they ship as raw TypeScript
   // source and are compiled by Next.js alongside the app.
   transpilePackages: ['@irexpro/types', '@irexpro/api-client'],

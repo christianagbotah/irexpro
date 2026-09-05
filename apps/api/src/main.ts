@@ -10,6 +10,7 @@ import type { Express, NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { createCorrelationId, runWithCorrelationId } from './common/utils/request-correlation.util';
+import { getBootstrapLogLevels, isSwaggerAvailable } from './config/bootstrap-diagnostics';
 import { handleBootstrapFailure } from './config/bootstrap-failure';
 import { isTrustedReverseProxy } from './config/proxy-trust';
 import { setupSwagger } from './config/swagger.config';
@@ -22,7 +23,7 @@ async function bootstrap() {
   // (POST /payments/webhooks/:provider). Without this, req.rawBody is undefined
   // and provider signature checks cannot be performed.
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
-    logger: ['log', 'error', 'warn', 'debug'],
+    logger: getBootstrapLogLevels(process.env.NODE_ENV),
     rawBody: true,
   });
 
@@ -45,6 +46,10 @@ async function bootstrap() {
     env === 'production' ? '127.0.0.1' : '0.0.0.0',
   );
   const corsOrigins = configService.get<string[]>('app.corsOrigins', ['http://localhost:3001']);
+  const swaggerAvailable = isSwaggerAvailable(
+    env,
+    configService.get<boolean>('swagger.enabled', true),
+  );
 
   // The verified VPS topology has exactly one reverse proxy hop: same-host
   // Nginx connects to NestJS over loopback. Trust forwarded client metadata
@@ -91,16 +96,19 @@ async function bootstrap() {
   // Serialiser — strips @Exclude() fields (e.g. passwordHash, mfaSecret)
   app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
 
-  // Swagger
-  if (env !== 'production') {
+  // Swagger is never exposed in production, even if SWAGGER_ENABLED is set.
+  if (swaggerAvailable) {
     setupSwagger(app);
   }
 
   await app.listen(port, host);
   bootstrapLogger.log(`iRexPro API running on http://${host}:${port}/${apiPrefix}`);
-  bootstrapLogger.log(
-    `Swagger docs: http://${host}:${port}/${configService.get('swagger.path', 'api/docs')}`,
-  );
+
+  if (swaggerAvailable) {
+    bootstrapLogger.log(
+      `Swagger docs: http://${host}:${port}/${configService.get('swagger.path', 'api/docs')}`,
+    );
+  }
 }
 
 void bootstrap().catch(() => {
