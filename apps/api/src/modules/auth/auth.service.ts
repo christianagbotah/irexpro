@@ -127,7 +127,7 @@ export class AuthService {
       });
 
       const tokens = this.generateTokens(user, [RoleName.USER]);
-      this.logger.log(`New user registered: ${user.email}`);
+      this.logger.log('New user registered');
       return tokens;
     } catch (err) {
       await queryRunner.rollbackTransaction();
