@@ -139,11 +139,7 @@ describe('remember-me refresh rotation', () => {
 
     expect(cookieService.assertTrustedBrowserRequest).toHaveBeenCalledWith(req);
     expect(authService.refreshBrowserTokens).toHaveBeenCalledWith('cookie-refresh');
-    expect(cookieService.setRefreshCookie).toHaveBeenCalledWith(
-      res,
-      'rotated-refresh',
-      true,
-    );
+    expect(cookieService.setRefreshCookie).toHaveBeenCalledWith(res, 'rotated-refresh', true);
     expect(authService.refreshTokens).not.toHaveBeenCalled();
     expect(result).toEqual({ accessToken: 'rotated-access' });
   });
