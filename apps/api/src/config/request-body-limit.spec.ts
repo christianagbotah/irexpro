@@ -12,9 +12,7 @@ describe('API request-body limit wiring', () => {
 
   it('registers the body limit before the public listener opens', () => {
     const jsonLimit = source.indexOf("app.useBodyParser('json', { limit: '100kb' });");
-    const urlencodedLimit = source.indexOf(
-      "app.useBodyParser('urlencoded', { limit: '100kb' });",
-    );
+    const urlencodedLimit = source.indexOf("app.useBodyParser('urlencoded', { limit: '100kb' });");
     const listen = source.indexOf('await app.listen(port, host);');
 
     expect(jsonLimit).toBeGreaterThan(-1);
