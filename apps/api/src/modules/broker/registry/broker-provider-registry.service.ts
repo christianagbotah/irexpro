@@ -45,10 +45,14 @@ export class BrokerProviderRegistryService {
       const adapterAvailable =
         entry.adapterId !== null && this.adapterRegistry.isSupported(entry.adapterId);
 
-      // Honesty rule: a definition can only be SUPPORTED when its adapter is
-      // actually registered at runtime. Otherwise downgrade to NOT_STARTED.
+      // Honesty rule: a definition can only be SUPPORTED or BETA when its
+      // adapter is actually registered at runtime. Otherwise downgrade to
+      // NOT_STARTED (Sprint 51 PR-7: BETA also requires a real registered
+      // adapter — a catalog entry alone can never claim BETA).
       const effectiveStatus =
-        entry.status === BrokerAvailabilityStatus.SUPPORTED && !adapterAvailable
+        (entry.status === BrokerAvailabilityStatus.SUPPORTED ||
+          entry.status === BrokerAvailabilityStatus.BETA) &&
+        !adapterAvailable
           ? BrokerAvailabilityStatus.NOT_STARTED
           : entry.status;
 

@@ -59,12 +59,25 @@ describe('BrokerProviderRegistryService', () => {
       expect(mt5?.adapterAvailable).toBe(false);
     });
 
-    it('reports research-stage entries as NOT_STARTED (OANDA has no adapter by design)', async () => {
+    it('DOWNGRADES a BETA catalog entry to NOT_STARTED when no adapter is registered (Sprint 51 PR-7)', async () => {
+      // OANDA's catalog entry is BETA with a real adapter implemented, but
+      // the runtime adapter registry here is empty of 'oanda' — BETA must
+      // downgrade exactly like SUPPORTED (no fabricated BETA).
       const service = await buildService(['metatrader5', 'paper-broker']);
       const oanda = service.getCatalog().find((e) => e.id === 'oanda');
       expect(oanda?.status).toBe(BrokerAvailabilityStatus.NOT_STARTED);
       expect(oanda?.adapterAvailable).toBe(false);
       expect(service.isConnectable('oanda')).toBe(false);
+    });
+
+    it('reports OANDA as BETA and connectable when its adapter IS registered (Sprint 51 PR-7)', async () => {
+      const service = await buildService(['metatrader5', 'paper-broker', 'oanda']);
+      const oanda = service.getCatalog().find((e) => e.id === 'oanda');
+      expect(oanda?.status).toBe(BrokerAvailabilityStatus.BETA);
+      expect(oanda?.adapterAvailable).toBe(true);
+      expect(service.isConnectable('oanda')).toBe(true);
+      // BETA ≠ SUPPORTED — the catalog must never inflate the status.
+      expect(oanda?.status).not.toBe(BrokerAvailabilityStatus.SUPPORTED);
     });
 
     it('reports partner-approval entries honestly (cTrader)', async () => {

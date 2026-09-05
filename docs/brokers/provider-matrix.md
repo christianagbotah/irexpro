@@ -12,7 +12,8 @@
 
 | Status | Meaning |
 | --- | --- |
-| SUPPORTED | Adapter registered at runtime; capability contract tested |
+| SUPPORTED | Adapter registered at runtime; capability contract tested; live-verified or fully covered by integration tests |
+| BETA | Adapter implemented + registered + shared §AN contract suite passing; NOT yet live-verified against the provider |
 | NOT_STARTED | Catalog entry exists; no adapter (fail closed at runtime) |
 | PARTNER_APPROVAL_REQUIRED | Planned route needs operator/partner approval before build |
 | RESEARCH_REQUIRED | Candidate broker; official API/eligibility must be verified first |
@@ -23,7 +24,7 @@
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | MetaTrader 4/5 (via MetaApi) | METATRADER | `metatrader.adapter.ts` (591 LOC) | ✅ | ✅ | DEMO, LIVE | API token (`METAAPI_TOKEN`) | **SUPPORTED** | Margin, connection, schema specs + provider contract tests |
 | iRexPro Paper Broker | PAPER | `paper-broker.adapter.ts` | ✅ | ❌ (by design) | DEMO | Session (internal) | **SUPPORTED** | Paper adapter specs; LIVE-isolation enforced by registry |
-| OANDA (v20 REST + streaming) | NATIVE_API | — | ⚠️ | ⚠️ | DEMO, LIVE planned | Personal access token | **NOT_STARTED** | None — catalog entry only (fail closed) |
+| OANDA (v20 REST) | NATIVE_API | `oanda/oanda.adapter.ts` (Sprint 51 PR-7) | ⚠️ | ⚠️ | DEMO (fxpractice), LIVE (fxtrade) | Personal access token (encrypted at rest) | **BETA** | Shared §AN contract suite + 107 unit/contract tests; live verification pending (see `oanda-v20-adapter.md`) |
 | cTrader Open API (multi-broker) | CTRADER | — | ⚠️ | ⚠️ | DEMO, LIVE planned | OAuth 2.0 (per-broker app approval) | **PARTNER_APPROVAL_REQUIRED** | None — requires OAuth app + partner approval |
 | Pepperstone (via cTrader/MT4/MT5) | CTRADER / METATRADER | — (reuse cTrader/MT adapter) | ⚠️ | ⚠️ | TBD | TBD | RESEARCH_REQUIRED | None |
 | IC Markets (via cTrader/MT4/MT5) | CTRADER / METATRADER | — (reuse adapters) | ⚠️ | ⚠️ | TBD | TBD | RESEARCH_REQUIRED | None |

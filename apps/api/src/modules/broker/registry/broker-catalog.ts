@@ -16,8 +16,11 @@ import {
  * implementation evidence in this repository:
  * - metatrader5  → SUPPORTED (full IBrokerAdapter via MetaApi, tested)
  * - paper-broker → SUPPORTED (deterministic simulation adapter, tested; cannot go LIVE)
- * - OANDA / cTrader → NOT_STARTED (no adapter exists — registry comments in
- *   broker.module.ts are the only trace; do not fabricate support)
+ * - OANDA        → BETA (Sprint 51 PR-7: full v20 REST adapter implemented +
+ *   shared §AN contract suite + unit specs; NOT yet live-verified against a
+ *   real OANDA practice account — see docs/brokers/oanda-v20-adapter.md)
+ * - cTrader → NOT_STARTED / PARTNER_APPROVAL_REQUIRED (no adapter — OAuth app +
+ *   partner approval required before any build; do not fabricate support)
  * - Pepperstone / IC Markets / FP Markets via cTrader → PARTNER_APPROVAL_REQUIRED
  *   (requires operator research + partner approval before any build — see
  *   docs/brokers/provider-matrix.md)
@@ -85,17 +88,31 @@ export const BROKER_CATALOG: readonly BrokerDefinition[] = [
   },
   {
     id: 'oanda',
-    name: 'OANDA',
-    description: 'Native REST + streaming v20 API. Research complete; adapter NOT implemented yet.',
-    adapterId: null,
-    status: BrokerAvailabilityStatus.NOT_STARTED,
+    name: 'OANDA (v20 REST — BETA)',
+    description:
+      'Native OANDA v20 REST adapter (Sprint 51 PR-7). Accounts, pricing, ' +
+      'instruments, market/limit/stop orders, positions (trades), history, ' +
+      'and error normalization are implemented and contract-tested. BETA: ' +
+      'not yet live-verified against a real OANDA practice account; v20 ' +
+      'streaming (SSE price streams) is not implemented — REST polling only.',
+    adapterId: 'oanda',
+    status: BrokerAvailabilityStatus.BETA,
     connectionRoutes: [BrokerConnectionRoute.NATIVE_API],
     capabilities: [
+      BrokerCapability.ACCOUNT_READ,
+      BrokerCapability.BALANCE_READ,
+      BrokerCapability.POSITION_READ,
+      BrokerCapability.ORDER_READ,
+      BrokerCapability.HISTORY_READ,
+      BrokerCapability.MARKET_DATA,
       BrokerCapability.REST,
-      BrokerCapability.WEBSOCKET,
       BrokerCapability.API_TOKEN,
       BrokerCapability.DEMO,
       BrokerCapability.LIVE,
+      BrokerCapability.ORDER_PLACEMENT,
+      BrokerCapability.ORDER_MODIFICATION,
+      BrokerCapability.CLOSE_ALL,
+      BrokerCapability.MARGIN_CALCULATION,
     ],
     authenticationType: 'API_TOKEN',
     environments: ['DEMO', 'LIVE'],
