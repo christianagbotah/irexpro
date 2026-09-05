@@ -68,8 +68,8 @@ expect(expo.android?.package === 'com.irexpro.mobile', 'Android package must rem
 expect(isPositiveIntegerString(expo.ios?.buildNumber), 'iOS buildNumber must be a positive integer string used to seed remote EAS versioning');
 expect(isPositiveInteger(expo.android?.versionCode), 'Android versionCode must be a positive integer used to seed remote EAS versioning');
 expect(
-  expo.newArchEnabled === false,
-  'Expo SDK 54 checkpoint must keep newArchEnabled=false until the dedicated New Architecture migration is completed',
+  expo.newArchEnabled !== false,
+  'React Native New Architecture must remain enabled; do not restore the SDK 54 Legacy Architecture opt-out',
 );
 
 expect(easJson.cli?.appVersionSource === 'remote', 'eas.json cli.appVersionSource must be remote');
