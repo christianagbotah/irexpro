@@ -190,8 +190,6 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    // Expired temporary locks self-clear before password verification. This
-    // gives the account a clean consecutive-failure window after the cooldown.
     if (lockedUntil > 0 && lockedUntil <= now) {
       await this.userRepo.update(user.id, {
         failedLoginAttempts: 0,
@@ -217,10 +215,6 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    // MFA is evaluated only after the primary password succeeds, so the public
-    // response never reveals whether an account has MFA configured. Bad TOTP
-    // challenges do not increment the password-failure counter; the controller's
-    // tight per-IP login throttle bounds online TOTP guessing separately.
     if (
       user.mfaEnabled &&
       (!this.mfaService || !this.mfaService.verifyLoginChallenge(user, dto.mfaCode))
@@ -252,12 +246,6 @@ export class AuthService {
     return this.generateTokens(user, roles);
   }
 
-  /**
-   * Atomically increment failed-login state in PostgreSQL. The threshold and
-   * interval are compile-time integers, not request data, so this SQL fragment
-   * cannot be influenced by a caller. Concurrent bad-password requests cannot
-   * lose increments or bypass the threshold.
-   */
   private async recordLoginFailure(userId: string): Promise<void> {
     await this.userRepo.update(userId, {
       failedLoginAttempts: () => '"failed_login_attempts" + 1',
@@ -282,7 +270,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
-    if (payload.tokenType && payload.tokenType !== 'refresh') {
+    if (payload.tokenType !== 'refresh') {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
