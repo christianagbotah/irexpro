@@ -4,6 +4,10 @@ import { resolve } from 'node:path';
 describe('Auth routine log privacy', () => {
   const authServiceSource = readFileSync(resolve(__dirname, 'auth.service.ts'), 'utf8');
   const passwordResetSource = readFileSync(resolve(__dirname, 'password-reset.service.ts'), 'utf8');
+  const passwordResetDeliverySource = readFileSync(
+    resolve(__dirname, 'password-reset-delivery.service.ts'),
+    'utf8',
+  );
 
   it('keeps registration success logging identifier-free', () => {
     expect(authServiceSource).toContain("this.logger.log('New user registered');");
@@ -21,6 +25,18 @@ describe('Auth routine log privacy', () => {
     expect(passwordResetSource).toContain("this.logger.log('Password reset completed');");
     expect(passwordResetSource).not.toMatch(
       /this\.logger\.(?:log|warn|error|debug|verbose)\([^;]*(?:userId|user\.(?:id|email|phone))/s,
+    );
+  });
+
+  it('keeps password-reset delivery warnings free of raw account identifiers', () => {
+    expect(passwordResetDeliverySource).not.toMatch(
+      /this\.logger\.(?:log|warn|error|debug|verbose)\([^;]*\buserId\b/s,
+    );
+  });
+
+  it('does not serialize raw provider exception messages into password-reset delivery logs', () => {
+    expect(passwordResetDeliverySource).not.toMatch(
+      /this\.logger\.(?:log|warn|error|debug|verbose)\([^;]*(?:err|error)[^;]*\.message/s,
     );
   });
 });
