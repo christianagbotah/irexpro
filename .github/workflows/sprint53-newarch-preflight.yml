@@ -19,7 +19,7 @@ env:
 
 jobs:
   preflight:
-    name: Prove SDK 54 New Architecture compatibility
+    name: Validate committed SDK 54 New Architecture baseline
     runs-on: ubuntu-24.04
     timeout-minutes: 35
 
@@ -29,6 +29,18 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+
+      - name: Verify committed monorepo baseline
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ! grep -q '^nodeLinker:' pnpm-workspace.yaml
+          node <<'NODE'
+          const fs = require('node:fs');
+          const expected = "const { getDefaultConfig } = require('expo/metro-config');\n\nmodule.exports = getDefaultConfig(__dirname);\n";
+          const actual = fs.readFileSync('apps/mobile/metro.config.js', 'utf8');
+          if (actual !== expected) throw new Error('Mobile Metro config must remain on Expo SDK 54 defaults');
+          NODE
 
       - name: Setup pnpm
         uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
@@ -41,24 +53,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
 
-      - name: Apply SDK 54 isolated-install and default-Metro probe
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          cat > pnpm-workspace.yaml <<'EOF'
-          packages:
-            - 'apps/*'
-            - 'packages/*'
-            - 'services/*'
-          EOF
-          cat > apps/mobile/metro.config.js <<'EOF'
-          const { getDefaultConfig } = require('expo/metro-config');
-
-          module.exports = getDefaultConfig(__dirname);
-          EOF
-          git diff -- pnpm-workspace.yaml apps/mobile/metro.config.js
-
-      - name: Install dependencies from frozen lockfile with isolated linker
+      - name: Install committed workspace from frozen lockfile
         run: pnpm install --frozen-lockfile
 
       - name: Run Expo Doctor against React Native Directory
@@ -121,12 +116,12 @@ jobs:
           --output-dir .ci-export-ios
           --clear
 
-      - name: Build web app with isolated workspace layout
+      - name: Build web app
         env:
           NEXT_PUBLIC_API_BASE_URL: 'http://localhost:3999/api/v1'
         run: pnpm --filter @irexpro/web build
 
-      - name: Build admin app with isolated workspace layout
+      - name: Build admin app
         env:
           NEXT_PUBLIC_API_BASE_URL: 'http://localhost:3998/api/v1'
         run: pnpm --filter @irexpro/admin build
@@ -143,9 +138,8 @@ jobs:
           set -Eeuo pipefail
           mapfile -t changed < <(git diff --name-only)
           printf 'Tracked changes after prebuild:\n%s\n' "${changed[*]}"
-          printf '%s\n' "${changed[@]}" | sort > /tmp/prebuild-actual
-          printf '%s\n' apps/mobile/metro.config.js apps/mobile/package.json pnpm-workspace.yaml | sort > /tmp/prebuild-expected
-          diff -u /tmp/prebuild-expected /tmp/prebuild-actual
+          test "${#changed[@]}" -eq 1
+          test "${changed[0]}" = 'apps/mobile/package.json'
           git diff -- apps/mobile/package.json
 
       - name: Prove Android and iOS generated New Architecture state
@@ -170,13 +164,9 @@ jobs:
       - name: Remove disposable native projects
         run: rm -rf apps/mobile/android apps/mobile/ios
 
-      - name: Enforce probe scope
+      - name: Require clean tracked tree
         shell: bash
         run: |
           set -Eeuo pipefail
-          mapfile -t changed < <(git diff --name-only)
-          printf 'Runtime probe changed files:\n%s\n' "${changed[*]}"
-          test "${#changed[@]}" -eq 2
-          printf '%s\n' "${changed[@]}" | sort > /tmp/actual
-          printf '%s\n' apps/mobile/metro.config.js pnpm-workspace.yaml | sort > /tmp/expected
-          diff -u /tmp/expected /tmp/actual
+          git diff --exit-code
+          test -z "$(git status --porcelain --untracked-files=no)"
