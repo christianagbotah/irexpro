@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { ClassSerializerInterceptor, Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory, Reflector } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { IoAdapter } from '@nestjs/platform-socket.io';
 import * as compression from 'compression';
 import * as cookieParser from 'cookie-parser';
@@ -20,10 +21,16 @@ async function bootstrap() {
   // REQUIRED for payment webhook signature verification
   // (POST /payments/webhooks/:provider). Without this, req.rawBody is undefined
   // and provider signature checks cannot be performed.
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     logger: ['log', 'error', 'warn', 'debug'],
     rawBody: true,
   });
+
+  // Make the API request-body ceiling explicit instead of depending on the
+  // Express default. Nest's useBodyParser() preserves the rawBody option, so
+  // signed webhook verification keeps access to the exact received bytes.
+  app.useBodyParser('json', { limit: '100kb' });
+  app.useBodyParser('urlencoded', { limit: '100kb' });
 
   // Route SIGINT/SIGTERM through Nest's lifecycle so framework-managed
   // resources receive their orderly shutdown callbacks during deployments.
