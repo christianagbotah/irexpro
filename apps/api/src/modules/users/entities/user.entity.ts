@@ -88,6 +88,7 @@ export class User {
    * an older generation without storing raw JWTs.
    */
   @Column({ name: 'session_version', type: 'integer', default: 1 })
+  @Exclude()
   sessionVersion: number;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
