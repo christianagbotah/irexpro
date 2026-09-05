@@ -55,7 +55,11 @@ import { AuditModule } from '../audit/audit.module';
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
         secret: configService.get<string>('jwt.secret'),
-        signOptions: { expiresIn: configService.get<string>('jwt.accessExpiry', '15m') },
+        signOptions: {
+          algorithm: 'HS256',
+          expiresIn: configService.get<string>('jwt.accessExpiry', '15m'),
+        },
+        verifyOptions: { algorithms: ['HS256'] },
       }),
     }),
     AuditModule,
