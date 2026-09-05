@@ -111,9 +111,9 @@ describe('PasswordResetService phone-code hardening', () => {
     });
     resetTokenRepo.findOne.mockResolvedValueOnce({ ...token, attemptCount: 0, usedAt: null });
 
-    await expect(service.resetWithCode('+233241234567', '000000', 'NewStrongPassword123!')).rejects.toThrow(
-      UnauthorizedException,
-    );
+    await expect(
+      service.resetWithCode('+233241234567', '000000', 'NewStrongPassword123!'),
+    ).rejects.toThrow(UnauthorizedException);
 
     expect(resetTokenRepo.findOne).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -141,9 +141,9 @@ describe('PasswordResetService phone-code hardening', () => {
     });
     resetTokenRepo.findOne.mockResolvedValueOnce({ ...token, attemptCount: 4, usedAt: null });
 
-    await expect(service.resetWithCode('+233241234567', '000000', 'NewStrongPassword123!')).rejects.toThrow(
-      UnauthorizedException,
-    );
+    await expect(
+      service.resetWithCode('+233241234567', '000000', 'NewStrongPassword123!'),
+    ).rejects.toThrow(UnauthorizedException);
 
     expect(resetTokenRepo.update).toHaveBeenLastCalledWith(
       expect.objectContaining({ id: token.id, attemptCount: 4 }),
