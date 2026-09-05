@@ -312,6 +312,18 @@ export class PasswordResetService {
     await queryRunner.startTransaction();
 
     try {
+      // Consume the email token before mutating the user. Only one concurrent
+      // transaction can change an unused row; replays lose this compare-and-set
+      // and cannot reach the password/session updates below.
+      const consumed = await queryRunner.manager.update(
+        PasswordResetToken,
+        { id: resetToken.id, usedAt: IsNull() },
+        { usedAt: new Date() },
+      );
+      if (consumed.affected !== 1) {
+        throw new UnauthorizedException('Invalid or expired reset token');
+      }
+
       const passwordHash = await this.hashNewPassword(password);
 
       // Keep the password update as a separate statement so audit/tests can
@@ -324,9 +336,6 @@ export class PasswordResetService {
       await queryRunner.manager.update(User, resetToken.userId, {
         sessionVersion: () => '"session_version" + 1',
       });
-
-      resetToken.usedAt = new Date();
-      await queryRunner.manager.save(resetToken);
 
       await queryRunner.commitTransaction();
 

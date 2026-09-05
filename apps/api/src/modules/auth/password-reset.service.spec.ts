@@ -66,6 +66,7 @@ describe('PasswordResetService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     mockDeliveryService.deliver = jest.fn().mockResolvedValue(true);
+    mockQueryRunner.manager.update.mockResolvedValue({ affected: 1 });
 
     module = await Test.createTestingModule({
       providers: [
@@ -239,12 +240,15 @@ describe('PasswordResetService', () => {
       mockResetTokenRepo.findOne.mockResolvedValueOnce(resetTokenCopy);
       await service.resetWithToken(deliveredRawToken, validPassword);
 
+      expect(mockQueryRunner.manager.update).toHaveBeenNthCalledWith(
+        1,
+        PasswordResetToken,
+        expect.objectContaining({ id: savedToken.id, usedAt: expect.anything() }),
+        { usedAt: expect.any(Date) },
+      );
       expect(mockQueryRunner.manager.update).toHaveBeenCalledWith(User, 'user-1', {
         passwordHash: expect.any(String),
       });
-      expect(mockQueryRunner.manager.save).toHaveBeenCalledWith(
-        expect.objectContaining({ usedAt: expect.any(Date) }),
-      );
       expect(mockAuditService.log).toHaveBeenCalledWith(
         expect.objectContaining({
           actorUserId: 'user-1',
@@ -266,7 +270,7 @@ describe('PasswordResetService', () => {
       mockResetTokenRepo.findOne.mockResolvedValueOnce({ ...savedToken, usedAt: null });
       await service.resetWithToken(deliveredRawToken, validPassword);
 
-      const updateCall = mockQueryRunner.manager.update.mock.calls[0];
+      const updateCall = mockQueryRunner.manager.update.mock.calls[1];
       const passwordHash = updateCall[2].passwordHash;
       expect(passwordHash).toMatch(/^\$argon2/);
       expect(passwordHash).not.toBe(validPassword);
