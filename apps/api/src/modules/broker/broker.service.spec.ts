@@ -1,15 +1,17 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { Logger } from '@nestjs/common';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { BrokerService } from './broker.service';
 import { BrokerConnection } from './entities/broker-connection.entity';
 import { BrokerAccount } from './entities/broker-account.entity';
 import { BrokerAdapterRegistry } from './adapters/broker-adapter.registry';
+import { BrokerProviderRegistryService } from './registry/broker-provider-registry.service';
 import { CredentialEncryptionService } from './services/credential-encryption.service';
 import { AuditService } from '../audit/audit.service';
 import { BrokerConnectionStatus, BrokerMode } from './interfaces/broker-adapter.interface';
+import { BrokerAuthorizationStatus } from './authorization/broker-authorization-status';
 import { DomainEventBus } from '../events/event-bus.service';
 
 // ─── Mock factories ───────────────────────────────────────────────────────────
@@ -38,6 +40,17 @@ const mockRegistry = () => ({
     .mockReturnValue([
       { brokerId: 'metatrader5', brokerName: 'MetaTrader 5 (via MetaAPI)', supportsDemo: true },
     ]),
+});
+
+// Sprint 50 — provider registry mock (permissive defaults preserve legacy
+// test expectations; dedicated registry specs exercise the real service)
+const mockProviderRegistry = () => ({
+  getCatalog: jest.fn().mockReturnValue([]),
+  getEntry: jest.fn().mockReturnValue(null),
+  isConnectable: jest.fn().mockReturnValue(true),
+  hasCapability: jest.fn().mockReturnValue(true),
+  supportsEnvironment: jest.fn().mockReturnValue(true),
+  catalogVersion: 'v1',
 });
 
 const mockEncryption = () => ({
@@ -98,6 +111,7 @@ describe('BrokerService', () => {
         { provide: getRepositoryToken(BrokerConnection), useFactory: mockConnectionRepo },
         { provide: getRepositoryToken(BrokerAccount), useFactory: mockAccountRepo },
         { provide: BrokerAdapterRegistry, useFactory: mockRegistry },
+        { provide: BrokerProviderRegistryService, useFactory: mockProviderRegistry },
         { provide: CredentialEncryptionService, useFactory: mockEncryption },
         { provide: AuditService, useFactory: mockAudit },
         { provide: DataSource, useValue: {} },
@@ -322,6 +336,7 @@ describe('BrokerService', () => {
           userId: 'user-1',
           accountType: BrokerMode.LIVE,
           brokerId: 'metatrader5',
+          authorizationStatus: BrokerAuthorizationStatus.CONNECTED,
         })
         .mockResolvedValueOnce(null);
 
@@ -337,6 +352,7 @@ describe('BrokerService', () => {
           userId: 'user-1',
           accountType: BrokerMode.LIVE,
           brokerId: 'metatrader5',
+          authorizationStatus: BrokerAuthorizationStatus.CONNECTED,
         })
         .mockResolvedValueOnce({
           id: 'conn-demo',
@@ -347,7 +363,28 @@ describe('BrokerService', () => {
       connectionRepo.update.mockResolvedValue({});
 
       await expect(service.enableLiveTrading('conn-live', 'user-1')).resolves.not.toThrow();
-      expect(connectionRepo.update).toHaveBeenCalledWith('conn-live', { liveTradingEnabled: true });
+      // Sprint 50: dual-write — legacy boolean + authoritative state machine
+      expect(connectionRepo.update).toHaveBeenCalledWith('conn-live', {
+        liveTradingEnabled: true,
+        authorizationStatus: BrokerAuthorizationStatus.ACTIVE,
+        authorizedAt: expect.any(Date),
+        authorizationRevokedAt: null,
+      });
+    });
+
+    it('rejects state-machine-invalid transitions with ConflictException (Sprint 50)', async () => {
+      // A connection still NOT_CONNECTED can never jump straight to ACTIVE
+      connectionRepo.findOne.mockResolvedValueOnce({
+        id: 'conn-live',
+        userId: 'user-1',
+        accountType: BrokerMode.LIVE,
+        brokerId: 'metatrader5',
+        authorizationStatus: BrokerAuthorizationStatus.NOT_CONNECTED,
+      });
+
+      await expect(service.enableLiveTrading('conn-live', 'user-1')).rejects.toThrow(
+        ConflictException,
+      );
     });
   });
 
