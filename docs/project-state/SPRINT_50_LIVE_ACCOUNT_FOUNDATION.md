@@ -25,6 +25,15 @@ Now:
   constraints back the enum.
 - **Only `ACTIVE` is executable** — `isExecutable()` fails closed on
   null/unknown states.
+- **Atomic against concurrent writers (architect correction A4):** every
+  authorization transition is a CONDITIONAL UPDATE
+  (`WHERE authorization_status = <validated state>` + affected-rows check,
+  same pattern as the order domain). A stale revoke/suspend/disconnect can
+  never overwrite the winning authoritative state — it surfaces as a
+  ConflictException. Proven against a real PostgreSQL store in
+  `broker-authorization.pg-integration.spec.ts` (revoke-vs-enable-live,
+  disconnect-vs-enable-live, healthCheck-suspend-vs-revoke, duplicate
+  revokes, stale-writer-vs-terminal-state).
 - `ACTIVE` is reachable ONLY through the explicit `enable-live-trading`
   endpoint (LIVE accounts, registry LIVE support, prior validated DEMO, user
   action).
@@ -36,7 +45,7 @@ Now:
 - New endpoints: `POST :id/revoke-authorization` (→ REVOKED, fail-closes
   liveTradingEnabled), plus state-machine-aware connect/disconnect/health.
 
-### 2. Credential lifecycle (Directive §14)
+### 2. Credential lifecycle (Directive §14) — AUTHORITATIVE (architect correction A3)
 
 - `credential_status`: `CREATED → VERIFIED → ROTATED / REVOKED / EXPIRED /
   INVALID`.
@@ -44,6 +53,14 @@ Now:
 - New endpoint `POST :id/rotate-credentials` — validates the NEW credential
   set against the provider BEFORE replacing ciphertext; on failure the old
   set is kept. No plaintext ever persisted or returned.
+- **`BrokerCredentialLifecycle.isUsable()` gates EVERY decrypt/consume path:**
+  `connectBroker`, `healthCheck`, `getOhlcvForConnection`,
+  `getClosedTradesForConnection`, `getRequiredMargin` (previously fully
+  unguarded — now also requires CONNECTED status), and the market-intelligence
+  snapshot read. `INVALID / EXPIRED / REVOKED / missing / unknown` states
+  fail closed BEFORE decryption — the provider adapter is never contacted
+  (unit-proven with adapter-not-invoked assertions for every path). Plaintext
+  remains ephemeral and is zeroed after use.
 
 ### 3. Broker provider registry + capability model (Directive §L/§M/§N/§AF/§AU)
 
@@ -65,9 +82,20 @@ Now:
 - New module `execution-control` + `platform.execution_controls` table.
 - Scopes: GLOBAL / PROVIDER / USER / BROKER_CONNECTION, cascade
   precedence, **fail closed** on unreadable store.
-- Integrated into the Risk pipeline as **Step 1a-pre** (before kill switch)
-  with structured rejection code `EXECUTION_CONTROL_ACTIVE` + audit record
-  `EXECUTION_CONTROL_BLOCKED`.
+- **ALL FOUR SCOPES genuinely enforced in the Risk pipeline (architect
+  correction A1):** the early Step 1a-pre check covers GLOBAL/USER
+  (fail-fast, before connection discovery), and a second gate after the
+  authoritative broker connection is discovered (Step 1c-pre) evaluates the
+  COMPLETE context — user + provider + broker connection — so PROVIDER and
+  BROKER_CONNECTION controls produce the structured
+  `EXECUTION_CONTROL_ACTIVE` RiskViolation + audit trail, not just the
+  downstream dispatch rejection.
+- **Expire-and-reactivate lifecycle (architect correction A2):** a persisted
+  `status` column (ACTIVE/EXPIRED) + PARTIAL unique index over ACTIVE rows —
+  reactivation at the same (scope, scopeKey) after expiry always succeeds
+  deterministically (prior row flipped to EXPIRED, retained as a record);
+  concurrent activations resolve to exactly one winner (23505 → 409). See
+  `docs/brokers/execution-control-plane.md`.
 - Admin API (RBAC + audit + realtime event):
   `GET /execution-control/status`, `POST /execution-control/activate`,
   `DELETE /execution-control/:id`.
@@ -104,25 +132,42 @@ statuses) consumed identically by web/admin/mobile.
 2. `1753500000000-CreateExecutionControls` — `platform.execution_controls`
    with scope CHECK constraints, one-active-per-scope unique index
    (NULL-safe via COALESCE), expiry index.
+3. `1753550000000-ExecutionControlLifecycleStatus` (architect correction A2)
+   — adds the lifecycle `status` column (ACTIVE/EXPIRED + CHECK), backfills
+   expired rows to EXPIRED, and replaces the unique index with a PARTIAL one
+   over ACTIVE rows only (forward- and rollback-safe).
 
 ## Test evidence
 
 - New suites: `broker-authorization-state-machine.spec.ts`,
   `broker-authorization-lifecycle.spec.ts`,
   `broker-provider-registry.spec.ts`, `execution-control.spec.ts`.
-- Full API suite: **131 suites / 1538 tests passing** (baseline: 127/1474 —
-  +4 suites, +64 tests, 0 regressions).
+- Correction-round additions: four-scope control-gate coverage in
+  `risk.service.spec.ts` (all scopes + fail-closed + full-context
+  assertions), A3 credential-lifecycle adapter-not-invoked matrices in
+  `broker-authorization-lifecycle.spec.ts`, A4 conditional-transition
+  coverage, and two real-PostgreSQL integration specs
+  (`execution-control.pg-integration.spec.ts`,
+  `broker-authorization.pg-integration.spec.ts`) that run in CI's
+  risk-concurrency workflow (re-activation determinism, concurrent
+  activation single-winner, four-scope enforcement, concurrent
+  authorization-transition races, stale-writer-vs-terminal-state).
+- Full API unit suite: **150 suites / 1684 tests passing**.
 - Lint: 0 errors (122 pre-existing warnings in untouched legacy specs).
 - `pnpm api:build`: clean.
 
 ## Known limitations / next steps
 
-- GitHub push from this environment was blocked (no credentials); the branch
-  is commit-ready locally and must be pushed by an operator (see the
-  delivery report).
 - Web/admin UI for the new endpoints (revoke, rotate, registry catalog,
-  control-plane panel) is the next vertical slice — the API surface here is
-  complete and typed.
-- cTrader/OANDA adapters remain NOT_STARTED by design (research/partner
-  approval first — see provider matrix).
+  control-plane panel) is delivered in later vertical slices of this stack
+  (PRs #191/#201 and their descendants).
+- cTrader/OANDA adapters: OANDA is BETA (adapter + contract-tested, live
+  verification pending — see PR #204); cTrader remains blocked on partner
+  approval (see provider matrix).
 - AI-engine live mode remains separately gated (out of scope for this slice).
+- Trading-session start (`startSession`) is not itself gated by the emergency
+  control plane — the control plane gates signal validation and dispatch
+  (Risk pipeline + orchestrator), which is the execution boundary; documented
+  here for honesty.
+- Orchestration/reconciliation credential guards are enforced in the
+  descendant PRs (#162/#170) which own that code.

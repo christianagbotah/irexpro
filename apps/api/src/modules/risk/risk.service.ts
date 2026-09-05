@@ -121,46 +121,24 @@ export class RiskService {
     // ── Step 1: Pre-condition checks (fail fast) ────────────────────────────
 
     // 1a-pre. Emergency control plane (Sprint 50, Directive §28) — checked
-    // FIRST so GLOBAL/PROVIDER/USER/CONNECTION-level disable affects newly
-    // submitted work immediately. Fail-closed: an unreadable control store
-    // blocks execution.
-    const controlPermission = await this.executionControlService
-      .checkExecutionPermission({ userId })
-      .catch(() => ({
-        allowed: false as const,
-        blockedBy: {
-          scope: 'GLOBAL' as const,
-          scopeKey: null,
-          reason: 'EXECUTION_CONTROL_CHECK_FAILED',
-        },
-      }));
-
-    if (!controlPermission.allowed) {
-      const control = controlPermission.blockedBy;
-      appliedRules.push('EXECUTION_CONTROL');
-      await this.auditService.log({
-        actorUserId: userId,
-        action: AuditAction.EXECUTION_CONTROL_BLOCKED,
-        resourceType: 'AiSignal',
-        resourceId: trade.signalId,
-        metadata: {
-          scope: control?.scope,
-          scopeKey: control?.scopeKey,
-          reason: control?.reason,
-        },
-        severity: AuditSeverity.WARNING,
-      });
-      return this.rejectAndRecord(
-        userId,
-        trade,
-        RiskRejectionCode.EXECUTION_CONTROL_ACTIVE,
-        `Execution blocked by emergency control (scope=${control?.scope}${
-          control?.scopeKey ? `, key=${control.scopeKey}` : ''
-        }): ${control?.reason}`,
-        contextSnapshot as RiskContextSnapshot,
-        evaluatedAt,
-      );
-    }
+    // FIRST so GLOBAL/USER-level disable affects newly submitted work
+    // immediately, before any broker/connection discovery. Fail-closed: an
+    // unreadable control store blocks execution.
+    //
+    // Architect correction A1: this EARLY check covers the GLOBAL and USER
+    // scopes only (no connection context is known yet). After the
+    // authoritative broker connection is discovered (1c), the pipeline
+    // re-evaluates the control plane with the COMPLETE context —
+    // user + provider + broker connection — so all four scopes are
+    // genuinely enforced at the risk boundary, not just documented.
+    const earlyControlRejection = await this.evaluateControlGate(
+      { userId },
+      userId,
+      trade,
+      contextSnapshot,
+      evaluatedAt,
+    );
+    if (earlyControlRejection) return earlyControlRejection;
     appliedRules.push('EXECUTION_CONTROL:OK');
 
     // 1a. Kill switch (checked FIRST — fastest possible rejection)
@@ -197,12 +175,37 @@ export class RiskService {
     }
     appliedRules.push('BROKER_CONNECTION:OK');
 
-    // 1c. LIVE authorization gate (Sprint 50, Directive §16): when the user's
-    // active connection is a LIVE account, its authorization state machine
-    // must be ACTIVE (the only executable state). DEMO/PAPER connections keep
-    // the existing behavior — LIVE isolation fails closed here, never falls
-    // back to a lower-friction path.
+    // 1c. Discover the authoritative connection. LIVE authorization gate
+    // (Sprint 50, Directive §16): when the user's active connection is a LIVE
+    // account, its authorization state machine must be ACTIVE (the only
+    // executable state). DEMO/PAPER connections keep the existing behavior —
+    // LIVE isolation fails closed here, never falls back to a lower-friction
+    // path.
     const activeConnection = await this.brokerService.findActiveConnectionForUser(userId);
+
+    // 1c-pre. Emergency control plane — COMPLETE four-scope context
+    // (architect correction A1): now that the authoritative broker connection
+    // is known, re-evaluate the control plane against user + provider +
+    // broker connection. This is the gate that genuinely enforces PROVIDER
+    // and BROKER_CONNECTION scopes in the risk pipeline (with the structured
+    // RiskViolation + audit trail), not only at the downstream dispatch
+    // boundary.
+    if (activeConnection) {
+      const fullControlRejection = await this.evaluateControlGate(
+        {
+          userId,
+          brokerId: activeConnection.brokerId,
+          brokerConnectionId: activeConnection.id,
+        },
+        userId,
+        trade,
+        contextSnapshot,
+        evaluatedAt,
+      );
+      if (fullControlRejection) return fullControlRejection;
+      appliedRules.push('EXECUTION_CONTROL_FULL_CONTEXT:OK');
+    }
+
     if (
       activeConnection &&
       activeConnection.accountType === BrokerMode.LIVE &&
@@ -923,6 +926,61 @@ export class RiskService {
     else if (trade.regime === 'RANGING') score += 5;
 
     return Math.min(100, Math.round(score));
+  }
+
+  /**
+   * Emergency-control gate evaluation (architect correction A1).
+   *
+   * Evaluates the control plane with whatever context is known at the call
+   * site — { userId } early in the pipeline (GLOBAL/USER fail-fast), and the
+   * complete { userId, brokerId, brokerConnectionId } context once the
+   * authoritative connection has been discovered (all four scopes). Returns
+   * the REJECTION decision when a control blocks, or null when allowed.
+   * Fail-closed: an unreadable control store rejects the trade.
+   */
+  private async evaluateControlGate(
+    context: { userId: string; brokerId?: string; brokerConnectionId?: string },
+    userId: string,
+    trade: ProposedTrade,
+    contextSnapshot: Partial<RiskContextSnapshot>,
+    evaluatedAt: Date,
+  ): Promise<RiskRejectionResult | null> {
+    const controlPermission = await this.executionControlService
+      .checkExecutionPermission(context)
+      .catch(() => ({
+        allowed: false as const,
+        blockedBy: {
+          scope: 'GLOBAL' as const,
+          scopeKey: null,
+          reason: 'EXECUTION_CONTROL_CHECK_FAILED',
+        },
+      }));
+
+    if (controlPermission.allowed) return null;
+
+    const control = controlPermission.blockedBy;
+    await this.auditService.log({
+      actorUserId: userId,
+      action: AuditAction.EXECUTION_CONTROL_BLOCKED,
+      resourceType: 'AiSignal',
+      resourceId: trade.signalId,
+      metadata: {
+        scope: control?.scope,
+        scopeKey: control?.scopeKey,
+        reason: control?.reason,
+      },
+      severity: AuditSeverity.WARNING,
+    });
+    return this.rejectAndRecord(
+      userId,
+      trade,
+      RiskRejectionCode.EXECUTION_CONTROL_ACTIVE,
+      `Execution blocked by emergency control (scope=${control?.scope}${
+        control?.scopeKey ? `, key=${control.scopeKey}` : ''
+      }): ${control?.reason}`,
+      contextSnapshot as RiskContextSnapshot,
+      evaluatedAt,
+    );
   }
 
   private buildRejection(
