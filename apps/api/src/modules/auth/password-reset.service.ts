@@ -27,6 +27,8 @@ import { PasswordResetDeliveryService } from './password-reset-delivery.service'
  *     the production-required AUTH_VERIFICATION_PEPPER.
  *   - Email token is 32 random bytes; phone code is 6 digits.
  *   - Email link expires in 15 minutes; phone code in 10 minutes.
+ *   - Reset-token issuance is serialized per user before prior unused tokens
+ *     are invalidated and the replacement token is persisted.
  *   - Reset tokens are single-use and prior unused tokens are invalidated.
  *   - Phone code is invalidated after 5 failed attempts.
  *   - Request response is generic to prevent account enumeration.
@@ -84,8 +86,9 @@ export class PasswordResetService {
     const channel: ResetChannel = user.email ? ResetChannel.EMAIL : ResetChannel.PHONE;
     const destination = channel === ResetChannel.EMAIL ? user.email! : user.phone!;
 
-    await this.invalidatePriorTokens(user.id);
-
+    // Generate the secret before acquiring the issuance lock. In particular,
+    // a missing phone-code pepper must fail closed without invalidating an
+    // existing usable reset token.
     const { rawToken, tokenHash } = this.generateToken(channel, user.id, destination);
 
     const expiresAt = new Date(
@@ -106,8 +109,16 @@ export class PasswordResetService {
       userAgent: meta?.userAgent ?? null,
       attemptCount: 0,
     });
-    await this.resetTokenRepo.save(resetToken);
 
+    const persisted = await this.persistIssuedResetToken(user.id, resetToken);
+    if (!persisted) {
+      this.logger.log('Password reset user disappeared during issuance — returning generic response');
+      return { delivered: false, channel: null };
+    }
+
+    // External delivery is intentionally outside the DB transaction. Holding
+    // the per-user row lock across network I/O would unnecessarily serialize
+    // unrelated database work and prolong lock duration.
     const delivered = await this.deliveryService.deliver({
       channel,
       destination,
@@ -203,8 +214,41 @@ export class PasswordResetService {
     });
   }
 
-  private async invalidatePriorTokens(userId: string): Promise<void> {
-    await this.resetTokenRepo.update({ userId, usedAt: IsNull() }, { usedAt: new Date() });
+  private async persistIssuedResetToken(
+    userId: string,
+    resetToken: PasswordResetToken,
+  ): Promise<boolean> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      // Serialize reset-token issuance for a user. A concurrent requester must
+      // wait here, then invalidate the token created by the previous requester
+      // before persisting its own replacement.
+      const lockedUser = await queryRunner.manager.findOne(User, {
+        where: { id: userId },
+        select: { id: true },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!lockedUser) {
+        await queryRunner.rollbackTransaction();
+        return false;
+      }
+
+      const resetTokenRepo = queryRunner.manager.getRepository(PasswordResetToken);
+      await resetTokenRepo.update({ userId, usedAt: IsNull() }, { usedAt: new Date() });
+      await resetTokenRepo.save(resetToken);
+
+      await queryRunner.commitTransaction();
+      return true;
+    } catch (err) {
+      await queryRunner.rollbackTransaction();
+      throw err;
+    } finally {
+      await queryRunner.release();
+    }
   }
 
   private generateToken(
