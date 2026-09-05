@@ -36,7 +36,9 @@ jobs:
           set -Eeuo pipefail
           test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
           test -z "$(git status --porcelain)"
-          test "$(cat apps/mobile/metro.config.js)" = $'const { getDefaultConfig } = require('\''expo/metro-config'\'');\n\nmodule.exports = getDefaultConfig(__dirname);'
+          grep -Fxq "const { getDefaultConfig } = require('expo/metro-config');" apps/mobile/metro.config.js
+          grep -Fxq 'module.exports = getDefaultConfig(__dirname);' apps/mobile/metro.config.js
+          ! grep -q 'watchFolders\|nodeModulesPaths' apps/mobile/metro.config.js
           ! grep -q '^nodeLinker:' pnpm-workspace.yaml
 
       - name: Setup pnpm
