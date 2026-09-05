@@ -19,6 +19,7 @@ const WORKFLOW_FILES = new Map([
     '.github/workflows/deployment-script-safety.yml',
   ],
   ['UI E2E', '.github/workflows/web-e2e.yml'],
+  ['Mobile CI', '.github/workflows/mobile-ci.yml'],
 ]);
 
 export function extractGateRules(source) {
