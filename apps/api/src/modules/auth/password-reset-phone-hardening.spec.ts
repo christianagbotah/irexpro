@@ -47,7 +47,7 @@ describe('PasswordResetService phone-code hardening', () => {
   };
   const dataSource = { createQueryRunner: jest.fn(() => queryRunner) };
 
-  async function createService(pepper: string | undefined = PEPPER) {
+  async function createService(pepper: string | undefined) {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PasswordResetService,
@@ -101,7 +101,7 @@ describe('PasswordResetService phone-code hardening', () => {
   });
 
   it('increments the active token attempt count for an incorrect code', async () => {
-    const { module, service } = await createService();
+    const { module, service } = await createService(PEPPER);
     const { token } = await issuePhoneReset(service);
     userRepo.findOne.mockResolvedValueOnce({
       id: 'phone-user',
@@ -131,7 +131,7 @@ describe('PasswordResetService phone-code hardening', () => {
   });
 
   it('invalidates the active token on the fifth incorrect code', async () => {
-    const { module, service } = await createService();
+    const { module, service } = await createService(PEPPER);
     const { token } = await issuePhoneReset(service);
     userRepo.findOne.mockResolvedValueOnce({
       id: 'phone-user',
@@ -153,7 +153,7 @@ describe('PasswordResetService phone-code hardening', () => {
   });
 
   it('atomically consumes a correct phone code before changing password and session version', async () => {
-    const { module, service } = await createService();
+    const { module, service } = await createService(PEPPER);
     const { rawCode, token } = await issuePhoneReset(service);
     userRepo.findOne.mockResolvedValueOnce({
       id: 'phone-user',
@@ -182,7 +182,7 @@ describe('PasswordResetService phone-code hardening', () => {
   });
 
   it('rejects a replay when atomic consumption loses the race', async () => {
-    const { module, service } = await createService();
+    const { module, service } = await createService(PEPPER);
     const { rawCode, token } = await issuePhoneReset(service);
     userRepo.findOne.mockResolvedValueOnce({
       id: 'phone-user',
