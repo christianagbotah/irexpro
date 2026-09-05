@@ -112,7 +112,9 @@ export class PasswordResetService {
 
     const persisted = await this.persistIssuedResetToken(user.id, resetToken);
     if (!persisted) {
-      this.logger.log('Password reset user disappeared during issuance — returning generic response');
+      this.logger.log(
+        'Password reset user disappeared during issuance — returning generic response',
+      );
       return { delivered: false, channel: null };
     }
 
