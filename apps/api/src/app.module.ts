@@ -5,6 +5,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 
 import configuration from './config/configuration';
+import { getDatabaseSslOptions } from './config/database-tls';
 import { validationSchema } from './config/validation.schema';
 
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
@@ -63,7 +64,7 @@ import { PerformanceBillingModule } from './modules/performance-billing/performa
         database: configService.get<string>('database.name'),
         username: configService.get<string>('database.user'),
         password: configService.get<string>('database.password'),
-        ssl: configService.get<boolean>('database.ssl') ? { rejectUnauthorized: false } : false,
+        ssl: getDatabaseSslOptions(configService.get<boolean>('database.ssl')),
         synchronize: false,
         logging: configService.get<boolean>('database.logging'),
         autoLoadEntities: true,
