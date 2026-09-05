@@ -137,18 +137,21 @@ describe('JwtStrategy (Hotfix — sanitized principal)', () => {
   });
 
   it('should reject a bearer token with no explicit tokenType', async () => {
-    const { tokenType: _tokenType, ...untypedPayload } = validPayload;
+    const untypedPayload: JwtPayload = {
+      sub: validPayload.sub,
+      email: validPayload.email,
+      roles: validPayload.roles,
+      sessionVersion: validPayload.sessionVersion,
+    };
 
-    await expect(strategy.validate(untypedPayload as JwtPayload)).rejects.toThrow(
-      UnauthorizedException,
-    );
+    await expect(strategy.validate(untypedPayload)).rejects.toThrow(UnauthorizedException);
     expect(userRepo.findOne).not.toHaveBeenCalled();
   });
 
   it('should reject a refresh token at the bearer access boundary', async () => {
-    await expect(
-      strategy.validate({ ...validPayload, tokenType: 'refresh' }),
-    ).rejects.toThrow(UnauthorizedException);
+    await expect(strategy.validate({ ...validPayload, tokenType: 'refresh' })).rejects.toThrow(
+      UnauthorizedException,
+    );
     expect(userRepo.findOne).not.toHaveBeenCalled();
   });
 
