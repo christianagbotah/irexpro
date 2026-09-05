@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { AuthProvider, useAuth } from "@/context/auth-context";
 import { RealtimeProvider } from "@/context/realtime-context";
 import AppErrorBoundary from "@/components/AppErrorBoundary";
@@ -26,17 +27,23 @@ import LiveAccountScreen from "./src/screens/LiveAccountScreen";
  *
  * Tokens are never stored in AsyncStorage. The app talks only to the public API
  * (EXPO_PUBLIC_API_BASE_URL), never directly to the internal AI engine.
+ *
+ * Sprint 51 PR-8: the authenticated shell mounts RealtimeProvider (the
+ * /realtime socket only lives while signed in) and adds the Brokers + Live
+ * Account tabs alongside the existing tabs.
  */
 
 type Tab = "dashboard" | "brokers" | "live" | "account" | "payments";
 
 export default function App() {
   return (
-    <AppErrorBoundary>
-      <AuthProvider>
-        <AppShell />
-      </AuthProvider>
-    </AppErrorBoundary>
+    <SafeAreaProvider>
+      <AppErrorBoundary>
+        <AuthProvider>
+          <AppShell />
+        </AuthProvider>
+      </AppErrorBoundary>
+    </SafeAreaProvider>
   );
 }
 
@@ -47,17 +54,17 @@ function AppShell() {
 
   if (loading && !user) {
     return (
-      <View style={styles.shell}>
+      <SafeAreaView style={styles.shell}>
         <View style={styles.loading} accessibilityLiveRegion="polite">
           <Text style={styles.loadingText}>Restoring session…</Text>
         </View>
-      </View>
+      </SafeAreaView>
     );
   }
 
   if (!user) {
     return (
-      <View style={styles.shell}>
+      <SafeAreaView style={styles.shell}>
         {error ? (
           <View
             style={styles.restoreAlert}
@@ -80,21 +87,25 @@ function AppShell() {
         ) : (
           <LoginScreen onForgotPassword={() => setShowForgotPassword(true)} />
         )}
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
     <RealtimeProvider>
       <View style={styles.shell}>
-        <View style={styles.content}>
+        <SafeAreaView style={styles.content} edges={["top", "left", "right"]}>
           {tab === "dashboard" && <DashboardScreen />}
           {tab === "brokers" && <BrokerScreen />}
           {tab === "live" && <LiveAccountScreen />}
           {tab === "account" && <AccountScreen />}
           {tab === "payments" && <PaymentsScreen />}
-        </View>
-        <View style={styles.tabBar} accessibilityRole="tablist">
+        </SafeAreaView>
+        <SafeAreaView
+          style={styles.tabBar}
+          edges={["bottom", "left", "right"]}
+          accessibilityRole="tablist"
+        >
           <TabButton
             label="Dashboard"
             active={tab === "dashboard"}
@@ -120,7 +131,7 @@ function AppShell() {
             active={tab === "account"}
             onPress={() => setTab("account")}
           />
-        </View>
+        </SafeAreaView>
       </View>
     </RealtimeProvider>
   );
