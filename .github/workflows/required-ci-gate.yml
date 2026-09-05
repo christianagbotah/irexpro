@@ -54,6 +54,9 @@ jobs:
       - name: Test transient API retry classifier
         run: node scripts/security/required-ci-gate-runner.mjs --self-test
 
+      - name: Test main ruleset policy verifier
+        run: node scripts/security/verify-main-ruleset.mjs --self-test
+
       - name: Wait for applicable exact-head workflows
         env:
           GITHUB_TOKEN: ${{ github.token }}
