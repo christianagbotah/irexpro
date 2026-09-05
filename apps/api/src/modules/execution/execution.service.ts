@@ -295,14 +295,14 @@ export class ExecutionService {
             direction: order.direction,
             lotSize: order.lotSize,
             signalId,
-            orderId: dispatch.order.id,
+            orderId: dispatch.orderId,
           },
         });
 
         this.logger.log(
           `Trade OPENED: id=${trade.id} externalId=${dispatch.providerOrderId} ` +
             `${order.direction} ${order.instrument} ${order.lotSize} lots ` +
-            `(order ${dispatch.order.id} FILLED)`,
+            `(order ${dispatch.orderId} FILLED)`,
         );
 
         this.eventBus.publish(DomainEventType.TRADE_OPENED, userId, {
@@ -328,7 +328,7 @@ export class ExecutionService {
 
         this.logger.log(
           `Trade PENDING (order WORKING at provider): id=${trade.id} ` +
-            `externalId=${dispatch.providerOrderId} order=${dispatch.order.id}`,
+            `externalId=${dispatch.providerOrderId} order=${dispatch.orderId}`,
         );
         break;
       }
@@ -347,7 +347,7 @@ export class ExecutionService {
           action: AuditAction.TRADE_REJECTED,
           resourceType: 'Trade',
           resourceId: trade.id,
-          metadata: { brokerMessage: dispatch.reason, signalId, orderId: dispatch.order.id },
+          metadata: { brokerMessage: dispatch.reason, signalId, orderId: dispatch.orderId },
           severity: AuditSeverity.WARNING,
         });
 
@@ -390,7 +390,7 @@ export class ExecutionService {
           metadata: {
             error: reason,
             status: 'RECONCILIATION_PENDING',
-            orderId: dispatch.order.id,
+            orderId: dispatch.orderId,
           },
           severity: AuditSeverity.CRITICAL,
         });
@@ -499,7 +499,7 @@ export class ExecutionService {
           exitPrice: dispatch.avgFillPrice,
           closeReason: reason,
           externalOrderId: trade.externalOrderId,
-          closeOrderId: dispatch.order.id,
+          closeOrderId: dispatch.orderId,
         },
       });
 
@@ -525,7 +525,7 @@ export class ExecutionService {
       // return the current trade state unchanged.
       this.logger.log(
         `Concurrent close suppressed (idempotent) for trade ${trade.id} — ` +
-          `in-flight close order ${dispatch.order.id}`,
+          `in-flight close order ${dispatch.orderId}`,
       );
       return trade;
     }
@@ -550,7 +550,7 @@ export class ExecutionService {
       metadata: {
         error: `Close outcome unresolved: ${reasonText}`,
         status: 'RECONCILIATION_PENDING',
-        closeOrderId: dispatch.order.id,
+        closeOrderId: dispatch.orderId,
       },
       severity: AuditSeverity.CRITICAL,
     });
@@ -915,15 +915,15 @@ export class ExecutionService {
    * Compute a stable 32-bit integer advisory lock key from userId + date.
    * PostgreSQL advisory lock keys are bigint; we use a single 32-bit key
    * for simplicity (sufficient for user+day scoping).
+   *
+   * Sprint 50 PR-3: derived from a SHA-256 digest instead of the legacy
+   * char-code loop — CodeQL flagged the unbounded-length iteration over
+   * user-controlled input; the digest also distributes better. Lock-key
+   * VALUES change vs. the legacy hash, which only affects transient
+   * in-flight locks (never persisted state).
    */
   private computeDailyTradeLockKey(userId: string, dateStr: string): number {
-    // Simple deterministic hash: combine userId + date char codes.
-    // Uses a polynomial rolling hash mod 2^31 for a positive 32-bit key.
-    const input = `${userId}:${dateStr}`;
-    let hash = 0;
-    for (let i = 0; i < input.length; i++) {
-      hash = (hash * 31 + input.charCodeAt(i)) & 0x7fffffff;
-    }
-    return hash;
+    const digest = crypto.createHash('sha256').update(`${userId}:${dateStr}`).digest();
+    return digest.readUInt32BE(0) & 0x7fffffff;
   }
 }

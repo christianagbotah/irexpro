@@ -188,7 +188,7 @@ export class ExecutionOrchestrator {
         },
         severity: AuditSeverity.WARNING,
       });
-      return { outcome: 'DUPLICATE', order: submission.order };
+      return { outcome: 'DUPLICATE', order: submission.order, orderId: submission.order.id };
     }
 
     let order = submission.order;
@@ -253,6 +253,7 @@ export class ExecutionOrchestrator {
           return {
             outcome: 'FILLED',
             order: filled,
+            orderId: filled.id,
             providerOrderId: filled.providerOrderId ?? action.providerOrderId ?? '',
             filledQuantity: filled.filledQuantity,
             avgFillPrice: filled.avgFillPrice ?? action.fillPrice,
@@ -262,7 +263,12 @@ export class ExecutionOrchestrator {
         case 'ACKNOWLEDGE': {
           order = await this.orderService.markAcknowledged(order.id, action.providerOrderId);
           await this.emitAcknowledged(intent, order, action.providerOrderId);
-          return { outcome: 'WORKING', order, providerOrderId: action.providerOrderId };
+          return {
+            outcome: 'WORKING',
+            order,
+            orderId: order.id,
+            providerOrderId: action.providerOrderId,
+          };
         }
 
         case 'REJECT': {
@@ -283,7 +289,7 @@ export class ExecutionOrchestrator {
             },
             severity: AuditSeverity.WARNING,
           });
-          return { outcome: 'REJECTED', order, reason: action.reason };
+          return { outcome: 'REJECTED', order, orderId: order.id, reason: action.reason };
         }
 
         case 'RECONCILIATION_PENDING': {
@@ -304,7 +310,7 @@ export class ExecutionOrchestrator {
             },
             severity: AuditSeverity.CRITICAL,
           });
-          return { outcome: 'UNKNOWN', order, reason: action.reason };
+          return { outcome: 'UNKNOWN', order, orderId: order.id, reason: action.reason };
         }
       }
     } catch (err) {
@@ -339,7 +345,7 @@ export class ExecutionOrchestrator {
           `Could not move order ${order.id} to RECONCILIATION_PENDING: ${(transitionErr as Error).message}`,
         );
       }
-      return { outcome: 'UNKNOWN', order, reason: message };
+      return { outcome: 'UNKNOWN', order, orderId: order.id, reason: message };
     }
   }
 

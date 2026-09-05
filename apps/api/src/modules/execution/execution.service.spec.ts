@@ -62,6 +62,7 @@ const mockOrder = { id: 'order-1', clientOrderId: 'sig-sig-001', status: 'FILLED
 const filledOutcome: ProviderDispatchOutcome = {
   outcome: 'FILLED',
   order: mockOrder,
+  orderId: mockOrder.id,
   providerOrderId: 'ext-order-1',
   filledQuantity: '0.05',
   avgFillPrice: '1.08502',
@@ -343,6 +344,7 @@ describe('ExecutionService', () => {
       orchestrator.dispatchOrder.mockResolvedValueOnce({
         outcome: 'WORKING',
         order: mockOrder,
+        orderId: mockOrder.id,
         providerOrderId: 'ext-working-1',
       });
       const trade = await service.executeTrade('user-1', approvedDecision);
@@ -372,6 +374,7 @@ describe('ExecutionService', () => {
       orchestrator.dispatchOrder.mockResolvedValueOnce({
         outcome: 'REJECTED',
         order: mockOrder,
+        orderId: mockOrder.id,
         reason: 'Insufficient margin',
       });
 
@@ -398,6 +401,7 @@ describe('ExecutionService', () => {
       orchestrator.dispatchOrder.mockResolvedValueOnce({
         outcome: 'UNKNOWN',
         order: mockOrder,
+        orderId: mockOrder.id,
         reason: 'MetaAPI network error',
       });
 
@@ -463,6 +467,7 @@ describe('ExecutionService', () => {
       orchestrator.dispatchOrder.mockResolvedValueOnce({
         outcome: 'FILLED',
         order: mockOrder,
+        orderId: mockOrder.id,
         providerOrderId: 'close-ext-1',
         filledQuantity: '0.05',
         avgFillPrice: '1.09000',
@@ -497,6 +502,7 @@ describe('ExecutionService', () => {
       orchestrator.dispatchOrder.mockResolvedValueOnce({
         outcome: 'REJECTED',
         order: mockOrder,
+        orderId: mockOrder.id,
         reason: 'Market closed',
       });
 
@@ -514,6 +520,7 @@ describe('ExecutionService', () => {
       orchestrator.dispatchOrder.mockResolvedValueOnce({
         outcome: 'UNKNOWN',
         order: mockOrder,
+        orderId: mockOrder.id,
         reason: 'close request timeout',
       });
 
@@ -530,6 +537,7 @@ describe('ExecutionService', () => {
       orchestrator.dispatchOrder.mockResolvedValueOnce({
         outcome: 'DUPLICATE',
         order: mockOrder,
+        orderId: mockOrder.id,
       });
 
       const result = await service.closeTrade('trade-1', 'user-1', TradeCloseReason.MANUAL_CLOSE);

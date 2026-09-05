@@ -137,7 +137,25 @@ describe('ExecutionService — real PostgreSQL advisory-lock concurrency', () =>
   beforeEach(async () => {
     await dataSource.query('TRUNCATE TABLE trading.trades');
     await dataSource.query('TRUNCATE TABLE trading.orders');
-    tradeRepo = { update: jest.fn().mockResolvedValue({ affected: 1 }) };
+    // The trade-repository mock PERSISTS updates to the real table (the
+    // orchestration pipeline's trade-side assertions read the DB row state,
+    // so a no-op mock would leave the trade PENDING forever).
+    const toSnake = (key: string) => key.replace(/[A-Z]/g, (m) => `_${m.toLowerCase()}`);
+    tradeRepo = {
+      update: jest.fn().mockImplementation(async (criteria, patch: Record<string, unknown>) => {
+        const id = typeof criteria === 'string' ? criteria : (criteria as { id: string }).id;
+        const params: unknown[] = [id];
+        const sets = Object.entries(patch).map(([key, value], i) => {
+          params.push(value instanceof Date ? value.toISOString() : (value ?? null));
+          return `"${toSnake(key)}" = $${i + 2}`;
+        });
+        await dataSource.query(
+          `UPDATE trading.trades SET ${sets.join(', ')} WHERE id = $1`,
+          params,
+        );
+        return { affected: 1 };
+      }),
+    };
     placeOrder = jest.fn().mockResolvedValue({
       success: true,
       externalOrderId: 'broker-position-1',
@@ -258,7 +276,11 @@ describe('ExecutionService — real PostgreSQL advisory-lock concurrency', () =>
 
   it('records the full normalized order lifecycle (CREATED→SUBMITTED→ACKNOWLEDGED→FILLED) on real PostgreSQL', async () => {
     const signalId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
-    await service.executeTrade(userId, decision(signalId, 10));
+    const trade = await service.executeTrade(userId, decision(signalId, 10));
+
+    // The trade (position aggregate) mirrors the outcome.
+    expect(trade.status).toBe('OPEN');
+    expect(trade.externalOrderId).toBe('broker-position-1');
 
     const orders = await dataSource.query(
       'SELECT * FROM trading.orders WHERE user_id = $1 AND signal_id = $2',
@@ -267,6 +289,7 @@ describe('ExecutionService — real PostgreSQL advisory-lock concurrency', () =>
     expect(orders).toHaveLength(1);
     const order = orders[0];
     expect(order.client_order_id).toBe(`sig-${signalId}`);
+    expect(order.trade_id).toBe(trade.id);
     expect(order.order_kind).toBe('MARKET');
     expect(order.status).toBe('FILLED');
     expect(String(order.filled_quantity)).toBe('0.0500');
@@ -275,7 +298,6 @@ describe('ExecutionService — real PostgreSQL advisory-lock concurrency', () =>
     expect(order.submitted_at).not.toBeNull();
     expect(order.finalized_at).not.toBeNull();
 
-    // The trade (position aggregate) mirrors the outcome.
     const trades = await dataSource.query(
       'SELECT * FROM trading.trades WHERE user_id = $1 AND signal_id = $2',
       [userId, signalId],
@@ -311,6 +333,9 @@ describe('ExecutionService — real PostgreSQL advisory-lock concurrency', () =>
     const outcome = await orchestrator.dispatchOrder(intent, connection);
 
     expect(outcome.outcome).toBe('DUPLICATE');
+    // The outcome carries the EXISTING order's identifier explicitly.
+    expect(outcome.orderId).toBeDefined();
+    expect(outcome.order.id).toBe(outcome.orderId);
     expect(placeOrder).toHaveBeenCalledTimes(1);
 
     const orders = await dataSource.query(
@@ -356,6 +381,11 @@ describe('ExecutionService — real PostgreSQL advisory-lock concurrency', () =>
     const dispatchedOutcomes = outcomes.filter((o) => o.outcome !== 'DUPLICATE');
     expect(dispatchedOutcomes).toHaveLength(1);
     expect(duplicateOutcomes).toHaveLength(1);
+    // Every outcome variant carries an explicit, defined orderId.
+    for (const o of outcomes) {
+      expect(o.orderId).toBeDefined();
+      expect(o.order.id).toBe(o.orderId);
+    }
 
     const orders = await dataSource.query(
       'SELECT * FROM trading.orders WHERE client_order_id = $1',

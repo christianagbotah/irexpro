@@ -69,6 +69,9 @@ export interface ExecutionIntent {
  * these outcomes onto the Trade (position) aggregate; the Order lifecycle is
  * already fully recorded by the orchestrator before this value is returned.
  *
+ * `orderId` is an EXPLICIT field on every variant (never dig it out of the
+ * order entity) — audit logs and events consume it directly.
+ *
  * - FILLED      — provider executed the order (fill quantity + VWAP price known)
  * - WORKING     — provider accepted the order; fill arrives asynchronously
  *                 (e.g. LIMIT/STOP orders resting at the provider)
@@ -83,6 +86,7 @@ export type ProviderDispatchOutcome =
   | {
       outcome: 'FILLED';
       order: Order;
+      orderId: string;
       providerOrderId: string;
       filledQuantity: string;
       avgFillPrice: string;
@@ -90,19 +94,23 @@ export type ProviderDispatchOutcome =
   | {
       outcome: 'WORKING';
       order: Order;
+      orderId: string;
       providerOrderId: string;
     }
   | {
       outcome: 'REJECTED';
       order: Order;
+      orderId: string;
       reason: string;
     }
   | {
       outcome: 'UNKNOWN';
       order: Order;
+      orderId: string;
       reason: string;
     }
   | {
       outcome: 'DUPLICATE';
       order: Order;
+      orderId: string;
     };
