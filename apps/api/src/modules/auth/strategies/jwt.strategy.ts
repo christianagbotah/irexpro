@@ -13,6 +13,8 @@ export interface JwtPayload {
   roles: string[];
   /** Distinguishes bearer access JWTs from refresh JWTs. */
   tokenType?: 'access' | 'refresh';
+  /** Signed browser persistence preference carried only by refresh JWTs. */
+  rememberMe?: boolean;
   /** Server-side token generation used for immediate revocation. */
   sessionVersion?: number;
   /** Unique token id so each rotation produces a distinct JWT. */
