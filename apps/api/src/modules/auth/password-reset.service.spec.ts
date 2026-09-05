@@ -14,7 +14,7 @@ import { ConfigService } from '@nestjs/config';
  *
  * Verifies:
  *   - forgot-password returns generic response for existing/non-existing identifiers
- *   - raw reset token/code is NEVER stored (only SHA-256 hash)
+ *   - raw reset token/code is NEVER stored (only one-way digests)
  *   - token expiry is enforced
  *   - token single-use is enforced
  *   - previous unused tokens are invalidated
@@ -42,6 +42,7 @@ const mockConfigService = {
     if (key === 'auth.argon2MemoryCost') return 1024;
     if (key === 'auth.argon2TimeCost') return 2;
     if (key === 'auth.argon2Parallelism') return 1;
+    if (key === 'auth.verificationPepper') return 'test-verification-pepper-32-characters-minimum';
     return def;
   }),
 };
@@ -114,12 +115,10 @@ describe('PasswordResetService', () => {
 
       const result = await service.requestReset('nonexistent@example.com');
 
-      // Same shape as the existing-user case — does NOT reveal non-existence
       expect(result).toHaveProperty('delivered');
       expect(result).toHaveProperty('channel');
       expect(result.delivered).toBe(false);
       expect(result.channel).toBeNull();
-      // No audit log for non-existent user (no actorUserId)
       expect(mockAuditService.log).not.toHaveBeenCalled();
     });
 
@@ -178,7 +177,7 @@ describe('PasswordResetService', () => {
       await service.requestReset('user@example.com');
 
       expect(mockResetTokenRepo.update).toHaveBeenCalledWith(
-        { userId: 'user-1', usedAt: expect.anything() }, // IsNull() is a Symbol-like
+        { userId: 'user-1', usedAt: expect.anything() },
         { usedAt: expect.any(Date) },
       );
     });
@@ -193,16 +192,12 @@ describe('PasswordResetService', () => {
       await service.requestReset('user@example.com');
 
       const savedToken = mockResetTokenRepo.create.mock.results[0].value;
-      // tokenHash must be a 64-char hex string (SHA-256), NOT the raw token
       expect(savedToken.tokenHash).toMatch(/^[a-f0-9]{64}$/);
-      // The delivery service received the raw token, but the hash was stored
       expect(mockDeliveryService.deliver).toHaveBeenCalledWith(
         expect.objectContaining({ rawToken: expect.any(String) }),
       );
-      // The saved token's hash must NOT be the raw token
       const deliveredRawToken = mockDeliveryService.deliver.mock.calls[0][0].rawToken;
       expect(savedToken.tokenHash).not.toBe(deliveredRawToken);
-      // The raw token must not appear in the saved token object at all
       const savedStr = JSON.stringify(savedToken);
       expect(savedStr).not.toContain(deliveredRawToken);
     });
@@ -218,7 +213,6 @@ describe('PasswordResetService', () => {
 
       const auditCall = mockAuditService.log.mock.calls[0][0];
       const auditStr = JSON.stringify(auditCall.metadata);
-      // The raw token is 64 hex chars — ensure it does not appear in audit metadata
       const deliveredRawToken = mockDeliveryService.deliver.mock.calls[0][0].rawToken;
       expect(auditStr).not.toContain(deliveredRawToken);
       expect(auditStr).not.toContain('token');
@@ -232,7 +226,6 @@ describe('PasswordResetService', () => {
     const validPassword = 'NewStrongPassword123!';
 
     it('should reset the password for a valid token', async () => {
-      // First, request a reset to generate a real token
       mockUserRepo.findOne.mockResolvedValueOnce({
         id: 'user-1',
         email: 'user@example.com',
@@ -242,20 +235,16 @@ describe('PasswordResetService', () => {
       const deliveredRawToken = mockDeliveryService.deliver.mock.calls[0][0].rawToken;
       const savedToken = mockResetTokenRepo.create.mock.results[0].value;
 
-      // Now reset with that token
       const resetTokenCopy = { ...savedToken, usedAt: null };
       mockResetTokenRepo.findOne.mockResolvedValueOnce(resetTokenCopy);
       await service.resetWithToken(deliveredRawToken, validPassword);
 
-      // Password was updated
       expect(mockQueryRunner.manager.update).toHaveBeenCalledWith(User, 'user-1', {
         passwordHash: expect.any(String),
       });
-      // Token was marked as used (the save call received a token with usedAt set)
       expect(mockQueryRunner.manager.save).toHaveBeenCalledWith(
         expect.objectContaining({ usedAt: expect.any(Date) }),
       );
-      // Audit completion was recorded
       expect(mockAuditService.log).toHaveBeenCalledWith(
         expect.objectContaining({
           actorUserId: 'user-1',
@@ -279,7 +268,6 @@ describe('PasswordResetService', () => {
 
       const updateCall = mockQueryRunner.manager.update.mock.calls[0];
       const passwordHash = updateCall[2].passwordHash;
-      // argon2 hashes start with $argon2
       expect(passwordHash).toMatch(/^\$argon2/);
       expect(passwordHash).not.toBe(validPassword);
     });
@@ -298,7 +286,7 @@ describe('PasswordResetService', () => {
         userId: 'user-1',
         tokenHash: 'some-hash',
         channel: ResetChannel.EMAIL,
-        expiresAt: new Date(Date.now() - 60_000), // expired 1 min ago
+        expiresAt: new Date(Date.now() - 60_000),
         usedAt: null,
         attemptCount: 0,
       });
@@ -315,7 +303,7 @@ describe('PasswordResetService', () => {
         tokenHash: 'some-hash',
         channel: ResetChannel.EMAIL,
         expiresAt: new Date(Date.now() + 60_000),
-        usedAt: new Date(), // already used
+        usedAt: new Date(),
         attemptCount: 0,
       });
 
@@ -331,7 +319,6 @@ describe('PasswordResetService', () => {
     const validPassword = 'NewStrongPassword123!';
 
     it('should reset the password for a valid phone code', async () => {
-      // Request a phone reset
       mockUserRepo.findOne.mockResolvedValueOnce({
         id: 'phone-user',
         email: null,
@@ -342,14 +329,18 @@ describe('PasswordResetService', () => {
       const deliveredCode = mockDeliveryService.deliver.mock.calls[0][0].rawToken;
       const savedToken = mockResetTokenRepo.create.mock.results[0].value;
 
-      // Reset with the code
       mockUserRepo.findOne.mockResolvedValueOnce({
         id: 'phone-user',
         email: null,
         phone: '+233241234567',
         status: UserStatus.ACTIVE,
       });
-      mockResetTokenRepo.findOne.mockResolvedValueOnce({ ...savedToken, usedAt: null });
+      mockResetTokenRepo.findOne.mockResolvedValueOnce({
+        ...savedToken,
+        usedAt: null,
+        attemptCount: 0,
+        createdAt: new Date(),
+      });
 
       await service.resetWithCode('+233241234567', deliveredCode, validPassword);
 
@@ -378,7 +369,7 @@ describe('PasswordResetService', () => {
     });
 
     it('should not reveal whether the user exists (generic UnauthorizedException)', async () => {
-      mockUserRepo.findOne.mockResolvedValueOnce(null); // user not found
+      mockUserRepo.findOne.mockResolvedValueOnce(null);
 
       await expect(service.resetWithCode('+233241234567', '123456', validPassword)).rejects.toThrow(
         UnauthorizedException,
@@ -398,7 +389,7 @@ describe('PasswordResetService', () => {
       await service.requestReset('user@example.com');
 
       const rawToken = mockDeliveryService.deliver.mock.calls[0][0].rawToken;
-      expect(rawToken).toMatch(/^[a-f0-9]{64}$/); // 32 bytes hex
+      expect(rawToken).toMatch(/^[a-f0-9]{64}$/);
     });
 
     it('phone code should be 6 digits', async () => {
@@ -426,7 +417,6 @@ describe('PasswordResetService', () => {
 
       const savedToken = mockResetTokenRepo.create.mock.results[0].value;
       const expiryMs = savedToken.expiresAt.getTime();
-      // 15 min = 900000 ms; allow ±5s slack for test execution
       expect(expiryMs).toBeGreaterThan(before + 899_000);
       expect(expiryMs).toBeLessThan(after + 901_000);
     });
@@ -444,13 +434,10 @@ describe('PasswordResetService', () => {
 
       const savedToken = mockResetTokenRepo.create.mock.results[0].value;
       const expiryMs = savedToken.expiresAt.getTime();
-      // 10 min = 600000 ms
       expect(expiryMs).toBeGreaterThan(before + 599_000);
       expect(expiryMs).toBeLessThan(after + 601_000);
     });
   });
-
-  // ── No sensitive data exposed ────────────────────────────────────────────
 
   describe('no sensitive data exposed', () => {
     it('requestReset result must not contain token, code, or password fields', async () => {
