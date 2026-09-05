@@ -5,7 +5,11 @@ export const validationSchema = Joi.object({
     .valid('development', 'test', 'staging', 'production')
     .default('development'),
   APP_PORT: Joi.number().default(3000),
-  APP_HOST: Joi.string().default('0.0.0.0'),
+  APP_HOST: Joi.when('NODE_ENV', {
+    is: 'production',
+    then: Joi.string().default('127.0.0.1'),
+    otherwise: Joi.string().default('0.0.0.0'),
+  }),
   APP_NAME: Joi.string().default('iRexPro API'),
   API_PREFIX: Joi.string().default('api/v1'),
   CORS_ORIGINS: Joi.string().default('http://localhost:3001'),

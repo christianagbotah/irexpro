@@ -3,7 +3,9 @@ import { parseCorsOrigins } from './cors-origins';
 export default () => ({
   app: {
     port: parseInt(process.env.APP_PORT ?? '3000', 10),
-    host: process.env.APP_HOST ?? '0.0.0.0',
+    host:
+      process.env.APP_HOST ??
+      ((process.env.NODE_ENV ?? 'development') === 'production' ? '127.0.0.1' : '0.0.0.0'),
     name: process.env.APP_NAME ?? 'iRexPro API',
     version: process.env.APP_VERSION ?? '0.1.0',
     env: process.env.NODE_ENV ?? 'development',

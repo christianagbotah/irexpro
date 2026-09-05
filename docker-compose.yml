@@ -55,6 +55,7 @@ services:
     env_file:
       - ./apps/api/.env
     environment:
+      APP_HOST: 0.0.0.0
       DB_HOST: postgres
       REDIS_HOST: redis
     ports:
