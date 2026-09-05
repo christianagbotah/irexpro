@@ -1,31 +1,32 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Request, Response } from 'express';
 
 /**
- * AuthCookieService — manages the httpOnly refresh-token cookie for web/admin.
+ * AuthCookieService — manages the httpOnly refresh-token cookie for web/admin
+ * and enforces the trusted-origin boundary for cookie-backed browser sessions.
  *
- * Sprint 25 amendment: hybrid auth strategy.
- *   - Web/admin: the refresh token is stored in an httpOnly, secure cookie
- *     that JavaScript cannot read. The access token is held in memory by the
- *     frontend. On page refresh, the frontend calls /auth/refresh with
- *     credentials:'include' — the browser automatically sends the cookie.
- *   - Mobile: the refresh token is returned in the JSON body (as before) and
- *     persisted in Expo SecureStore. Mobile does not use cookies.
+ * Browser session model:
+ *   - Web/admin: refresh token is HttpOnly-cookie-only; access token is held in
+ *     memory. Production cookies use SameSite=None because the browser apps and
+ *     API may live on separate trusted origins.
+ *   - Mobile/native: refresh token stays in the JSON body and SecureStore. The
+ *     native/body-token contract must not rely on or receive browser cookies.
  *
- * Cookie settings:
- *   - httpOnly: true — JavaScript cannot access the cookie (XSS protection)
- *   - secure: true in production (HTTPS only); false in dev (HTTP localhost)
- *   - sameSite: 'none' in production (cross-origin admin → API), 'lax' in dev
- *   - path: '/api/v1/auth' — only sent to auth endpoints (refresh/logout)
- *   - maxAge: 7 days (matches JWT_REFRESH_EXPIRY default)
- *
- * The cookie is set on login and register, refreshed on /auth/refresh, and
- * cleared on /auth/logout.
+ * Origin policy:
+ *   - Any request that consumes or mutates the browser refresh cookie must come
+ *     from an exact configured app.corsOrigins origin when an Origin header is
+ *     present.
+ *   - Production fails closed when Origin is missing because SameSite=None
+ *     permits ambient cross-site cookie delivery and CORS is not a CSRF guard.
+ *   - Non-production allows a missing Origin so focused unit tests and trusted
+ *     local non-browser tooling remain source-compatible, but an explicitly
+ *     supplied untrusted/malformed Origin is always rejected.
  */
 @Injectable()
 export class AuthCookieService {
   static readonly COOKIE_NAME = 'irexpro_refresh';
+  private static readonly UNTRUSTED_ORIGIN_MESSAGE = 'Untrusted browser request origin';
 
   constructor(private readonly configService: ConfigService) {}
 
@@ -35,12 +36,10 @@ export class AuthCookieService {
 
   private getCookieOptions(rememberMe?: boolean) {
     const isProd = this.isProduction();
-    // Sprint 27: rememberMe controls cookie maxAge.
-    //   - rememberMe = false (default): session cookie (no maxAge → cleared on browser close)
-    //   - rememberMe = true: 7-day persistent cookie (matches JWT_REFRESH_EXPIRY default)
-    const maxAge = rememberMe
-      ? 7 * 24 * 60 * 60 * 1000 // 7 days
-      : undefined; // session cookie — cleared when browser closes
+    // rememberMe controls cookie maxAge.
+    //   - rememberMe = false (default): session cookie (cleared on browser close)
+    //   - rememberMe = true: 7-day persistent cookie
+    const maxAge = rememberMe ? 7 * 24 * 60 * 60 * 1000 : undefined;
     return {
       httpOnly: true,
       secure: isProd,
@@ -48,6 +47,45 @@ export class AuthCookieService {
       path: '/api/v1/auth',
       ...(maxAge !== undefined && { maxAge }),
     };
+  }
+
+  private normalizeOrigin(value: string): string | null {
+    try {
+      const url = new URL(value);
+      if (url.origin === 'null') return null;
+      return url.origin;
+    } catch {
+      return null;
+    }
+  }
+
+  private trustedOrigins(): Set<string> {
+    const configured = this.configService.get<string[]>('app.corsOrigins', []);
+    return new Set(
+      configured
+        .map((value) => this.normalizeOrigin(value.trim()))
+        .filter((value): value is string => Boolean(value)),
+    );
+  }
+
+  /**
+   * Enforce request provenance before a request is allowed to establish,
+   * consume, rotate, or clear the browser refresh cookie.
+   */
+  assertTrustedBrowserRequest(req: Request): void {
+    const rawOrigin = req.headers?.origin;
+
+    if (!rawOrigin) {
+      if (this.isProduction()) {
+        throw new ForbiddenException(AuthCookieService.UNTRUSTED_ORIGIN_MESSAGE);
+      }
+      return;
+    }
+
+    const normalized = this.normalizeOrigin(rawOrigin);
+    if (!normalized || !this.trustedOrigins().has(normalized)) {
+      throw new ForbiddenException(AuthCookieService.UNTRUSTED_ORIGIN_MESSAGE);
+    }
   }
 
   /** Set the httpOnly refresh cookie on the response. */

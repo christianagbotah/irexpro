@@ -1,3 +1,4 @@
+import { ForbiddenException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { Response, Request } from 'express';
@@ -6,16 +7,23 @@ import { AuthCookieService } from './auth-cookie.service';
 const mockConfigService = {
   get: jest.fn((key: string, def?: unknown) => {
     if (key === 'app.env') return 'test';
+    if (key === 'app.corsOrigins') return ['http://localhost:3001'];
     return def;
   }),
 };
 
-describe('AuthCookieService (Sprint 25 — hybrid httpOnly cookie)', () => {
+describe('AuthCookieService (hybrid httpOnly cookie)', () => {
   let service: AuthCookieService;
   let module: TestingModule;
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockConfigService.get.mockImplementation((key: string, def?: unknown) => {
+      if (key === 'app.env') return 'test';
+      if (key === 'app.corsOrigins') return ['http://localhost:3001'];
+      return def;
+    });
+
     module = await Test.createTestingModule({
       providers: [AuthCookieService, { provide: ConfigService, useValue: mockConfigService }],
     }).compile();
@@ -29,7 +37,6 @@ describe('AuthCookieService (Sprint 25 — hybrid httpOnly cookie)', () => {
   describe('setRefreshCookie', () => {
     it('should set an httpOnly cookie with the refresh token', () => {
       const res = { cookie: jest.fn() } as unknown as Response;
-      // Sprint 27: without rememberMe, cookie is a session cookie (no maxAge)
       service.setRefreshCookie(res, 'test-refresh-token');
 
       expect(res.cookie).toHaveBeenCalledWith(
@@ -68,6 +75,7 @@ describe('AuthCookieService (Sprint 25 — hybrid httpOnly cookie)', () => {
     it('should set secure=true and sameSite=none in production', () => {
       mockConfigService.get.mockImplementation((key: string, def?: unknown) => {
         if (key === 'app.env') return 'production';
+        if (key === 'app.corsOrigins') return ['https://irexpro.lightworldtech.com'];
         return def;
       });
 
@@ -88,6 +96,7 @@ describe('AuthCookieService (Sprint 25 — hybrid httpOnly cookie)', () => {
     it('should set secure=false and sameSite=lax in development', () => {
       mockConfigService.get.mockImplementation((key: string, def?: unknown) => {
         if (key === 'app.env') return 'development';
+        if (key === 'app.corsOrigins') return ['http://localhost:3001'];
         return def;
       });
 
@@ -103,6 +112,83 @@ describe('AuthCookieService (Sprint 25 — hybrid httpOnly cookie)', () => {
           sameSite: 'lax',
         }),
       );
+    });
+  });
+
+  describe('trusted browser origin policy', () => {
+    const trustedOrigins = [
+      'https://irexpro.lightworldtech.com',
+      'https://admin.irexpro.lightworldtech.com',
+    ];
+
+    function configure(env: string, origins: string[] = trustedOrigins) {
+      mockConfigService.get.mockImplementation((key: string, def?: unknown) => {
+        if (key === 'app.env') return env;
+        if (key === 'app.corsOrigins') return origins;
+        return def;
+      });
+    }
+
+    function request(origin?: string): Request {
+      return {
+        headers: origin ? { origin } : {},
+        cookies: {},
+      } as unknown as Request;
+    }
+
+    it.each(trustedOrigins)('accepts configured trusted origin %s', (origin) => {
+      configure('production');
+      expect(() => service.assertTrustedBrowserRequest(request(origin))).not.toThrow();
+    });
+
+    it('normalizes a configured origin with a trailing slash before exact comparison', () => {
+      configure('production', ['https://irexpro.lightworldtech.com/']);
+      expect(() =>
+        service.assertTrustedBrowserRequest(request('https://irexpro.lightworldtech.com')),
+      ).not.toThrow();
+    });
+
+    it('rejects an untrusted origin even outside production', () => {
+      configure('test');
+      expect(() =>
+        service.assertTrustedBrowserRequest(request('https://attacker.example')),
+      ).toThrow(ForbiddenException);
+    });
+
+    it('rejects origin-suffix confusion', () => {
+      configure('production');
+      expect(() =>
+        service.assertTrustedBrowserRequest(
+          request('https://irexpro.lightworldtech.com.attacker.example'),
+        ),
+      ).toThrow(ForbiddenException);
+    });
+
+    it.each(['null', 'not a url', '://broken'])(
+      'rejects malformed/unusable origin %s',
+      (origin) => {
+        configure('production');
+        expect(() => service.assertTrustedBrowserRequest(request(origin))).toThrow(
+          ForbiddenException,
+        );
+      },
+    );
+
+    it('fails closed when production browser provenance is missing', () => {
+      configure('production');
+      expect(() => service.assertTrustedBrowserRequest(request())).toThrow(ForbiddenException);
+    });
+
+    it('allows a missing Origin only outside production for local/test compatibility', () => {
+      configure('test');
+      expect(() => service.assertTrustedBrowserRequest(request())).not.toThrow();
+    });
+
+    it('fails closed in production when no trusted origins are configured', () => {
+      configure('production', []);
+      expect(() =>
+        service.assertTrustedBrowserRequest(request('https://irexpro.lightworldtech.com')),
+      ).toThrow(ForbiddenException);
     });
   });
 

@@ -1,5 +1,5 @@
+import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { UnauthorizedException } from '@nestjs/common';
 import { JwtModule, JwtService } from '@nestjs/jwt';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
@@ -14,19 +14,22 @@ import { RoleName } from '../users/entities/role.entity';
  * AuthController spec — refresh token validation and browser confidentiality.
  *
  * These tests verify the FULL sign → verify roundtrip using a REAL JwtModule
- * (not a mock), plus the Sprint 49 browser contract:
+ * (not a mock), plus the browser/native transport boundary:
  *   1. Cookie-sourced refresh tokens are never echoed into JSON responses.
- *   2. Browser login/register cookie transport exposes only accessToken.
- *   3. Mobile/body refresh preserves the full token-pair response.
- *   4. Missing/invalid tokens return 401 cleanly (not 500).
+ *   2. Browser cookie transport is restricted to configured trusted origins.
+ *   3. Native/body auth never receives browser refresh cookies.
+ *   4. Mobile/body refresh preserves the full token-pair response.
+ *   5. Missing/invalid tokens return 401 cleanly (not 500).
  */
 
 const TEST_JWT_SECRET = 'test-jwt-secret-for-refresh-validation-hotfix-32chars!';
+const TRUSTED_BROWSER_ORIGIN = 'https://web.test';
 
 const mockAuthService = {
   register: jest.fn(),
   login: jest.fn(),
   refreshTokens: jest.fn(),
+  logout: jest.fn(),
   getAuthUserDto: jest.fn(),
 };
 
@@ -51,7 +54,10 @@ describe('AuthController — refresh token validation (hotfix)', () => {
           isGlobal: true,
           load: [
             () => ({
-              app: { env: 'test' },
+              app: {
+                env: 'test',
+                corsOrigins: [TRUSTED_BROWSER_ORIGIN, 'https://admin.test'],
+              },
               jwt: {
                 secret: TEST_JWT_SECRET,
                 accessExpiry: '15m',
@@ -96,8 +102,12 @@ describe('AuthController — refresh token validation (hotfix)', () => {
     return jwtService.sign(payload, { expiresIn: '7d' });
   }
 
-  function mockRequest(cookies: Record<string, string> = {}): Request {
-    return { cookies } as unknown as Request;
+  function mockRequest(cookies: Record<string, string> = {}, origin?: string): Request {
+    return {
+      cookies,
+      headers: origin ? { origin } : {},
+      ip: '127.0.0.1',
+    } as unknown as Request;
   }
 
   function mockResponse(): Response & { _cookies: Record<string, unknown> } {
@@ -123,7 +133,7 @@ describe('AuthController — refresh token validation (hotfix)', () => {
 
       const result = await controller.login(
         { identifier: 'user@example.com', password: 'test-password' },
-        mockRequest(),
+        mockRequest({}, TRUSTED_BROWSER_ORIGIN),
         res,
         'cookie',
       );
@@ -146,7 +156,7 @@ describe('AuthController — refresh token validation (hotfix)', () => {
 
       const result = await controller.register(
         { email: 'new@example.com', password: 'test-password' },
-        mockRequest(),
+        mockRequest({}, TRUSTED_BROWSER_ORIGIN),
         res,
         'cookie',
       );
@@ -160,19 +170,57 @@ describe('AuthController — refresh token validation (hotfix)', () => {
       );
     });
 
-    it('keeps the legacy full-token login response when cookie transport is not requested', async () => {
+    it('rejects untrusted browser login before credential processing or cookie issuance', async () => {
+      const res = mockResponse();
+
+      await expect(
+        controller.login(
+          { identifier: 'user@example.com', password: 'test-password' },
+          mockRequest({}, 'https://attacker.example'),
+          res,
+          'cookie',
+        ),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(mockAuthService.login).not.toHaveBeenCalled();
+      expect(res.cookie).not.toHaveBeenCalled();
+    });
+
+    it('keeps the full-token native login response and does not set a browser cookie', async () => {
       mockAuthService.login.mockResolvedValue({
         accessToken: 'mobile-access',
         refreshToken: 'mobile-refresh',
       });
+      const res = mockResponse();
 
       const result = await controller.login(
         { identifier: 'mobile@example.com', password: 'test-password' },
         mockRequest(),
-        mockResponse(),
+        res,
       );
 
       expect(result).toEqual({ accessToken: 'mobile-access', refreshToken: 'mobile-refresh' });
+      expect(res.cookie).not.toHaveBeenCalled();
+    });
+
+    it('keeps the full-token native register response and does not set a browser cookie', async () => {
+      mockAuthService.register.mockResolvedValue({
+        accessToken: 'mobile-register-access',
+        refreshToken: 'mobile-register-refresh',
+      });
+      const res = mockResponse();
+
+      const result = await controller.register(
+        { email: 'mobile-new@example.com', password: 'test-password' },
+        mockRequest(),
+        res,
+      );
+
+      expect(result).toEqual({
+        accessToken: 'mobile-register-access',
+        refreshToken: 'mobile-register-refresh',
+      });
+      expect(res.cookie).not.toHaveBeenCalled();
     });
   });
 
@@ -189,7 +237,7 @@ describe('AuthController — refresh token validation (hotfix)', () => {
         refreshToken: 'new-refresh',
       });
 
-      const req = mockRequest({ irexpro_refresh: token });
+      const req = mockRequest({ irexpro_refresh: token }, TRUSTED_BROWSER_ORIGIN);
       const res = mockResponse();
 
       const result = await controller.refresh(req, undefined, res);
@@ -211,7 +259,7 @@ describe('AuthController — refresh token validation (hotfix)', () => {
         refreshToken: 'new-refresh-rotated',
       });
 
-      const req = mockRequest({ irexpro_refresh: token });
+      const req = mockRequest({ irexpro_refresh: token }, TRUSTED_BROWSER_ORIGIN);
       const res = mockResponse();
 
       await controller.refresh(req, undefined, res);
@@ -223,6 +271,26 @@ describe('AuthController — refresh token validation (hotfix)', () => {
       );
     });
 
+    it('rejects an untrusted cookie refresh before token rotation', async () => {
+      const token = signRefreshToken({
+        sub: 'user-1',
+        email: 'test@example.com',
+        roles: [RoleName.USER],
+      });
+      const res = mockResponse();
+
+      await expect(
+        controller.refresh(
+          mockRequest({ irexpro_refresh: token }, 'https://attacker.example'),
+          undefined,
+          res,
+        ),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(mockAuthService.refreshTokens).not.toHaveBeenCalled();
+      expect(res.cookie).not.toHaveBeenCalled();
+    });
+
     it('returns 401 when no cookie and no body.refreshToken', async () => {
       const req = mockRequest();
       await expect(controller.refresh(req, undefined, mockResponse())).rejects.toThrow(
@@ -231,18 +299,26 @@ describe('AuthController — refresh token validation (hotfix)', () => {
       expect(mockAuthService.refreshTokens).not.toHaveBeenCalled();
     });
 
-    it('idempotently clears the browser refresh cookie', () => {
+    it('idempotently clears the browser refresh cookie for a trusted origin', () => {
       const res = mockResponse();
-      controller.clearBrowserSession(res);
+      controller.clearBrowserSession(mockRequest({}, TRUSTED_BROWSER_ORIGIN), res);
       expect(res.clearCookie).toHaveBeenCalledWith(
         'irexpro_refresh',
         expect.objectContaining({ httpOnly: true }),
       );
     });
+
+    it('does not clear the browser refresh cookie for an untrusted origin', () => {
+      const res = mockResponse();
+      expect(() =>
+        controller.clearBrowserSession(mockRequest({}, 'https://attacker.example'), res),
+      ).toThrow(ForbiddenException);
+      expect(res.clearCookie).not.toHaveBeenCalled();
+    });
   });
 
   describe('POST /auth/refresh — body flow (mobile)', () => {
-    it('reads the refresh token from the JSON body and returns the full token pair', async () => {
+    it('reads the refresh token from the JSON body, returns the full pair, and emits no cookie', async () => {
       const token = signRefreshToken({
         sub: 'user-2',
         email: 'mobile@example.com',
@@ -261,9 +337,10 @@ describe('AuthController — refresh token validation (hotfix)', () => {
 
       expect(mockAuthService.refreshTokens).toHaveBeenCalledWith(token);
       expect(result).toEqual({ accessToken: 'new-access', refreshToken: 'new-refresh' });
+      expect(res.cookie).not.toHaveBeenCalled();
     });
 
-    it('prefers the cookie over the body and therefore keeps the response browser-safe', async () => {
+    it('prefers the cookie over the body and therefore enforces the browser origin boundary', async () => {
       const cookieToken = signRefreshToken({
         sub: 'user-cookie',
         email: 'cookie@example.com',
@@ -280,7 +357,7 @@ describe('AuthController — refresh token validation (hotfix)', () => {
         refreshToken: 'new-refresh',
       });
 
-      const req = mockRequest({ irexpro_refresh: cookieToken });
+      const req = mockRequest({ irexpro_refresh: cookieToken }, TRUSTED_BROWSER_ORIGIN);
       const res = mockResponse();
 
       const result = await controller.refresh(req, { refreshToken: bodyToken }, res);
@@ -294,6 +371,34 @@ describe('AuthController — refresh token validation (hotfix)', () => {
       await expect(controller.refresh(req, {}, mockResponse())).rejects.toThrow(
         UnauthorizedException,
       );
+    });
+  });
+
+  describe('POST /auth/logout — browser provenance', () => {
+    const principal = { userId: 'user-logout', roles: [RoleName.USER] } as never;
+
+    it('rejects an untrusted cookie-backed logout before revocation', async () => {
+      const res = mockResponse();
+      await expect(
+        controller.logout(
+          principal,
+          mockRequest({ irexpro_refresh: 'cookie-secret' }, 'https://attacker.example'),
+          res,
+        ),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(mockAuthService.logout).not.toHaveBeenCalled();
+      expect(res.clearCookie).not.toHaveBeenCalled();
+    });
+
+    it('keeps native bearer logout compatible when no browser cookie is present', async () => {
+      mockAuthService.logout.mockResolvedValue(undefined);
+      const res = mockResponse();
+
+      const result = await controller.logout(principal, mockRequest(), res);
+
+      expect(mockAuthService.logout).toHaveBeenCalledWith('user-logout', '127.0.0.1');
+      expect(result).toEqual({ message: 'Logged out successfully' });
     });
   });
 
@@ -359,7 +464,7 @@ describe('AuthController — refresh token validation (hotfix)', () => {
         email: 'x@example.com',
         roles: [RoleName.USER],
       });
-      const req = mockRequest({ irexpro_refresh: token });
+      const req = mockRequest({ irexpro_refresh: token }, TRUSTED_BROWSER_ORIGIN);
       const res = mockResponse();
 
       const result = await controller.refresh(req, undefined, res);
