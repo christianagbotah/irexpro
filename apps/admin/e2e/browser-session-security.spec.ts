@@ -60,7 +60,9 @@ test.describe('Sprint 49 browser session security — Admin', () => {
 
     await page.goto('/admin/dashboard');
     await expect(page.getByRole('heading', { level: 1, name: 'Admin dashboard' })).toBeVisible();
-    await expect(page.getByText('admin-browser-session@example.com').first()).toBeVisible();
+    await expect(
+      page.locator('main.content').getByText('admin-browser-session@example.com', { exact: true }),
+    ).toBeVisible();
     expect(refreshCalls).toBe(1);
 
     const storage = await page.evaluate(() => `${JSON.stringify(localStorage)}${JSON.stringify(sessionStorage)}`);
