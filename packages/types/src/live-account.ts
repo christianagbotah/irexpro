@@ -19,8 +19,14 @@ import type {
 
 // ─── Environment / mode ─────────────────────────────────────────────────────
 
-/** Directive §36 — DEMO / PAPER / LIVE must be visually unmistakable. */
-export type LiveAccountEnvironment = 'DEMO' | 'LIVE' | 'PAPER';
+/**
+ * Directive §36 — DEMO / PAPER / LIVE must be visually unmistakable.
+ *
+ * UNKNOWN is the fail-closed truth value: environment provenance that cannot
+ * be established (no connections, or no explicit connection mode) reports
+ * UNKNOWN — it is never presented as the safe PAPER mode.
+ */
+export type LiveAccountEnvironment = 'DEMO' | 'LIVE' | 'PAPER' | 'UNKNOWN';
 
 /** Derived connection health roll-up (server-computed, fail-closed). */
 export type LiveConnectionHealth =
@@ -101,11 +107,16 @@ export interface LiveAccountAlertView {
 
 // ─── Connections card (overview) ────────────────────────────────────────────
 
+/**
+ * Per-connection view for the overview. Phase F accountId minimization:
+ * NO full provider account identifier ships in this contract — only
+ * `maskedAccountId` (last 4 characters). The unmasked accountId remains
+ * server-side state (rotation UX reads it from /broker/connections).
+ */
 export interface LiveAccountConnectionView {
   id: string;
   brokerName: string;
   displayName: string | null;
-  accountId: string | null;
   /** Masked account identifier safe for display (e.g. "•••4123"). */
   maskedAccountId: string | null;
   accountType: 'DEMO' | 'LIVE';
@@ -178,6 +189,13 @@ export interface LiveAccountOverviewView {
   environment: LiveAccountEnvironment;
   /** True when at least one DEMO/LIVE connection exists. */
   hasConnections: boolean;
+  /**
+   * Phase F partial-failure tri-state. true (or absent, for older payloads)
+   * = the reconciliation state (latest runs + open discrepancy counts) was
+   * actually read from the store. false = the lookup itself failed — the
+   * zero-valued counts must NEVER be rendered as "zero discrepancies".
+   */
+  reconciliationLoaded?: boolean;
 }
 
 // ─── Orders (GET /live-account/orders) ──────────────────────────────────────

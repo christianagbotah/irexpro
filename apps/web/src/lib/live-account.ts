@@ -92,7 +92,7 @@ function isNullableIsoDateString(value: unknown): value is string | null {
 // ── Enum union guards (explicit, per the shared contract) ───────────────────
 
 function isLiveAccountEnvironment(value: unknown): value is LiveAccountEnvironment {
-  return value === 'DEMO' || value === 'LIVE' || value === 'PAPER';
+  return value === 'DEMO' || value === 'LIVE' || value === 'PAPER' || value === 'UNKNOWN';
 }
 
 function isLiveConnectionHealth(value: unknown): value is LiveConnectionHealth {
@@ -268,7 +268,8 @@ function isLiveAccountConnectionView(value: unknown): value is LiveAccountConnec
     isString(value.id) &&
     isString(value.brokerName) &&
     isNullableString(value.displayName) &&
-    isNullableString(value.accountId) &&
+    // Phase F accountId minimization: the contract ships maskedAccountId only;
+    // a full accountId is not part of the user-facing view.
     isNullableString(value.maskedAccountId) &&
     (value.accountType === 'DEMO' || value.accountType === 'LIVE') &&
     isNullableString(value.accountCurrency) &&
@@ -324,7 +325,11 @@ function isLiveAccountOverviewView(value: unknown): value is LiveAccountOverview
     Array.isArray(value.alerts) &&
     value.alerts.every(isLiveAccountAlertView) &&
     isLiveAccountEnvironment(value.environment) &&
-    typeof value.hasConnections === 'boolean'
+    typeof value.hasConnections === 'boolean' &&
+    // Phase F partial-failure tri-state: optional (absent on older payloads),
+    // but must be a boolean when present.
+    (value.reconciliationLoaded === undefined ||
+      typeof value.reconciliationLoaded === 'boolean')
   );
 }
 

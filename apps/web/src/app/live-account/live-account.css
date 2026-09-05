@@ -6,9 +6,11 @@
  * exactly as the backend contract provides it.
  *
  * §36 environment semantics are enforced visually:
- *   LIVE  → unmistakable red/rose treatment (real funds at risk)
- *   DEMO  → amber treatment (simulated funds)
- *   PAPER → neutral slate treatment (simulated)
+ *   LIVE    → unmistakable red/rose treatment (real funds at risk)
+ *   DEMO    → amber treatment (simulated funds)
+ *   PAPER   → neutral slate treatment (simulated)
+ *   UNKNOWN → cautionary deep-amber treatment (provenance unprovable —
+ *             never presented as the simulated PAPER mode)
  */
 
 /* ── Page root (follows terminal-foundation width discipline) ─────────────── */
@@ -84,6 +86,23 @@
 .live-env-banner--paper .live-env-banner__title,
 .live-env-banner--paper .live-env-banner__marker {
   color: #cbd5e1; /* slate-300 */
+}
+
+/* §36 UNKNOWN — environment truth could not be established. Cautionary
+ * deep-amber treatment (amber-800 #92400e border, white text): visually
+ * distinct from PAPER's neutral info styling so unproven provenance is
+ * never mistaken for the safe simulated mode. */
+.live-env-banner--unknown {
+  border: 2px solid rgba(146, 64, 14, 0.8);
+  background:
+    radial-gradient(circle at 0% 0%, rgba(146, 64, 14, 0.3), transparent 18rem),
+    linear-gradient(90deg, rgba(146, 64, 14, 0.26), rgba(120, 53, 15, 0.16));
+  color: #ffffff;
+}
+
+.live-env-banner--unknown .live-env-banner__title,
+.live-env-banner--unknown .live-env-banner__marker {
+  color: #fcd34d; /* amber-300 — cautionary */
 }
 
 /* Neutral "environment not yet confirmed" slot — never claims a mode. */

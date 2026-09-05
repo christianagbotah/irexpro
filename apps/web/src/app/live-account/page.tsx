@@ -62,6 +62,11 @@ function environmentBannerCopy(environment: LiveAccountEnvironment): {
         className: 'live-env-banner live-env-banner--paper',
         title: 'PAPER TRADING — SIMULATED',
       };
+    case 'UNKNOWN':
+      return {
+        className: 'live-env-banner live-env-banner--unknown',
+        title: 'ACCOUNT ENVIRONMENT UNKNOWN — VERIFY BROKER CONNECTION',
+      };
   }
 }
 
@@ -99,7 +104,7 @@ function healthVariant(health: string): 'success' | 'warning' | 'error' | 'info'
   return 'info';
 }
 
-/** DEMO/LIVE badge colors match the §36 banner semantics. */
+/** DEMO/LIVE badge colors match the §36 banner semantics (UNKNOWN is cautionary). */
 function accountTypeVariant(accountType: 'DEMO' | 'LIVE'): 'warning' | 'error' {
   return accountType === 'LIVE' ? 'error' : 'warning';
 }
@@ -107,6 +112,7 @@ function accountTypeVariant(accountType: 'DEMO' | 'LIVE'): 'warning' | 'error' {
 function environmentVariant(environment: LiveAccountEnvironment): 'error' | 'warning' | 'info' {
   if (environment === 'LIVE') return 'error';
   if (environment === 'DEMO') return 'warning';
+  if (environment === 'UNKNOWN') return 'warning';
   return 'info';
 }
 
@@ -1146,7 +1152,14 @@ export default function LiveAccountPage() {
                   </p>
                 </div>
               </div>
-              {connections.length === 0 ? (
+              {overview.reconciliationLoaded === false ? (
+                <Card className="cockpit-panel">
+                  <p className="muted">
+                    Reconciliation status unavailable — the reconciliation state could not be
+                    loaded, so discrepancy counts are hidden rather than shown as zero.
+                  </p>
+                </Card>
+              ) : connections.length === 0 ? (
                 <Card className="cockpit-panel">
                   <p className="muted">No broker connections to reconcile.</p>
                 </Card>
