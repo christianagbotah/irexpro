@@ -220,12 +220,7 @@ export class PasswordResetService {
       PasswordResetService.PHONE_CODE_LENGTH,
       '0',
     );
-    const tokenHash = this.hashPhoneCode(
-      userId,
-      destination,
-      rawToken,
-      this.verificationPepper(),
-    );
+    const tokenHash = this.hashPhoneCode(userId, destination, rawToken, this.verificationPepper());
     return { rawToken, tokenHash };
   }
 
