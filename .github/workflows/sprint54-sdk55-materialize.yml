@@ -1,0 +1,79 @@
+name: Sprint 54 SDK 55 Dependency Materializer
+
+on:
+  push:
+    branches:
+      - mobile/sprint54-expo-sdk55
+    paths:
+      - '.github/workflows/sprint54-sdk55-materialize.yml'
+
+permissions:
+  contents: write
+
+env:
+  NODE_VERSION: '22'
+  PNPM_VERSION: '10.34.5'
+  CI: '1'
+  EXPO_NO_TELEMETRY: '1'
+
+jobs:
+  materialize:
+    name: Materialize Expo SDK 55 dependency graph
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout SDK 55 branch
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: mobile/sprint54-expo-sdk55
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Verify clean SDK 54 baseline
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -z "$(git status --porcelain)"
+          node -e "const p=require('./apps/mobile/package.json'); if (!p.dependencies.expo.startsWith('~54.')) throw new Error('Expected SDK 54 baseline, got '+p.dependencies.expo)"
+          pnpm install --frozen-lockfile
+
+      - name: Upgrade mobile dependencies to Expo SDK 55
+        working-directory: apps/mobile
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          pnpm exec expo install expo@^55.0.0 --fix
+          pnpm exec expo install expo-system-ui
+
+      - name: Enforce materializer scope
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mapfile -t changed < <(git diff --name-only)
+          printf 'Materialized files:\n%s\n' "${changed[*]}"
+          test "${#changed[@]}" -eq 2
+          printf '%s\n' "${changed[@]}" | sort > /tmp/actual
+          printf '%s\n' apps/mobile/package.json pnpm-lock.yaml | sort > /tmp/expected
+          diff -u /tmp/expected /tmp/actual
+          git diff --check
+
+      - name: Commit deterministic SDK 55 dependency graph
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name 'CHRISTIAN AGBOTAH'
+          git config user.email '148919415+christianagbotah@users.noreply.github.com'
+          git add apps/mobile/package.json pnpm-lock.yaml
+          git commit -m 'chore(mobile): materialize Expo SDK 55 dependency graph'
+          git push origin HEAD:mobile/sprint54-expo-sdk55
