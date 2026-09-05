@@ -66,6 +66,12 @@ jobs:
       - name: Enforce GitHub Actions supply-chain policy
         run: node scripts/security/check-workflow-supply-chain.mjs
 
+      - name: Test Python lock integrity workflow policy
+        run: node scripts/security/check-python-lock-integrity-workflow.mjs --self-test
+
+      - name: Enforce Python lock integrity workflow policy
+        run: node scripts/security/check-python-lock-integrity-workflow.mjs
+
       - name: Test tracked-source secret scanner
         run: node scripts/security/test-scan-tracked-secrets.mjs
 
@@ -177,6 +183,7 @@ jobs:
           CUSTOM_COMPILE_COMMAND: "python -m piptools compile services/ai-engine/pyproject.toml --generate-hashes"
         run: |
           mkdir -p security-artifacts
+          cp services/ai-engine/requirements.lock security-artifacts/ai-engine-requirements.lock
           python -m piptools compile \
             services/ai-engine/pyproject.toml \
             --generate-hashes \
