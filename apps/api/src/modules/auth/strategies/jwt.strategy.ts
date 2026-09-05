@@ -13,6 +13,8 @@ export interface JwtPayload {
   roles: string[];
   /** Distinguishes bearer access JWTs from refresh JWTs. */
   tokenType?: 'access' | 'refresh';
+  /** Signed browser persistence preference carried only by refresh JWTs. */
+  rememberMe?: boolean;
   /** Server-side token generation used for immediate revocation. */
   sessionVersion?: number;
   /** Unique token id so each rotation produces a distinct JWT. */
@@ -52,10 +54,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Invalid token: missing subject');
     }
 
-    // New tokens are explicitly typed. A legacy token has no type, but will be
-    // rejected after migration because it has version 0 while persisted users
-    // begin at version 1.
-    if (payload.tokenType && payload.tokenType !== 'access') {
+    // Token purpose is explicit and fail-closed. Newly issued iRexPro JWTs
+    // always carry a tokenType claim, so absence is not treated as a legacy
+    // access-token fallback.
+    if (payload.tokenType !== 'access') {
       throw new UnauthorizedException('Invalid access token');
     }
 

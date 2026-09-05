@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Header, Param, Patch, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { OnboardingService } from './onboarding.service';
@@ -23,6 +23,8 @@ export class UsersController {
   ) {}
 
   @Get('users/me')
+  @Header('Cache-Control', 'no-store')
+  @Header('Pragma', 'no-cache')
   @ApiOperation({ summary: 'Get current user profile' })
   async getMe(@CurrentUserId() userId: string) {
     return this.usersService.findById(userId);
@@ -36,6 +38,8 @@ export class UsersController {
    * Audits ONBOARDING_PROFILE_UPDATED.
    */
   @Patch('users/me')
+  @Header('Cache-Control', 'no-store')
+  @Header('Pragma', 'no-cache')
   @ApiOperation({ summary: 'Update current user profile (onboarding)' })
   async updateMe(@CurrentUserId() userId: string, @Body() dto: UpdateMyProfileDto) {
     const updated = await this.usersService.updateMyProfile(userId, dto);
@@ -58,6 +62,8 @@ export class UsersController {
    * Does NOT expose broker credentials or sensitive fields.
    */
   @Get('users/me/onboarding-status')
+  @Header('Cache-Control', 'no-store')
+  @Header('Pragma', 'no-cache')
   @ApiOperation({ summary: 'Get current user onboarding status (Sprint 29)' })
   async getOnboardingStatus(@CurrentUserId() userId: string) {
     return this.onboardingService.getOnboardingStatus(userId);
@@ -66,6 +72,8 @@ export class UsersController {
   @Get('admin/users')
   @UseGuards(RolesGuard)
   @Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN)
+  @Header('Cache-Control', 'no-store')
+  @Header('Pragma', 'no-cache')
   @ApiOperation({ summary: '[Admin] List all users' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
@@ -76,6 +84,8 @@ export class UsersController {
   @Get('admin/users/:id')
   @UseGuards(RolesGuard)
   @Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN)
+  @Header('Cache-Control', 'no-store')
+  @Header('Pragma', 'no-cache')
   @ApiOperation({ summary: '[Admin] Get user by ID' })
   async getUserById(@Param('id') id: string) {
     return this.usersService.findById(id);
@@ -89,6 +99,8 @@ export class UsersController {
   @Get('admin/users/:id/onboarding-status')
   @UseGuards(RolesGuard)
   @Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN)
+  @Header('Cache-Control', 'no-store')
+  @Header('Pragma', 'no-cache')
   @ApiOperation({ summary: '[Admin] Get user onboarding status by ID (Sprint 29)' })
   async getUserOnboardingStatus(@Param('id') id: string) {
     return this.onboardingService.getOnboardingStatus(id);
