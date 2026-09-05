@@ -17,7 +17,7 @@ const REQUIRED_STATIC_HEADERS = [
 ];
 
 function fail(message) {
-  console.error(`Nginx security-header policy failed: ${message}`);
+  console.error(`Nginx security policy failed: ${message}`);
   process.exitCode = 1;
 }
 
@@ -79,6 +79,21 @@ for (const block of httpsServers) {
   }
 }
 
+const apiLocations = extractBlocks(activeDirectives, 'location ^~ /api/v1/ {');
+if (apiLocations.length !== 1) {
+  fail(`expected exactly 1 public API location, found ${apiLocations.length}`);
+} else {
+  const bodyLimitDirectives = [
+    ...apiLocations[0].matchAll(/\bclient_max_body_size\s+([^;]+);/g),
+  ];
+
+  if (bodyLimitDirectives.length !== 1) {
+    fail(`expected exactly 1 API client_max_body_size directive, found ${bodyLimitDirectives.length}`);
+  } else if (bodyLimitDirectives[0][1].trim() !== '100k') {
+    fail(`public API client_max_body_size must remain 100k, found ${bodyLimitDirectives[0][1].trim()}`);
+  }
+}
+
 const staticLocations = extractBlocks(source, 'location ^~ /_next/static/ {');
 if (staticLocations.length !== 2) {
   fail(`expected exactly 2 Next.js static locations, found ${staticLocations.length}`);
@@ -93,5 +108,5 @@ for (const block of staticLocations) {
 }
 
 if (!process.exitCode) {
-  console.log('Nginx transport-security header policy passed.');
+  console.log('Nginx transport-security and API boundary policy passed.');
 }

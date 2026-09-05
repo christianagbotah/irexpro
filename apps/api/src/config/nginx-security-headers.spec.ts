@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 
-describe('Nginx transport-security header policy', () => {
+describe('Nginx security policy', () => {
   it('passes the repository security policy checker', () => {
     const repositoryRoot = resolve(__dirname, '../../../..');
     const checker = resolve(repositoryRoot, 'scripts/security/check-nginx-security-headers.mjs');
@@ -11,6 +11,6 @@ describe('Nginx transport-security header policy', () => {
       encoding: 'utf8',
     });
 
-    expect(output).toContain('Nginx transport-security header policy passed.');
+    expect(output).toContain('Nginx transport-security and API boundary policy passed.');
   });
 });
