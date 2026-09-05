@@ -1,5 +1,6 @@
 import type { ApiClient } from '@irexpro/api-client';
 import { createApiClient } from '@irexpro/api-client';
+import { createBrowserAuthClient } from '@irexpro/api-client/browser-auth';
 
 const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
@@ -20,3 +21,5 @@ export const api: ApiClient = createApiClient({
   includeCredentials: true,
   getAccessToken: () => cachedAccessToken,
 });
+
+export const browserAuth = createBrowserAuthClient(api);

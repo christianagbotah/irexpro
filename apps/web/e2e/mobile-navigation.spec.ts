@@ -251,6 +251,12 @@ test.describe('Mobile bottom navigation', () => {
     const sheet = page.locator('#mobile-more-sheet');
     await expect(sheet).toBeVisible();
 
+    // Wait for the sheet's scheduled initial-focus callback to complete before
+    // moving focus to the last item. Otherwise the requestAnimationFrame used
+    // by the component can race this test and steal focus back to Close.
+    const closeButton = sheet.locator('.mobile-sheet__close');
+    await expect(closeButton).toBeFocused();
+
     // The sheet's focusable elements (in tab order):
     //   1. Close button (focused on open)
     //   2. Profile link
@@ -266,7 +272,6 @@ test.describe('Mobile bottom navigation', () => {
 
     // Focus should wrap to the FIRST focusable element in the sheet (the close
     // button), NOT escape to the More trigger or the page behind the overlay.
-    const closeButton = sheet.locator('.mobile-sheet__close');
     await expect(closeButton).toBeFocused();
     // The More trigger must NOT have focus (it's behind the overlay).
     await expect(moreButton).not.toBeFocused();

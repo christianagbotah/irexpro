@@ -150,7 +150,7 @@ export default function AdminMobileBottomNav({ onLogout }: AdminMobileBottomNavP
       </nav>
 
       {moreOpen && (
-        <div className="mobile-sheet-overlay" onClick={closeSheet} aria-hidden="true">
+        <div className="mobile-sheet-overlay" onClick={closeSheet}>
           <div
             id="admin-mobile-more-sheet"
             ref={sheetRef}

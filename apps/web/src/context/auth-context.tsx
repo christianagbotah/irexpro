@@ -1,26 +1,26 @@
 'use client';
 
 import { createContext, useContext, useCallback, useMemo, useState, useEffect, ReactNode } from 'react';
-import type { AuthUser, AuthTokens } from '@irexpro/types';
-import { setAccessToken } from '@/lib/api';
-import { api } from '@/lib/api';
+import type { AuthUser } from '@irexpro/types';
+import type { BrowserAuthTokens } from '@irexpro/api-client/browser-auth';
+import { setAccessToken, api, browserAuth } from '@/lib/api';
 
 /**
  * Web auth context — Sprint 25 hybrid strategy.
  *
  * Session restore on page refresh:
  *   - The backend sets an httpOnly refresh cookie on login/register.
- *   - On mount, the AuthProvider calls api.refresh() (no args) — the browser
+ *   - On mount, the AuthProvider calls browserAuth.refresh() — the browser
  *     automatically sends the httpOnly cookie via credentials:'include'.
- *   - If refresh succeeds, the new access token is stored in memory and
- *     /auth/me is called to populate the user.
- *   - If refresh fails (no cookie, expired), the user stays unauthenticated.
+ *   - Cookie-based auth responses expose only a new access token to JavaScript;
+ *     the rotated refresh token remains HttpOnly-cookie-only.
+ *   - If refresh succeeds, the access token is stored in memory and /auth/me
+ *     populates the current user.
  *
  * Token storage:
- *   - Access token: in memory only (NOT localStorage). Lost on page refresh,
- *     but immediately restored via the httpOnly refresh cookie.
- *   - Refresh token: httpOnly cookie set by the backend. JavaScript cannot
- *     read it. No localStorage, no sessionStorage.
+ *   - Access token: in memory only (NOT localStorage).
+ *   - Refresh token: httpOnly cookie set by the backend. JavaScript cannot read
+ *     or receive it in browser auth response bodies.
  */
 
 interface AuthContextValue {
@@ -54,7 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [restoring, setRestoring] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const storeTokens = useCallback((tokens: AuthTokens) => {
+  const storeTokens = useCallback((tokens: BrowserAuthTokens) => {
     setAccessTokenState(tokens.accessToken);
     setAccessToken(tokens.accessToken);
   }, []);
@@ -72,21 +72,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // Sprint 25: session restore on mount — call /auth/refresh with the
-  // httpOnly cookie (credentials:'include' is set in the api client).
-  // If the cookie is present and valid, we get a new access token + refresh
-  // token (rotated). If not, the user stays unauthenticated silently.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const tokens = await api.refresh();
+        const tokens = await browserAuth.refresh();
         if (cancelled) return;
         storeTokens(tokens);
         await fetchMe(tokens.accessToken);
       } catch {
-        // No cookie, expired, or invalid — user is unauthenticated. This is
-        // a normal state (not an error), so we don't set the error field.
+        // No cookie, expired, revoked, or invalid — unauthenticated is normal.
       } finally {
         if (!cancelled) setRestoring(false);
       }
@@ -104,7 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setError(null);
     try {
       const normalizedMfaCode = mfaCode?.trim() || undefined;
-      const tokens = await api.login({
+      const tokens = await browserAuth.login({
         identifier,
         password,
         rememberMe,
@@ -113,9 +108,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       storeTokens(tokens);
       await fetchMe(tokens.accessToken);
     } catch (err) {
-      // Show backend error message if available; otherwise safe fallback.
-      // The backend intentionally returns the same credential error for absent
-      // or invalid MFA so this context does not reveal MFA enrollment state.
       const msg = (err instanceof Error && err.message && !err.message.includes('fetch'))
         ? err.message
         : 'Something went wrong. Please try again or contact support.';
@@ -134,7 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     setError(null);
     try {
-      const tokens = await api.register({ email: email || undefined, password, ...opts });
+      const tokens = await browserAuth.register({ email: email || undefined, password, ...opts });
       storeTokens(tokens);
       await fetchMe(tokens.accessToken);
     } catch (err) {
@@ -151,12 +143,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     setLoading(true);
     try {
-      if (accessToken) {
-        // MFA enable/disable intentionally revokes the current server session,
-        // so this endpoint may already reject the token. Local clearing still
-        // must happen deterministically.
-        await api.logout().catch(() => {});
-      }
+      // If the bearer has expired but the HttpOnly refresh cookie is still
+      // valid, the browser facade performs one cookie refresh and then retries
+      // authenticated logout so server-side sessionVersion revocation still
+      // happens. It also idempotently clears the browser cookie afterward.
+      await browserAuth.logout(accessToken, setAccessToken);
     } finally {
       setAccessTokenState(null);
       setAccessToken(null);

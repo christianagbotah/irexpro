@@ -1,27 +1,26 @@
 'use client';
 
 import { createContext, useContext, useCallback, useMemo, useState, useEffect, ReactNode } from 'react';
-import type { AuthUser, AuthTokens, UserRole } from '@irexpro/types';
-import { setAccessToken } from '@/lib/api';
-import { api } from '@/lib/api';
+import type { AuthUser, UserRole } from '@irexpro/types';
+import type { BrowserAuthTokens } from '@irexpro/api-client/browser-auth';
+import { setAccessToken, api, browserAuth } from '@/lib/api';
 
 /**
  * Admin auth context — Sprint 25 hybrid strategy.
  *
  * Session restore on page refresh:
  *   - The backend sets an httpOnly refresh cookie on login.
- *   - On mount, the AuthProvider calls api.refresh() (no args) — the browser
- *     automatically sends the httpOnly cookie via credentials:'include'.
- *   - If refresh succeeds, the new access token is stored in memory and
- *     /auth/me is called to populate the user (including roles).
- *   - If refresh fails, the user stays unauthenticated.
+ *   - On mount, the AuthProvider calls browserAuth.refresh(); the rotated
+ *     refresh token remains cookie-only and JavaScript receives only a new
+ *     access token.
+ *   - If refresh succeeds, /auth/me populates the current user and roles.
  *
  * Role enforcement: the backend enforces ADMIN/SUPER_ADMIN via RolesGuard on
  * admin endpoints. The frontend checks roles[] from /auth/me for a soft UI
  * guard. The backend is the source of truth.
  *
- * Token storage: access token in memory only (NOT localStorage). Refresh
- * token in httpOnly cookie (JavaScript cannot read it).
+ * Token storage: access token in memory only (NOT localStorage). Refresh token
+ * in HttpOnly cookie and never in browser-readable auth response bodies.
  */
 
 interface AuthContextValue {
@@ -55,7 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [restoring, setRestoring] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const storeTokens = useCallback((tokens: AuthTokens) => {
+  const storeTokens = useCallback((tokens: BrowserAuthTokens) => {
     setAccessTokenState(tokens.accessToken);
     setAccessToken(tokens.accessToken);
   }, []);
@@ -73,18 +72,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // Sprint 25: session restore on mount — call /auth/refresh with the
-  // httpOnly cookie (credentials:'include' is set in the api client).
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const tokens = await api.refresh();
+        const tokens = await browserAuth.refresh();
         if (cancelled) return;
         storeTokens(tokens);
         await fetchMe(tokens.accessToken);
       } catch {
-        // No cookie, expired, or invalid — user is unauthenticated.
+        // No cookie, expired, revoked, or invalid — unauthenticated is normal.
       } finally {
         if (!cancelled) setRestoring(false);
       }
@@ -101,7 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     setError(null);
     try {
-      const tokens = await api.login({
+      const tokens = await browserAuth.login({
         identifier,
         password,
         rememberMe,
@@ -110,8 +107,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       storeTokens(tokens);
       await fetchMe(tokens.accessToken);
     } catch (err) {
-      // Keep the backend's invariant invalid-credentials response; do not infer
-      // or expose whether a particular admin account has MFA configured.
       const msg = err instanceof Error ? err.message : 'Login failed';
       setError(msg);
       throw err;
@@ -123,9 +118,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     setLoading(true);
     try {
-      if (accessToken) {
-        await api.logout().catch(() => {});
-      }
+      await browserAuth.logout(accessToken, setAccessToken);
     } finally {
       setAccessTokenState(null);
       setAccessToken(null);
