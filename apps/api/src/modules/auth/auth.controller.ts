@@ -194,6 +194,8 @@ export class AuthController {
   @Get('me')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('access-token')
+  @Header('Cache-Control', 'no-store')
+  @Header('Pragma', 'no-cache')
   @ApiOperation({ summary: 'Get current authenticated user (frontend-safe DTO)' })
   @ApiResponse({ status: 200, description: 'Current user profile with roles', type: AuthUserDto })
   async me(@CurrentUser() principal: AuthenticatedPrincipal): Promise<AuthUserDto> {
