@@ -51,11 +51,8 @@ export class EmailVerificationDeliveryService {
       });
       this.logger.log(`Verification email sent to ${this.maskEmail(params.to)}`);
       return true;
-    } catch (error) {
-      this.logger.warn(
-        `Verification email delivery failed: ${(error as Error).message}. ` +
-          'No verification token or message body was logged.',
-      );
+    } catch {
+      this.logger.warn('Verification email delivery failed before provider acceptance');
       return false;
     }
   }
@@ -70,10 +67,8 @@ export class EmailVerificationDeliveryService {
     try {
       this.transporter = createTransport(smtpUrl);
       return this.transporter;
-    } catch (error) {
-      this.logger.error(
-        `Failed to initialize verification SMTP transport: ${(error as Error).message}`,
-      );
+    } catch {
+      this.logger.error('Failed to initialize verification SMTP transport');
       this.transporter = null;
       return null;
     }
