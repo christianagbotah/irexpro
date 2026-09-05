@@ -31,6 +31,7 @@ import { PasswordResetDeliveryService } from './password-reset-delivery.service'
  *     are invalidated and the replacement token is persisted.
  *   - Reset tokens are single-use and prior unused tokens are invalidated.
  *   - Phone code is invalidated after 5 failed attempts.
+ *   - Request metadata is bounded to its database contract before persistence.
  *   - Request response is generic to prevent account enumeration.
  *   - Raw token/code/pepper is NEVER logged.
  *   - Successful password reset advances User.sessionVersion in the same DB
@@ -46,6 +47,7 @@ export class PasswordResetService {
   private static readonly EMAIL_TOKEN_EXPIRY_MS = 15 * 60 * 1000;
   private static readonly PHONE_CODE_EXPIRY_MS = 10 * 60 * 1000;
   private static readonly MAX_PHONE_CODE_ATTEMPTS = 5;
+  private static readonly MAX_REQUEST_USER_AGENT_LENGTH = 500;
 
   constructor(
     @InjectRepository(PasswordResetToken)
@@ -62,6 +64,7 @@ export class PasswordResetService {
     identifier: string,
     meta?: { ipAddress?: string; userAgent?: string },
   ): Promise<PasswordResetResult> {
+    const requestMeta = this.normalizeRequestMeta(meta);
     const trimmed = identifier.trim();
     const user = await this.findUserByIdentifier(trimmed);
 
@@ -105,8 +108,8 @@ export class PasswordResetService {
       destinationHash: this.hashDestination(destination),
       expiresAt,
       usedAt: null,
-      requestedIp: meta?.ipAddress ?? null,
-      userAgent: meta?.userAgent ?? null,
+      requestedIp: requestMeta.ipAddress ?? null,
+      userAgent: requestMeta.userAgent ?? null,
       attemptCount: 0,
     });
 
@@ -134,8 +137,8 @@ export class PasswordResetService {
       action: AuditAction.USER_PASSWORD_RESET_REQUESTED,
       resourceType: 'User',
       resourceId: user.id,
-      ipAddress: meta?.ipAddress,
-      userAgent: meta?.userAgent,
+      ipAddress: requestMeta.ipAddress,
+      userAgent: requestMeta.userAgent,
       metadata: { channel, delivered, expiresAt: expiresAt.toISOString() },
     });
 
@@ -205,6 +208,13 @@ export class PasswordResetService {
     }
 
     await this.applyPhonePasswordReset(resetToken, password);
+  }
+
+  private normalizeRequestMeta(meta?: PasswordResetRequestMeta): PasswordResetRequestMeta {
+    return {
+      ipAddress: meta?.ipAddress,
+      userAgent: meta?.userAgent?.slice(0, PasswordResetService.MAX_REQUEST_USER_AGENT_LENGTH),
+    };
   }
 
   private async findUserByIdentifier(identifier: string): Promise<User | null> {
