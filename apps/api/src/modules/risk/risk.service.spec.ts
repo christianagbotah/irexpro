@@ -7,6 +7,7 @@ import { RiskViolation } from './entities/risk-violation.entity';
 import { BrokerService } from '../broker/broker.service';
 import { AuditService } from '../audit/audit.service';
 import { ExecutionService } from '../execution/execution.service';
+import { ExecutionControlService } from '../execution-control/execution-control.service';
 import { ProposedTrade, RiskRejectionCode } from './interfaces/risk.interface';
 import { DomainEventBus } from '../events/event-bus.service';
 
@@ -59,6 +60,9 @@ const mockViolationRepo = () => ({
 const mockBrokerService = () => ({
   hasActiveConnection: jest.fn().mockResolvedValue(true),
   findActiveConnectionForUser: jest.fn().mockResolvedValue({ id: 'conn-1' }),
+  // Sprint 50 — LIVE authorization gate (mocked permissive; the dedicated
+  // execution-control spec exercises the real fail-closed behavior)
+  isConnectionExecutable: jest.fn().mockReturnValue(true),
   getBrokerAccountState: jest.fn().mockResolvedValue({
     balance: '10000.00',
     equity: '10050.00',
@@ -82,6 +86,13 @@ const mockExecutionService = () => ({
   reserveDailyTradeSlot: jest.fn().mockResolvedValue({ allowed: true, currentCount: 0 }),
 });
 
+// Sprint 50 — emergency control plane mock (default: execution allowed)
+const mockExecutionControlService = () => ({
+  checkExecutionPermission: jest.fn().mockResolvedValue({ allowed: true }),
+  assertExecutionAllowed: jest.fn().mockResolvedValue(undefined),
+  listActiveControls: jest.fn().mockResolvedValue([]),
+});
+
 // ─── Test suite ───────────────────────────────────────────────────────────────
 
 describe('RiskService', () => {
@@ -102,6 +113,7 @@ describe('RiskService', () => {
         { provide: BrokerService, useFactory: mockBrokerService },
         { provide: AuditService, useFactory: mockAuditService },
         { provide: ExecutionService, useFactory: mockExecutionService },
+        { provide: ExecutionControlService, useFactory: mockExecutionControlService },
         {
           provide: DomainEventBus,
           useValue: { publish: jest.fn(), subscribe: jest.fn().mockReturnValue(() => {}) },

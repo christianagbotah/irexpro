@@ -29,11 +29,22 @@ export class MfaService {
 
   async beginSetup(
     userId: string,
+    password: string,
     ipAddress?: string,
   ): Promise<{ secret: string; otpauthUri: string }> {
     const user = await this.requireUser(userId);
     if (user.mfaEnabled) {
       throw new ConflictException('MFA is already enabled');
+    }
+
+    // MFA enrollment changes the account's future authentication boundary.
+    // Re-authenticate with the current password before generating or replacing
+    // any pending TOTP secret so a stolen bearer token alone cannot establish
+    // MFA persistence or disrupt a legitimate setup in progress.
+    const passwordValid = await argon2.verify(user.passwordHash, password);
+    if (!passwordValid) {
+      await this.auditChallengeFailure(user.id, 'setup', ipAddress);
+      throw new UnauthorizedException('MFA verification failed');
     }
 
     const secret = generateBase32Secret();
@@ -133,7 +144,7 @@ export class MfaService {
 
   private async auditChallengeFailure(
     userId: string,
-    operation: 'enable' | 'disable',
+    operation: 'setup' | 'enable' | 'disable',
     ipAddress?: string,
   ): Promise<void> {
     await this.auditService.log({
