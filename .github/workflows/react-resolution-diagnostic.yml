@@ -42,7 +42,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Show declared dependency graph
-        run: pnpm list react react-dom --recursive --depth 1
+        run: pnpm list react react-dom --recursive --depth 1 || true
 
       - name: Resolve runtime packages from each workspace
         shell: bash
@@ -50,51 +50,30 @@ jobs:
           set -Eeuo pipefail
           for workspace in apps/web apps/admin apps/mobile; do
             echo "=== $workspace ==="
-            (
-              cd "$workspace"
-              node <<'NODE'
-const fs = require('fs');
-const path = require('path');
-for (const pkg of ['react', 'react-dom', 'next']) {
-  try {
-    const entry = require.resolve(pkg);
-    let dir = path.dirname(entry);
-    let found = null;
-    while (dir !== path.dirname(dir)) {
-      const candidate = path.join(dir, 'package.json');
-      if (fs.existsSync(candidate)) {
-        const manifest = JSON.parse(fs.readFileSync(candidate, 'utf8'));
-        if (manifest.name === pkg) {
-          found = { version: manifest.version, manifest: candidate, entry };
-          break;
-        }
-      }
-      dir = path.dirname(dir);
-    }
-    console.log(pkg, found || { entry });
-  } catch (error) {
-    console.log(pkg, 'UNRESOLVED', error.message);
-  }
-}
-NODE
-            )
+            cd "$GITHUB_WORKSPACE/$workspace"
             for pkg in react react-dom next; do
-              if [ -e "$workspace/node_modules/$pkg" ]; then
-                printf '%s local path: ' "$pkg"
-                readlink -f "$workspace/node_modules/$pkg" || true
+              entry="$(node -e "try{process.stdout.write(require.resolve('$pkg'))}catch(e){}")"
+              if [ -n "$entry" ]; then
+                version="$(node -e "try{process.stdout.write(require('$pkg/package.json').version)}catch(e){process.stdout.write('unknown')}")"
+                echo "$pkg version=$version entry=$entry"
               else
-                echo "$pkg local path: <absent>"
+                echo "$pkg unresolved"
+              fi
+              if [ -e "node_modules/$pkg" ]; then
+                echo "$pkg local=$(readlink -f "node_modules/$pkg" || true)"
+              else
+                echo "$pkg local=<absent>"
               fi
             done
           done
+          cd "$GITHUB_WORKSPACE"
           echo '=== repository root ==='
           for pkg in react react-dom next; do
             if [ -e "node_modules/$pkg" ]; then
-              printf '%s root path: ' "$pkg"
-              readlink -f "node_modules/$pkg" || true
-              node -e "try{console.log('$pkg root version:',require('./node_modules/$pkg/package.json').version)}catch(e){console.log('$pkg root version: unresolved')}"
+              echo "$pkg root=$(readlink -f "node_modules/$pkg" || true)"
+              node -e "try{console.log('$pkg root-version='+require('./node_modules/$pkg/package.json').version)}catch(e){console.log('$pkg root-version=unknown')}"
             else
-              echo "$pkg root path: <absent>"
+              echo "$pkg root=<absent>"
             fi
           done
 
