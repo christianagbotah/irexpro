@@ -137,6 +137,17 @@ jobs:
       - name: Generate disposable Android and iOS native projects
         run: pnpm --filter @irexpro/mobile exec expo prebuild --platform all --no-install --clean
 
+      - name: Contain prebuild tracked-file mutation
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mapfile -t changed < <(git diff --name-only)
+          printf 'Tracked changes after prebuild:\n%s\n' "${changed[*]}"
+          printf '%s\n' "${changed[@]}" | sort > /tmp/prebuild-actual
+          printf '%s\n' apps/mobile/metro.config.js apps/mobile/package.json pnpm-workspace.yaml | sort > /tmp/prebuild-expected
+          diff -u /tmp/prebuild-expected /tmp/prebuild-actual
+          git diff -- apps/mobile/package.json
+
       - name: Prove Android and iOS generated New Architecture state
         shell: bash
         run: |
@@ -152,6 +163,9 @@ jobs:
           console.log(`Generated iOS project does not opt out of New Architecture (property=${JSON.stringify(props.newArchEnabled)}).`);
           NODE
           echo 'Generated Android and iOS projects use the SDK 54 New Architecture path.'
+
+      - name: Restore disposable prebuild source mutation
+        run: git restore apps/mobile/package.json
 
       - name: Remove disposable native projects
         run: rm -rf apps/mobile/android apps/mobile/ios
