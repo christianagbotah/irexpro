@@ -58,24 +58,25 @@ jobs:
           printf '  %s\n' "${changed[@]}"
           for path in "${changed[@]}"; do
             case "$path" in
-              apps/mobile/package.json|pnpm-lock.yaml) ;;
+              apps/mobile/app.json|apps/mobile/package.json|pnpm-lock.yaml) ;;
               *)
                 echo "Unexpected generated tracked change: $path"
                 exit 1
                 ;;
             esac
           done
-          test "${#changed[@]}" -eq 2
+          test "${#changed[@]}" -eq 3
 
       - name: Capture generated dependency evidence
         shell: bash
         run: |
           set -Eeuo pipefail
           mkdir -p sdk52-generated
+          cp apps/mobile/app.json sdk52-generated/app.json
           cp apps/mobile/package.json sdk52-generated/package.json
           cp pnpm-lock.yaml sdk52-generated/pnpm-lock.yaml
-          git diff -- apps/mobile/package.json pnpm-lock.yaml > sdk52-generated/sdk52-dependency.diff
-          git diff --stat -- apps/mobile/package.json pnpm-lock.yaml > sdk52-generated/sdk52-dependency.stat
+          git diff -- apps/mobile/app.json apps/mobile/package.json pnpm-lock.yaml > sdk52-generated/sdk52-dependency.diff
+          git diff --stat -- apps/mobile/app.json apps/mobile/package.json pnpm-lock.yaml > sdk52-generated/sdk52-dependency.stat
 
       - name: Upload generated SDK 52 dependency evidence
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
