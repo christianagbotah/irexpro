@@ -9,11 +9,13 @@ import type { Express, NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { createCorrelationId, runWithCorrelationId } from './common/utils/request-correlation.util';
+import { handleBootstrapFailure } from './config/bootstrap-failure';
 import { isTrustedReverseProxy } from './config/proxy-trust';
 import { setupSwagger } from './config/swagger.config';
 
+const bootstrapLogger = new Logger('Bootstrap');
+
 async function bootstrap() {
-  const logger = new Logger('Bootstrap');
   // rawBody: true preserves the unparsed request body on req.rawBody, which is
   // REQUIRED for payment webhook signature verification
   // (POST /payments/webhooks/:provider). Without this, req.rawBody is undefined
@@ -22,6 +24,10 @@ async function bootstrap() {
     logger: ['log', 'error', 'warn', 'debug'],
     rawBody: true,
   });
+
+  // Route SIGINT/SIGTERM through Nest's lifecycle so framework-managed
+  // resources receive their orderly shutdown callbacks during deployments.
+  app.enableShutdownHooks();
 
   const configService = app.get(ConfigService);
   const apiPrefix = configService.get<string>('app.apiPrefix', 'api/v1');
@@ -84,10 +90,12 @@ async function bootstrap() {
   }
 
   await app.listen(port, host);
-  logger.log(`iRexPro API running on http://${host}:${port}/${apiPrefix}`);
-  logger.log(
+  bootstrapLogger.log(`iRexPro API running on http://${host}:${port}/${apiPrefix}`);
+  bootstrapLogger.log(
     `Swagger docs: http://${host}:${port}/${configService.get('swagger.path', 'api/docs')}`,
   );
 }
 
-bootstrap();
+void bootstrap().catch(() => {
+  handleBootstrapFailure(bootstrapLogger);
+});
