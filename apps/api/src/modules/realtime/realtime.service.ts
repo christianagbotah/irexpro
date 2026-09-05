@@ -7,6 +7,8 @@ import {
   TradeEventPayload,
   RiskDecisionEventPayload,
   BrokerStatusEventPayload,
+  BrokerAuthorizationEventPayload,
+  ExecutionControlEventPayload,
   AiSignalEventPayload,
   SystemNotificationPayload,
 } from '../events/interfaces/domain-event.interface';
@@ -201,6 +203,32 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
             connectionId: payload.connectionId,
             status: payload.status,
             previousStatus: payload.previousStatus,
+            reason: payload.reason,
+          });
+        },
+      ),
+
+      // Sprint 50 — authorization state machine transitions (safe fields only)
+      this.eventBus.subscribe<BrokerAuthorizationEventPayload>(
+        DomainEventType.BROKER_AUTHORIZATION_CHANGED,
+        ({ userId, payload }) => {
+          this.emitToUser(userId, RealtimeEvent.BROKER_AUTHORIZATION_CHANGED, {
+            connectionId: payload.connectionId,
+            brokerId: payload.brokerId,
+            status: payload.status,
+            previousStatus: payload.previousStatus,
+          });
+        },
+      ),
+
+      // Sprint 50 — emergency control plane changes (admin-facing rooms)
+      this.eventBus.subscribe<ExecutionControlEventPayload>(
+        DomainEventType.EXECUTION_CONTROL_CHANGED,
+        ({ userId, payload }) => {
+          this.emitToUser(userId, RealtimeEvent.EXECUTION_CONTROL_CHANGED, {
+            scope: payload.scope,
+            scopeKey: payload.scopeKey ?? null,
+            action: payload.action,
             reason: payload.reason,
           });
         },
