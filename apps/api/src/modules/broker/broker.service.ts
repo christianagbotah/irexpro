@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -18,6 +19,15 @@ import {
   OHLCV,
 } from './interfaces/broker-adapter.interface';
 import { BrokerAdapterError } from './interfaces/broker-adapter.errors';
+import {
+  BrokerAuthorizationStatus,
+  BrokerAuthorizationStateMachine,
+} from './authorization/broker-authorization-status';
+import {
+  BrokerCredentialStatus,
+  BrokerCredentialLifecycle,
+} from './authorization/broker-credential-status';
+import { BrokerProviderRegistryService } from './registry/broker-provider-registry.service';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../../common/enums/audit-action.enum';
 import { AuditSeverity } from '../audit/entities/audit-log.entity';
@@ -47,6 +57,7 @@ export class BrokerService {
     @InjectRepository(BrokerAccount)
     private accountRepo: Repository<BrokerAccount>,
     private adapterRegistry: BrokerAdapterRegistry,
+    private providerRegistry: BrokerProviderRegistryService,
     private encryptionService: CredentialEncryptionService,
     private auditService: AuditService,
     private readonly eventBus: DomainEventBus,
@@ -152,6 +163,14 @@ export class BrokerService {
       throw new BadRequestException(`Unsupported broker: ${dto.brokerId}`);
     }
 
+    // Registry gate (Directive §11): the provider must explicitly support the
+    // requested environment — never inferred from credentials or UI state.
+    if (!this.providerRegistry.supportsEnvironment(dto.brokerId, dto.accountType as BrokerMode)) {
+      throw new BadRequestException(
+        `Broker ${dto.brokerId} does not support ${dto.accountType} accounts`,
+      );
+    }
+
     const credentials: DecryptedBrokerCredentials = {
       apiKey: dto.apiKey,
       apiSecret: dto.apiSecret,
@@ -170,6 +189,8 @@ export class BrokerService {
       accountId: dto.accountId,
       accountType: dto.accountType as BrokerMode,
       status: BrokerConnectionStatus.DISCONNECTED,
+      authorizationStatus: BrokerAuthorizationStatus.NOT_CONNECTED,
+      credentialStatus: BrokerCredentialStatus.CREATED,
       encryptedCredentials: encrypted.ciphertext,
       credentialIv: encrypted.iv,
       credentialTag: encrypted.tag,
@@ -215,10 +236,26 @@ export class BrokerService {
       throw new BadRequestException('Broker connection has no stored credentials');
     }
 
+    const canEnterConnecting = BrokerAuthorizationStateMachine.canTransition(
+      connection.authorizationStatus,
+      BrokerAuthorizationStatus.CONNECTING,
+    );
+
     await this.connectionRepo.update(connectionId, {
       status: BrokerConnectionStatus.CONNECTING,
       consecutiveFailureCount: 0,
+      // State machine: CONNECTING is only valid from these states; when the
+      // current state does not allow it (e.g. mid-reconnect), the existing
+      // state is preserved and the terminal update below still applies.
+      ...(canEnterConnecting ? { authorizationStatus: BrokerAuthorizationStatus.CONNECTING } : {}),
     });
+
+    // Effective in-flight state for terminal-transition validation: when we
+    // entered CONNECTING, transitions must be validated FROM CONNECTING (the
+    // stale pre-connect state would wrongly reject valid terminal states).
+    const inFlightAuthorization = canEnterConnecting
+      ? BrokerAuthorizationStatus.CONNECTING
+      : connection.authorizationStatus;
 
     // Decrypt — credentials are in memory only from here
     const credentials = this.encryptionService.decrypt({
@@ -238,6 +275,16 @@ export class BrokerService {
           status: BrokerConnectionStatus.ERROR,
           lastErrorMessage: result.error ?? 'Connection rejected by broker',
           consecutiveFailureCount: () => 'consecutive_failure_count + 1',
+          ...(BrokerAuthorizationStateMachine.canTransition(
+            inFlightAuthorization,
+            BrokerAuthorizationStatus.ERROR,
+          )
+            ? { authorizationStatus: BrokerAuthorizationStatus.ERROR }
+            : {}),
+          // Auth-class failures mark the credential set INVALID (Directive §14)
+          ...(BrokerCredentialLifecycle.isAuthFailure(result.error)
+            ? { credentialStatus: BrokerCredentialStatus.INVALID }
+            : {}),
         });
 
         await this.auditService.log({
@@ -256,6 +303,16 @@ export class BrokerService {
       // Upsert BrokerAccount with latest synced state
       await this.upsertBrokerAccount(connectionId, result.currency);
 
+      // Successful handshake verifies the credential set (Directive §14)
+      // and advances the authorization state machine (Directive §15):
+      //   DEMO account  → AUTHORIZED (demo validation — fixes the previously
+      //                   unreachable demoValidated gate; dual-written below)
+      //   LIVE account → CONNECTED (explicit enable-live-trading still required)
+      const postConnectAuthorization =
+        connection.accountType === BrokerMode.DEMO
+          ? BrokerAuthorizationStatus.AUTHORIZED
+          : BrokerAuthorizationStatus.CONNECTED;
+
       await this.connectionRepo.update(connectionId, {
         status: BrokerConnectionStatus.CONNECTED,
         accountId: result.accountId,
@@ -263,6 +320,15 @@ export class BrokerService {
         lastHealthCheckAt: new Date(),
         consecutiveFailureCount: 0,
         lastErrorMessage: null,
+        credentialStatus: BrokerCredentialStatus.VERIFIED,
+        ...(BrokerAuthorizationStateMachine.canTransition(
+          inFlightAuthorization,
+          postConnectAuthorization,
+        )
+          ? { authorizationStatus: postConnectAuthorization }
+          : {}),
+        // Dual-write legacy booleans (backward compatibility)
+        ...(connection.accountType === BrokerMode.DEMO ? { demoValidated: true } : {}),
       });
 
       await this.auditService.log({
@@ -311,6 +377,9 @@ export class BrokerService {
 
     await this.connectionRepo.update(connectionId, {
       status: BrokerConnectionStatus.DISCONNECTED,
+      ...(this.canTransitionTo(connection, BrokerAuthorizationStatus.DISCONNECTED)
+        ? { authorizationStatus: BrokerAuthorizationStatus.DISCONNECTED }
+        : {}),
     });
 
     await this.auditService.log({
@@ -346,14 +415,16 @@ export class BrokerService {
     });
   }
 
-  // ─── Live trading gate ────────────────────────────────────────────────────
+  // ─── Live trading / authorization gate ──────────────────────────────────
 
   /**
-   * Enable LIVE trading for a connection.
+   * Enable LIVE trading for a connection — explicit authorization
+   * (Directive §15: AUTHORIZED/READY → ACTIVE).
    * ONLY possible after:
-   *   1. DEMO connection exists and demoValidated = true
+   *   1. DEMO connection exists and demoValidated = true (existing invariant)
    *   2. The connection is currently CONNECTED
-   *   3. Admin / user explicitly enables it
+   *   3. The provider explicitly supports LIVE (registry gate, Directive §11)
+   *   4. The user explicitly enables it
    *
    * Live trading without prior DEMO validation is an architectural violation.
    */
@@ -362,6 +433,19 @@ export class BrokerService {
 
     if (connection.accountType !== BrokerMode.LIVE) {
       throw new BadRequestException('Only LIVE account connections can have live trading enabled');
+    }
+
+    // Registry gate: provider must explicitly support LIVE execution
+    if (!this.providerRegistry.supportsEnvironment(connection.brokerId, BrokerMode.LIVE)) {
+      throw new ForbiddenException(`Broker ${connection.brokerId} does not support LIVE execution`);
+    }
+
+    // State machine gate: must be in a pre-authorization state
+    if (!this.canTransitionTo(connection, BrokerAuthorizationStatus.ACTIVE)) {
+      throw new ConflictException(
+        `Connection authorization state ${connection.authorizationStatus} cannot become ACTIVE — ` +
+          'the broker link must be CONNECTED and authorization granted first',
+      );
     }
 
     // Find corresponding DEMO connection to verify demo was validated
@@ -381,7 +465,20 @@ export class BrokerService {
       );
     }
 
-    await this.connectionRepo.update(connectionId, { liveTradingEnabled: true });
+    await this.connectionRepo.update(connectionId, {
+      liveTradingEnabled: true,
+      authorizationStatus: BrokerAuthorizationStatus.ACTIVE,
+      authorizedAt: new Date(),
+      authorizationRevokedAt: null,
+    });
+
+    this.eventBus.publish(DomainEventType.BROKER_AUTHORIZATION_CHANGED, userId, {
+      userId,
+      connectionId,
+      brokerId: connection.brokerId,
+      previousStatus: connection.authorizationStatus,
+      status: BrokerAuthorizationStatus.ACTIVE,
+    });
 
     await this.auditService.log({
       actorUserId: userId,
@@ -389,9 +486,151 @@ export class BrokerService {
       resourceType: 'BrokerConnection',
       resourceId: connectionId,
       ipAddress,
-      metadata: { brokerId: connection.brokerId },
+      metadata: {
+        brokerId: connection.brokerId,
+        authorizationStatus: BrokerAuthorizationStatus.ACTIVE,
+      },
       severity: AuditSeverity.WARNING,
     });
+  }
+
+  /**
+   * Revoke automation authorization for a connection (Directive §15).
+   * State → REVOKED; liveTradingEnabled dual-written false (fail-closed for
+   * legacy consumers). Re-authorization requires the full path again.
+   */
+  async revokeAuthorization(
+    connectionId: string,
+    userId: string,
+    ipAddress?: string,
+  ): Promise<void> {
+    const connection = await this.findConnectionById(connectionId, userId);
+
+    if (!this.canTransitionTo(connection, BrokerAuthorizationStatus.REVOKED)) {
+      throw new ConflictException(
+        `Connection authorization state ${connection.authorizationStatus} cannot be revoked`,
+      );
+    }
+
+    await this.connectionRepo.update(connectionId, {
+      authorizationStatus: BrokerAuthorizationStatus.REVOKED,
+      authorizationRevokedAt: new Date(),
+      // Fail-closed for legacy consumers
+      liveTradingEnabled: false,
+    });
+
+    this.eventBus.publish(DomainEventType.BROKER_AUTHORIZATION_CHANGED, userId, {
+      userId,
+      connectionId,
+      brokerId: connection.brokerId,
+      previousStatus: connection.authorizationStatus,
+      status: BrokerAuthorizationStatus.REVOKED,
+    });
+
+    await this.auditService.log({
+      actorUserId: userId,
+      action: AuditAction.BROKER_AUTHORIZATION_REVOKED,
+      resourceType: 'BrokerConnection',
+      resourceId: connectionId,
+      ipAddress,
+      metadata: {
+        brokerId: connection.brokerId,
+        previousStatus: connection.authorizationStatus,
+      },
+      severity: AuditSeverity.WARNING,
+    });
+  }
+
+  /**
+   * Rotate stored credentials for a connection (Directive §14).
+   * The new credential set is validated against the provider BEFORE the
+   * stored ciphertext is replaced. On validation failure the old set is kept.
+   * New credentials are NEVER returned; audit records contain no secrets.
+   */
+  async rotateCredentials(
+    connectionId: string,
+    dto: ConnectBrokerDto,
+    userId: string,
+    ipAddress?: string,
+  ): Promise<void> {
+    const connection = await this.findConnectionById(connectionId, userId);
+
+    if (dto.brokerId !== connection.brokerId) {
+      throw new BadRequestException(
+        `Credential rotation must use the same broker (${connection.brokerId})`,
+      );
+    }
+    if ((dto.accountType as BrokerMode) !== connection.accountType) {
+      throw new BadRequestException('Credential rotation must use the same account type');
+    }
+
+    const adapter = this.adapterRegistry.getAdapter(connection.brokerId);
+    adapter.setMode(connection.accountType);
+
+    const newCredentials: DecryptedBrokerCredentials = {
+      apiKey: dto.apiKey,
+      apiSecret: dto.apiSecret,
+      accountId: dto.accountId,
+      serverUrl: dto.serverUrl,
+      additionalParams: dto.additionalParams,
+    };
+
+    let testOk = false;
+    let testError: string | undefined;
+    try {
+      const result = await adapter.testConnection(newCredentials);
+      testOk = result.success;
+      testError = result.errorMessage;
+    } catch (err) {
+      testError = err instanceof BrokerAdapterError ? err.message : 'Rotation test failed';
+    }
+
+    if (!testOk) {
+      await this.auditService.log({
+        actorUserId: userId,
+        action: AuditAction.BROKER_CREDENTIAL_ROTATION_FAILED,
+        resourceType: 'BrokerConnection',
+        resourceId: connectionId,
+        ipAddress,
+        metadata: { brokerId: connection.brokerId, error: testError },
+        severity: AuditSeverity.WARNING,
+      });
+      throw new BadRequestException(`Credential validation failed: ${testError}`);
+    }
+
+    // Validated — replace ciphertext (old plaintext never leaves memory)
+    const encrypted = this.encryptionService.encrypt(newCredentials);
+    Object.keys(newCredentials).forEach((k) => {
+      (newCredentials as unknown as Record<string, unknown>)[k] = null;
+    });
+
+    await this.connectionRepo.update(connectionId, {
+      encryptedCredentials: encrypted.ciphertext,
+      credentialIv: encrypted.iv,
+      credentialTag: encrypted.tag,
+      encryptionKeyId: encrypted.keyId,
+      accountId: dto.accountId,
+      credentialStatus: BrokerCredentialStatus.ROTATED,
+    });
+
+    await this.auditService.log({
+      actorUserId: userId,
+      action: AuditAction.BROKER_CREDENTIALS_ROTATED,
+      resourceType: 'BrokerConnection',
+      resourceId: connectionId,
+      ipAddress,
+      metadata: { brokerId: connection.brokerId, accountId: dto.accountId },
+      severity: AuditSeverity.WARNING,
+    });
+  }
+
+  /**
+   * FAIL-CLOSED execution authorization gate for a specific connection.
+   * Used by execution-side consumers: only authorizationStatus === ACTIVE
+   * may execute. Unknown/null never executes (Directive §16/§48).
+   */
+  isConnectionExecutable(connection: BrokerConnection): boolean {
+    return BrokerAuthorizationStateMachine.isExecutable(connection.authorizationStatus);
   }
 
   // ─── Health check ─────────────────────────────────────────────────────────
@@ -466,7 +705,15 @@ export class BrokerService {
         consecutiveFailureCount: failureCount,
         lastErrorMessage: (err as Error).message,
         lastHealthCheckAt: new Date(),
-        ...(failureCount >= SUSPEND_THRESHOLD ? { status: BrokerConnectionStatus.SUSPENDED } : {}),
+        ...(failureCount >= SUSPEND_THRESHOLD
+          ? {
+              status: BrokerConnectionStatus.SUSPENDED,
+              // Fail-closed: suspended connections lose execution authorization
+              ...(this.canTransitionTo(connection, BrokerAuthorizationStatus.SUSPENDED)
+                ? { authorizationStatus: BrokerAuthorizationStatus.SUSPENDED }
+                : {}),
+            }
+          : {}),
       });
 
       if (failureCount >= SUSPEND_THRESHOLD) {
@@ -614,6 +861,15 @@ export class BrokerService {
   }
 
   // ─── Internal helpers ─────────────────────────────────────────────────────
+
+  /**
+   * Transition guard used by lifecycle methods — checks against the
+   * PERSISTED state (not optimistic in-memory state) so concurrent writers
+   * are bounded by the state machine, and DB check constraints back it up.
+   */
+  private canTransitionTo(connection: BrokerConnection, to: BrokerAuthorizationStatus): boolean {
+    return BrokerAuthorizationStateMachine.canTransition(connection.authorizationStatus, to);
+  }
 
   /**
    * Get the last-synced BrokerAccount state for a connection.

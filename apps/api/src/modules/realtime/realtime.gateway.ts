@@ -1,4 +1,5 @@
 import { Logger, UseGuards } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   ConnectedSocket,
   MessageBody,
@@ -13,6 +14,13 @@ import {
 import { Server, Socket } from 'socket.io';
 import { WsJwtGuard } from './guards/ws-jwt.guard';
 import { RealtimeService } from './realtime.service';
+
+/**
+ * Module-level allowlist snapshot shared with the decorator's CORS callback.
+ * Populated in the constructor from the same fail-closed parseCorsOrigins
+ * allowlist used by the HTTP API (app.corsOrigins).
+ */
+let wsCorsOrigins: string[] = ['http://localhost:3001'];
 
 /**
  * RealtimeGateway — WebSocket gateway for real-time events.
@@ -33,13 +41,23 @@ import { RealtimeService } from './realtime.service';
  *   - Users can only join their own rooms (enforced by extracting userId from JWT)
  *   - No broker secrets, tokens, or stack traces are ever emitted
  *   - Payloads are type-checked via RealtimeService methods
+ *   - CORS uses the SAME fail-closed allowlist as the HTTP API (Sprint 50
+ *     hardening: the previous `origin: '*'` wildcard let any origin open a
+ *     socket; it is now parsed via parseCorsOrigins from CORS_ORIGINS).
  *
  * See: docs/architecture/06-realtime-event-layer.md
  */
 @WebSocketGateway({
   namespace: '/realtime',
   cors: {
-    origin: '*',
+    origin: (origin, callback) => {
+      // Fail closed: missing/unknown origins are rejected in production.
+      // Same-origin server-to-server socket clients pass with no Origin header.
+      if (!origin || wsCorsOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error('Origin not allowed by WebSocket CORS policy'), false);
+    },
     credentials: true,
   },
   transports: ['websocket', 'polling'],
@@ -53,7 +71,12 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   constructor(
     private readonly realtimeService: RealtimeService,
     private readonly wsJwtGuard: WsJwtGuard,
-  ) {}
+    configService: ConfigService,
+  ) {
+    // Snapshot the fail-closed allowlist at gateway construction (module init
+    // order guarantees ConfigService is registered before gateway creation).
+    wsCorsOrigins = configService.get<string[]>('app.corsOrigins', ['http://localhost:3001']);
+  }
 
   afterInit(server: Server): void {
     this.realtimeService.setServer(server);

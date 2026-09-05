@@ -13,11 +13,13 @@ import {
   ValidatedOrder,
 } from './interfaces/risk.interface';
 import { BrokerService } from '../broker/broker.service';
+import { BrokerMode } from '../broker/interfaces/broker-adapter.interface';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../../common/enums/audit-action.enum';
 import { AuditSeverity } from '../audit/entities/audit-log.entity';
 import { UpdateRiskProfileDto } from './dto/update-risk-profile.dto';
 import { ExecutionService } from '../execution/execution.service';
+import { ExecutionControlService } from '../execution-control/execution-control.service';
 import { DomainEventBus } from '../events/event-bus.service';
 import { DomainEventType } from '../events/enums/domain-event-type.enum';
 
@@ -62,6 +64,7 @@ export class RiskService {
     private auditService: AuditService,
     @Inject(forwardRef(() => ExecutionService))
     private executionService: ExecutionService,
+    private readonly executionControlService: ExecutionControlService,
     private readonly eventBus: DomainEventBus,
   ) {}
 
@@ -117,6 +120,49 @@ export class RiskService {
 
     // ── Step 1: Pre-condition checks (fail fast) ────────────────────────────
 
+    // 1a-pre. Emergency control plane (Sprint 50, Directive §28) — checked
+    // FIRST so GLOBAL/PROVIDER/USER/CONNECTION-level disable affects newly
+    // submitted work immediately. Fail-closed: an unreadable control store
+    // blocks execution.
+    const controlPermission = await this.executionControlService
+      .checkExecutionPermission({ userId })
+      .catch(() => ({
+        allowed: false as const,
+        blockedBy: {
+          scope: 'GLOBAL' as const,
+          scopeKey: null,
+          reason: 'EXECUTION_CONTROL_CHECK_FAILED',
+        },
+      }));
+
+    if (!controlPermission.allowed) {
+      const control = controlPermission.blockedBy;
+      appliedRules.push('EXECUTION_CONTROL');
+      await this.auditService.log({
+        actorUserId: userId,
+        action: AuditAction.EXECUTION_CONTROL_BLOCKED,
+        resourceType: 'AiSignal',
+        resourceId: trade.signalId,
+        metadata: {
+          scope: control?.scope,
+          scopeKey: control?.scopeKey,
+          reason: control?.reason,
+        },
+        severity: AuditSeverity.WARNING,
+      });
+      return this.rejectAndRecord(
+        userId,
+        trade,
+        RiskRejectionCode.EXECUTION_CONTROL_ACTIVE,
+        `Execution blocked by emergency control (scope=${control?.scope}${
+          control?.scopeKey ? `, key=${control.scopeKey}` : ''
+        }): ${control?.reason}`,
+        contextSnapshot as RiskContextSnapshot,
+        evaluatedAt,
+      );
+    }
+    appliedRules.push('EXECUTION_CONTROL:OK');
+
     // 1a. Kill switch (checked FIRST — fastest possible rejection)
     const profile = await this.getOrCreateProfile(userId);
     contextSnapshot.killSwitchActive = profile.killSwitchActive;
@@ -150,6 +196,30 @@ export class RiskService {
       );
     }
     appliedRules.push('BROKER_CONNECTION:OK');
+
+    // 1c. LIVE authorization gate (Sprint 50, Directive §16): when the user's
+    // active connection is a LIVE account, its authorization state machine
+    // must be ACTIVE (the only executable state). DEMO/PAPER connections keep
+    // the existing behavior — LIVE isolation fails closed here, never falls
+    // back to a lower-friction path.
+    const activeConnection = await this.brokerService.findActiveConnectionForUser(userId);
+    if (
+      activeConnection &&
+      activeConnection.accountType === BrokerMode.LIVE &&
+      !this.brokerService.isConnectionExecutable(activeConnection)
+    ) {
+      appliedRules.push('LIVE_AUTHORIZATION');
+      return this.rejectAndRecord(
+        userId,
+        trade,
+        RiskRejectionCode.LIVE_AUTHORIZATION_REQUIRED,
+        `LIVE connection ${activeConnection.id} authorization status is ` +
+          `${activeConnection.authorizationStatus} — live execution requires ACTIVE`,
+        contextSnapshot as RiskContextSnapshot,
+        evaluatedAt,
+      );
+    }
+    appliedRules.push('LIVE_AUTHORIZATION:OK');
 
     // ── Step 2: Load broker account state ──────────────────────────────────
 
