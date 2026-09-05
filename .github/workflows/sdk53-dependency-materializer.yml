@@ -8,25 +8,27 @@ on:
       - '.github/workflows/sdk53-dependency-materializer.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 env:
   NODE_VERSION: '22.23.2'
   PNPM_VERSION: '10.34.5'
   EXPO_NO_TELEMETRY: '1'
+  CI: '1'
+  EXPO_PUBLIC_API_BASE_URL: 'http://127.0.0.1:3010/api/v1'
 
 jobs:
   materialize:
-    name: Generate SDK 53 dependency evidence
+    name: Validate and apply SDK 53 dependency alignment
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 25
 
     steps:
       - name: Checkout exact branch commit
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           ref: ${{ github.sha }}
-          persist-credentials: false
+          persist-credentials: true
 
       - name: Setup pnpm
         uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
@@ -56,18 +58,32 @@ jobs:
           mapfile -t changed < <(git diff --name-only)
           printf 'Generated tracked changes:\n'
           printf '  %s\n' "${changed[@]}"
-          test "${#changed[@]}" -ge 2
-          for path in "${changed[@]}"; do
-            case "$path" in
-              apps/mobile/package.json|apps/mobile/app.json|pnpm-lock.yaml) ;;
-              *)
-                echo "Unexpected generated tracked change: $path"
-                exit 1
-                ;;
-            esac
-          done
-          printf '%s\n' "${changed[@]}" | grep -qx 'apps/mobile/package.json'
-          printf '%s\n' "${changed[@]}" | grep -qx 'pnpm-lock.yaml'
+          test "${#changed[@]}" -eq 2
+          test "${changed[0]}" = 'apps/mobile/package.json'
+          test "${changed[1]}" = 'pnpm-lock.yaml'
+
+      - name: Validate EAS release configuration
+        run: pnpm --filter @irexpro/mobile validate:release-config
+
+      - name: Validate Expo SDK 53 dependency alignment
+        run: pnpm --filter @irexpro/mobile exec expo install --check
+
+      - name: Typecheck mobile app under React 19 and RN 0.79
+        run: pnpm --filter @irexpro/mobile typecheck
+
+      - name: Export Android bundle with Metro
+        run: >-
+          pnpm --filter @irexpro/mobile exec expo export
+          --platform android
+          --output-dir "$RUNNER_TEMP/irexpro-sdk53-android"
+          --clear
+
+      - name: Export iOS bundle with Metro
+        run: >-
+          pnpm --filter @irexpro/mobile exec expo export
+          --platform ios
+          --output-dir "$RUNNER_TEMP/irexpro-sdk53-ios"
+          --clear
 
       - name: Capture generated dependency evidence
         shell: bash
@@ -77,8 +93,8 @@ jobs:
           cp apps/mobile/package.json sdk53-generated/package.json
           cp apps/mobile/app.json sdk53-generated/app.json
           cp pnpm-lock.yaml sdk53-generated/pnpm-lock.yaml
-          git diff -- apps/mobile/package.json apps/mobile/app.json pnpm-lock.yaml > sdk53-generated/sdk53-dependency.diff
-          git diff --stat -- apps/mobile/package.json apps/mobile/app.json pnpm-lock.yaml > sdk53-generated/sdk53-dependency.stat
+          git diff -- apps/mobile/package.json pnpm-lock.yaml > sdk53-generated/sdk53-dependency.diff
+          git diff --stat -- apps/mobile/package.json pnpm-lock.yaml > sdk53-generated/sdk53-dependency.stat
 
       - name: Upload generated SDK 53 dependency evidence
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -87,3 +103,17 @@ jobs:
           path: sdk53-generated/
           if-no-files-found: error
           retention-days: 7
+
+      - name: Commit exact generated files to isolated upgrade branch
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git add -- apps/mobile/package.json pnpm-lock.yaml
+          mapfile -t staged < <(git diff --cached --name-only)
+          test "${#staged[@]}" -eq 2
+          test "${staged[0]}" = 'apps/mobile/package.json'
+          test "${staged[1]}" = 'pnpm-lock.yaml'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Sprint 51: generate Expo SDK 53 dependency alignment'
+          git push origin HEAD:refs/heads/mobile/sprint51-expo53-upgrade
