@@ -34,7 +34,7 @@ export const EMAIL_PROVIDER = Symbol('EMAIL_PROVIDER');
  *   - Browser fragments are not transmitted in the initial HTTP navigation request.
  *   - The raw token is NEVER logged.
  *   - The email body is NOT logged (PII minimisation).
- *   - SMTP errors are logged at warn level WITHOUT the raw token or email body.
+ *   - SMTP errors are logged at warn/error level using stable text only.
  */
 @Injectable()
 export class NodemailerEmailProvider implements EmailProviderInterface {
@@ -56,9 +56,9 @@ export class NodemailerEmailProvider implements EmailProviderInterface {
     try {
       this.transporter = createTransport(smtpUrl);
       this.logger.log('SMTP email provider initialized');
-    } catch (err) {
+    } catch {
       this.logger.error(
-        `Failed to initialize SMTP transport: ${(err as Error).message}. ` +
+        'Failed to initialize SMTP transport. ' +
           'Email delivery will be unavailable until EMAIL_SMTP_URL is corrected.',
       );
       this.transporter = null;
@@ -87,12 +87,10 @@ export class NodemailerEmailProvider implements EmailProviderInterface {
       // Do NOT log the reset link (it contains the raw token).
       this.logger.log(`Password reset email sent to ${this.maskEmail(params.to)}`);
       return true;
-    } catch (err) {
-      // Log the SMTP error but NOT the email body or reset link.
-      this.logger.warn(
-        `SMTP send failed: ${(err as Error).message}. ` +
-          'The reset token hash remains stored — the user can request a new reset.',
-      );
+    } catch {
+      // Keep provider exception details out of routine logs. They can contain
+      // transport endpoints, recipient data, or other operational information.
+      this.logger.warn('SMTP send failed. Password reset email was not delivered.');
       return false;
     }
   }
@@ -150,17 +148,17 @@ export class NodemailerEmailProvider implements EmailProviderInterface {
  *   - The fragment is kept client-side by the browser and is not sent in the navigation request.
  *   - Sends via nodemailer (EMAIL_SMTP_URL).
  *   - If EMAIL_SMTP_URL or WEB_BASE_URL is missing → safe warning, returns false.
- *   - If SMTP send fails → safe warning (no raw token), returns false.
+ *   - If SMTP send fails → safe warning (no raw token or provider exception details), returns false.
  *
  * Phone flow:
  *   - SMS providers are placeholders (throw NotImplementedException).
- *   - Logs a safe warning (no raw code) and returns false.
+ *   - Logs a safe warning (no raw code or account identifier) and returns false.
  *   - Phone-only users cannot recover via SMS until a live provider is wired.
  *
  * Security:
  *   - Raw token/code is NEVER logged.
  *   - Email body is NEVER logged (PII minimisation).
- *   - SMTP errors are logged without the raw token or email body.
+ *   - SMTP errors are logged without raw provider exception details.
  *   - If delivery fails, the token hash remains in the DB — user can retry.
  */
 @Injectable()
@@ -192,7 +190,7 @@ export class PasswordResetDeliveryService {
    * fragment inside the email body — it is NEVER logged or placed in the
    * navigation request query string.
    */
-  private async deliverEmail(email: string, rawToken: string, userId: string): Promise<boolean> {
+  private async deliverEmail(email: string, rawToken: string, _userId: string): Promise<boolean> {
     const webBaseUrl = this.configService.get<string>('app.webBaseUrl');
     if (!webBaseUrl) {
       this.logger.warn(
@@ -206,10 +204,9 @@ export class PasswordResetDeliveryService {
     const smtpUrl = this.configService.get<string>('email.smtpUrl');
     if (!smtpUrl) {
       this.logger.warn(
-        `Password reset email NOT sent: EMAIL_SMTP_URL is not configured. ` +
-          `Reset link was generated for user ${userId} but NOT delivered. ` +
-          `Set EMAIL_SMTP_URL in .env to enable email reset delivery. ` +
-          `The reset token hash is stored — the user can request a new reset once configured.`,
+        'Password reset email NOT sent: EMAIL_SMTP_URL is not configured. ' +
+          'Set EMAIL_SMTP_URL in .env to enable email reset delivery. ' +
+          'The reset token hash is stored — the user can request a new reset once configured.',
       );
       // Do NOT log the reset link (it contains the raw token).
       return false;
@@ -224,7 +221,7 @@ export class PasswordResetDeliveryService {
     // we return false — the caller returns the generic API message (no enumeration).
     const sent = await this.emailProvider.sendResetEmail({ to: email, resetLink, fromAddress });
     if (!sent) {
-      // The email provider already logged the SMTP error (no raw token).
+      // The email provider already logged a stable provider-safe warning.
       return false;
     }
     return true;
@@ -242,14 +239,14 @@ export class PasswordResetDeliveryService {
    *   const provider = this.smsRegistry.selectProvider(countryCode);
    *   await provider.sendSms({ to: phone, messageType: SmsMessageType.PASSWORD_RESET, templateData: { code: rawCode } });
    */
-  private async deliverPhone(phone: string, rawCode: string, userId: string): Promise<boolean> {
-    // Do NOT log the raw code.
+  private async deliverPhone(_phone: string, _rawCode: string, _userId: string): Promise<boolean> {
+    // Do NOT log the raw code or account identifier.
     this.logger.warn(
-      `Password reset SMS NOT sent: SMS providers are currently placeholders ` +
-        `(Twilio/Hubtel/Arkesel throw NotImplementedException). ` +
-        `User ${userId} requested phone reset but SMS delivery is not available. ` +
-        `Phone-only users cannot recover via SMS until a live SMS provider is configured. ` +
-        `The reset code hash is stored — the user can request a new reset once SMS is configured.`,
+      'Password reset SMS NOT sent: SMS providers are currently placeholders ' +
+        '(Twilio/Hubtel/Arkesel throw NotImplementedException). ' +
+        'Phone reset delivery is not available. ' +
+        'Phone-only users cannot recover via SMS until a live SMS provider is configured. ' +
+        'The reset code hash is stored — the user can request a new reset once SMS is configured.',
     );
     return false;
   }
