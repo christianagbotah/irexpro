@@ -30,7 +30,7 @@ import { AuthService } from './auth.service';
 import { AuthUserDto } from './dto/auth-user.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
-import { DisableMfaDto, MfaCodeDto } from './dto/mfa.dto';
+import { BeginMfaSetupDto, DisableMfaDto, MfaCodeDto } from './dto/mfa.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
@@ -208,13 +208,14 @@ export class AuthController {
   @Header('Cache-Control', 'no-store')
   @Header('Pragma', 'no-cache')
   @Throttle({ default: { ttl: 15 * 60 * 1000, limit: 5 } })
-  @ApiOperation({ summary: 'Begin TOTP MFA setup for the current account' })
+  @ApiOperation({ summary: 'Begin TOTP MFA setup after current-password re-authentication' })
   async beginMfaSetup(
     @CurrentUser() principal: AuthenticatedPrincipal,
+    @Body() dto: BeginMfaSetupDto,
     @Ip() ip: string,
   ): Promise<{ secret: string; otpauthUri: string }> {
     if (!this.mfaService) throw new ServiceUnavailableException('MFA is temporarily unavailable');
-    return this.mfaService.beginSetup(principal.userId, ip);
+    return this.mfaService.beginSetup(principal.userId, dto.password, ip);
   }
 
   @Post('mfa/enable')
