@@ -184,6 +184,15 @@ interface V3SingleOrderResponse {
 
 const DECIMAL_PATTERN = /^-?\d+(\.\d+)?$/;
 
+/**
+ * Log-privacy helper (Phase F): the broker account identifier never reaches
+ * the logs in full — only the last 4 characters survive.
+ */
+function maskAccountIdForLog(value: string | null | undefined): string {
+  if (!value || value.length < 4) return '•••';
+  return `•••${String(value).slice(-4)}`;
+}
+
 /** Standard FX contract size in units per lot (OANDA CURRENCY instruments). */
 const FX_CONTRACT_SIZE = '100000';
 /** 5dp conversion precision for unit↔lot and spread computations. */
@@ -289,7 +298,7 @@ export class OandaAdapter implements IBrokerAdapter, AdapterMetadata {
       this.connected = true;
 
       this.logger.log(
-        `OANDA v20 connected: account=${credentials.accountId} mode=${this.mode} ` +
+        `OANDA v20 connected: account=${maskAccountIdForLog(credentials.accountId)} mode=${this.mode} ` +
           `currency=${summary.account.currency}`,
       );
       return {
