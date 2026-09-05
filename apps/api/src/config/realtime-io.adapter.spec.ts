@@ -13,7 +13,7 @@ describe('RealtimeIoAdapter CORS policy', () => {
       origin: corsOrigins,
       credentials: true,
     });
-    expect(options.cors?.origin).not.toBe('*');
+    expect(options.cors).not.toEqual(expect.objectContaining({ origin: '*' }));
   });
 
   it('preserves gateway transport options while central CORS policy wins', () => {
@@ -35,10 +35,15 @@ describe('RealtimeIoAdapter CORS policy', () => {
   });
 
   it('copies the origin list instead of exposing mutable configuration state', () => {
-    const options = createRealtimeSocketOptions(corsOrigins);
+    const mutableOrigins = ['https://irexpro.example'];
+    const options = createRealtimeSocketOptions(mutableOrigins);
 
-    expect(options.cors?.origin).toEqual(corsOrigins);
-    expect(options.cors?.origin).not.toBe(corsOrigins);
+    mutableOrigins.push('https://later.example');
+
+    expect(options.cors).toEqual({
+      origin: ['https://irexpro.example'],
+      credentials: true,
+    });
   });
 
   it('keeps wildcard CORS out of the realtime gateway decorator', () => {
