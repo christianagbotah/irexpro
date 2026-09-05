@@ -25,12 +25,12 @@ import { AuditAction } from '../../common/enums/audit-action.enum';
 import { JwtPayload } from './strategies/jwt.strategy';
 import { MfaService } from './mfa.service';
 
-interface AuthTokens {
+export interface AuthTokens {
   accessToken: string;
   refreshToken: string;
 }
 
-interface BrowserRefreshTokens extends AuthTokens {
+export interface BrowserRefreshTokens extends AuthTokens {
   rememberMe: boolean;
 }
 
