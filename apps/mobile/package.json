@@ -16,14 +16,15 @@
   "dependencies": {
     "@irexpro/api-client": "workspace:*",
     "@irexpro/types": "workspace:*",
-    "expo": "~53.0.27",
-    "expo-secure-store": "~14.2.4",
-    "react": "19.0.0",
-    "react-native": "0.79.6"
+    "expo": "~54.0.37",
+    "expo-secure-store": "~15.0.8",
+    "react": "19.1.0",
+    "react-native": "0.81.5",
+    "react-native-safe-area-context": "~5.6.2"
   },
   "devDependencies": {
     "@types/node": "20.14.10",
-    "@types/react": "~19.0.14",
-    "typescript": "~5.8.3"
+    "@types/react": "~19.1.17",
+    "typescript": "~5.9.3"
   }
 }
