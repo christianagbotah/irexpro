@@ -50,6 +50,19 @@ describe('WsJwtGuard — Sprint 48 revocation enforcement', () => {
     });
   });
 
+  it('rejects a token with no explicit tokenType before opening a WebSocket session', async () => {
+    const { guard, jwtService, userRepo, context } = setup();
+    jwtService.verify.mockReturnValue({
+      sub: userId,
+      email: 'user@example.com',
+      roles: ['USER'],
+      sessionVersion: 3,
+    });
+
+    await expect(guard.canActivate(context)).rejects.toThrow(WsException);
+    expect(userRepo.findOne).not.toHaveBeenCalled();
+  });
+
   it('rejects a refresh token before opening a WebSocket session', async () => {
     const { guard, jwtService, userRepo, context } = setup();
     jwtService.verify.mockReturnValue({

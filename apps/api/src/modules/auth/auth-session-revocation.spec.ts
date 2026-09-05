@@ -234,7 +234,7 @@ describe('Sprint 48 — server-side auth session revocation', () => {
       rollbackTransaction: jest.fn(),
       release: jest.fn(),
       manager: {
-        update: jest.fn(),
+        update: jest.fn().mockResolvedValue({ affected: 1 }),
         save: jest.fn(),
       },
     };
@@ -260,11 +260,17 @@ describe('Sprint 48 — server-side auth session revocation', () => {
 
     await service.resetWithToken('raw-reset-token', 'NewStrongPassword123!');
 
-    expect(queryRunner.manager.update).toHaveBeenNthCalledWith(1, User, userId, {
+    expect(queryRunner.manager.update).toHaveBeenNthCalledWith(
+      1,
+      PasswordResetToken,
+      expect.objectContaining({ id: resetToken.id, usedAt: expect.anything() }),
+      { usedAt: expect.any(Date) },
+    );
+    expect(queryRunner.manager.update).toHaveBeenNthCalledWith(2, User, userId, {
       passwordHash: expect.any(String),
     });
     expect(queryRunner.manager.update).toHaveBeenNthCalledWith(
-      2,
+      3,
       User,
       userId,
       expect.objectContaining({ sessionVersion: expect.any(Function) }),

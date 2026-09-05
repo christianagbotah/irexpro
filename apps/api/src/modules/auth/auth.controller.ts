@@ -30,7 +30,7 @@ import { AuthService } from './auth.service';
 import { AuthUserDto } from './dto/auth-user.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
-import { DisableMfaDto, MfaCodeDto } from './dto/mfa.dto';
+import { BeginMfaSetupDto, DisableMfaDto, MfaCodeDto } from './dto/mfa.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
@@ -144,24 +144,23 @@ export class AuthController {
     const cookieRefreshToken = this.authCookieService.getRefreshTokenFromCookie(req);
     if (cookieRefreshToken) {
       this.authCookieService.assertTrustedBrowserRequest(req);
+      const tokens = await this.authService.refreshBrowserTokens(cookieRefreshToken);
+      if (res) {
+        this.authCookieService.setRefreshCookie(res, tokens.refreshToken, tokens.rememberMe);
+      }
+      // Browser persistence metadata stays server-side and the rotated refresh
+      // token remains HttpOnly-cookie-only.
+      return { accessToken: tokens.accessToken };
     }
 
-    const refreshToken = cookieRefreshToken ?? dto?.refreshToken;
-
+    const refreshToken = dto?.refreshToken;
     if (!refreshToken) {
       throw new UnauthorizedException('No refresh token provided');
     }
 
-    const tokens = await this.authService.refreshTokens(refreshToken);
-
-    if (res && cookieRefreshToken) {
-      this.authCookieService.setRefreshCookie(res, tokens.refreshToken);
-    }
-
-    // A cookie-sourced refresh token must never be copied back into a
-    // JavaScript-readable browser response. Mobile/native callers provide the
-    // refresh token in the JSON body and keep the existing full-token contract.
-    return cookieRefreshToken ? { accessToken: tokens.accessToken } : tokens;
+    // Native/body callers preserve the existing two-token JSON contract and
+    // never receive browser cookie-persistence metadata.
+    return this.authService.refreshTokens(refreshToken);
   }
 
   @Delete('browser-session')
@@ -195,6 +194,8 @@ export class AuthController {
   @Get('me')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('access-token')
+  @Header('Cache-Control', 'no-store')
+  @Header('Pragma', 'no-cache')
   @ApiOperation({ summary: 'Get current authenticated user (frontend-safe DTO)' })
   @ApiResponse({ status: 200, description: 'Current user profile with roles', type: AuthUserDto })
   async me(@CurrentUser() principal: AuthenticatedPrincipal): Promise<AuthUserDto> {
@@ -208,13 +209,14 @@ export class AuthController {
   @Header('Cache-Control', 'no-store')
   @Header('Pragma', 'no-cache')
   @Throttle({ default: { ttl: 15 * 60 * 1000, limit: 5 } })
-  @ApiOperation({ summary: 'Begin TOTP MFA setup for the current account' })
+  @ApiOperation({ summary: 'Begin TOTP MFA setup after current-password re-authentication' })
   async beginMfaSetup(
     @CurrentUser() principal: AuthenticatedPrincipal,
+    @Body() dto: BeginMfaSetupDto,
     @Ip() ip: string,
   ): Promise<{ secret: string; otpauthUri: string }> {
     if (!this.mfaService) throw new ServiceUnavailableException('MFA is temporarily unavailable');
-    return this.mfaService.beginSetup(principal.userId, ip);
+    return this.mfaService.beginSetup(principal.userId, dto.password, ip);
   }
 
   @Post('mfa/enable')
