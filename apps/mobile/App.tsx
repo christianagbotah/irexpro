@@ -11,19 +11,17 @@ import PaymentsScreen from './src/screens/PaymentsScreen';
  * iRexPro mobile app entry (Expo + React Native + TypeScript).
  *
  * Auth flow:
- *   LoginScreen → api.login(email, password) → { accessToken, refreshToken }
- *   → api.me(accessToken) → AuthUser → store in context → show Dashboard tab.
+ *   LoginScreen → api.login(identifier, password) → { accessToken, refreshToken }
+ *   → persist both tokens in Expo SecureStore → api.me(accessToken)
+ *   → AuthUser → show authenticated tabs.
  *
- * Token storage: this foundation holds tokens in React state (in-memory). For
- * production, tokens should be persisted in the platform secure storage:
- *   - iOS: Keychain (via expo-secure-store)
- *   - Android: Keystore (via expo-secure-store)
- * Adding `expo-secure-store` is a documented next step. The app never stores
- * tokens in AsyncStorage (that is the mobile equivalent of localStorage and
- * is prohibited by the iRexPro security architecture).
+ * On app launch, AuthProvider validates the stored access token and, on a 401,
+ * rotates the SecureStore refresh token through /auth/refresh. Transient API
+ * failures preserve the encrypted-at-rest credentials and expose a safe retry
+ * path instead of forcing a new login.
  *
- * The app talks to the public API only (EXPO_PUBLIC_API_BASE_URL). It never
- * calls the AI engine (internal-only) and never stores backend secrets.
+ * Tokens are never stored in AsyncStorage. The app talks only to the public API
+ * (EXPO_PUBLIC_API_BASE_URL), never directly to the internal AI engine.
  */
 
 type Tab = 'dashboard' | 'account' | 'payments';
@@ -37,7 +35,7 @@ export default function App() {
 }
 
 function AppShell() {
-  const { user, loading } = useAuth();
+  const { user, loading, error, restoreSession } = useAuth();
   const [tab, setTab] = useState<Tab>('dashboard');
   const [showForgotPassword, setShowForgotPassword] = useState(false);
 
@@ -52,10 +50,27 @@ function AppShell() {
   }
 
   if (!user) {
-    if (showForgotPassword) {
-      return <ForgotPasswordScreen onBack={() => setShowForgotPassword(false)} />;
-    }
-    return <LoginScreen onForgotPassword={() => setShowForgotPassword(true)} />;
+    return (
+      <View style={styles.shell}>
+        {error ? (
+          <View style={styles.restoreAlert}>
+            <Text style={styles.restoreAlertText}>{error}</Text>
+            <Pressable
+              accessibilityRole="button"
+              style={styles.retryButton}
+              onPress={() => void restoreSession()}
+            >
+              <Text style={styles.retryButtonText}>Retry session</Text>
+            </Pressable>
+          </View>
+        ) : null}
+        {showForgotPassword ? (
+          <ForgotPasswordScreen onBack={() => setShowForgotPassword(false)} />
+        ) : (
+          <LoginScreen onForgotPassword={() => setShowForgotPassword(true)} />
+        )}
+      </View>
+    );
   }
 
   return (
@@ -66,15 +81,35 @@ function AppShell() {
         {tab === 'payments' && <PaymentsScreen />}
       </View>
       <View style={styles.tabBar}>
-        <TabButton label="Dashboard" active={tab === 'dashboard'} onPress={() => setTab('dashboard')} />
-        <TabButton label="Payments" active={tab === 'payments'} onPress={() => setTab('payments')} />
-        <TabButton label="Account" active={tab === 'account'} onPress={() => setTab('account')} />
+        <TabButton
+          label="Dashboard"
+          active={tab === 'dashboard'}
+          onPress={() => setTab('dashboard')}
+        />
+        <TabButton
+          label="Payments"
+          active={tab === 'payments'}
+          onPress={() => setTab('payments')}
+        />
+        <TabButton
+          label="Account"
+          active={tab === 'account'}
+          onPress={() => setTab('account')}
+        />
       </View>
     </View>
   );
 }
 
-function TabButton({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+function TabButton({
+  label,
+  active,
+  onPress,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}) {
   return (
     <Pressable onPress={onPress} style={[styles.tab, active && styles.tabActive]}>
       <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{label}</Text>
@@ -87,7 +122,24 @@ const styles = StyleSheet.create({
   content: { flex: 1 },
   loading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loadingText: { color: '#9aa7c7', fontSize: 16 },
-  tabBar: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#243049', paddingBottom: 16 },
+  restoreAlert: {
+    marginTop: 48,
+    marginHorizontal: 20,
+    borderWidth: 1,
+    borderColor: '#7c2d12',
+    backgroundColor: '#2a1714',
+    borderRadius: 10,
+    padding: 14,
+  },
+  restoreAlertText: { color: '#fed7aa', fontSize: 13, lineHeight: 19 },
+  retryButton: { alignSelf: 'flex-start', marginTop: 10, paddingVertical: 4 },
+  retryButtonText: { color: '#2dd4bf', fontSize: 13, fontWeight: '700' },
+  tabBar: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderTopColor: '#243049',
+    paddingBottom: 16,
+  },
   tab: { flex: 1, paddingVertical: 14, alignItems: 'center' },
   tabActive: { borderTopWidth: 2, borderTopColor: '#14b8a6' },
   tabLabel: { color: '#6b7494', fontSize: 13 },
