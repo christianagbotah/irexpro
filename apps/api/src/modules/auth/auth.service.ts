@@ -282,7 +282,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
-    if (payload.tokenType && payload.tokenType !== 'refresh') {
+    if (payload.tokenType !== 'refresh') {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
