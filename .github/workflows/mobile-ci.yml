@@ -82,7 +82,7 @@ jobs:
           const assets = [
             ['icon', config.icon],
             ['splash.image', config.splash?.image],
-            ['android.adaptiveIcon.foregroundImage', config.android?.adaptiveIcon.foregroundImage],
+            ['android.adaptiveIcon.foregroundImage', config.android?.adaptiveIcon?.foregroundImage],
           ];
           for (const [label, relative] of assets) {
             if (!relative || typeof relative !== 'string') {
