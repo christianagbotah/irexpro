@@ -1,4 +1,5 @@
 import { ConfigService } from '@nestjs/config';
+import * as argon2 from 'argon2';
 import { Repository } from 'typeorm';
 import { AuditAction } from '../../common/enums/audit-action.enum';
 import { AuditService } from '../audit/audit.service';
@@ -12,14 +13,16 @@ describe('MfaService', () => {
   let userRepo: jest.Mocked<Pick<Repository<User>, 'findOne' | 'update'>>;
   let auditService: { log: jest.Mock };
   let service: MfaService;
+  let passwordVerifySpy: jest.SpiedFunction<typeof argon2.verify>;
 
   beforeEach(() => {
     jest.spyOn(Date, 'now').mockReturnValue(fixedNow);
+    passwordVerifySpy = jest.spyOn(argon2, 'verify').mockResolvedValue(true);
     user = {
       id: '11111111-1111-4111-8111-111111111111',
       email: 'user@example.com',
       phone: null,
-      passwordHash: 'unused-in-these-tests',
+      passwordHash: 'stored-password-hash',
       status: UserStatus.ACTIVE,
       emailVerifiedAt: new Date(),
       phoneVerifiedAt: null,
@@ -71,8 +74,36 @@ describe('MfaService', () => {
     jest.restoreAllMocks();
   });
 
+  it('re-authenticates with the current password before storing the setup seed', async () => {
+    await service.beginSetup(user.id, 'current-password', '127.0.0.1');
+
+    expect(passwordVerifySpy).toHaveBeenCalledWith('stored-password-hash', 'current-password');
+    expect(passwordVerifySpy.mock.invocationCallOrder[0]).toBeLessThan(
+      userRepo.update.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('rejects an invalid current password before generating or persisting an MFA secret', async () => {
+    passwordVerifySpy.mockResolvedValueOnce(false);
+
+    await expect(
+      service.beginSetup(user.id, 'wrong-password', '127.0.0.1'),
+    ).rejects.toThrow('MFA verification failed');
+
+    expect(user.mfaSecret).toBeNull();
+    expect(userRepo.update).not.toHaveBeenCalled();
+    expect(auditService.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorUserId: user.id,
+        action: AuditAction.USER_MFA_CHALLENGE_FAILED,
+        metadata: { result: 'failed', operation: 'setup', method: 'totp' },
+      }),
+    );
+    expect(JSON.stringify(auditService.log.mock.calls)).not.toContain('wrong-password');
+  });
+
   it('stores only an authenticated-encryption envelope while returning the setup seed once', async () => {
-    const setup = await service.beginSetup(user.id, '127.0.0.1');
+    const setup = await service.beginSetup(user.id, 'current-password', '127.0.0.1');
 
     expect(setup.secret).toMatch(/^[A-Z2-7]+$/u);
     expect(setup.otpauthUri).toContain(`secret=${setup.secret}`);
@@ -86,10 +117,11 @@ describe('MfaService', () => {
       }),
     );
     expect(JSON.stringify(auditService.log.mock.calls)).not.toContain(setup.secret);
+    expect(JSON.stringify(auditService.log.mock.calls)).not.toContain('current-password');
   });
 
   it('enables MFA only after a valid TOTP and revokes pre-MFA sessions', async () => {
-    const setup = await service.beginSetup(user.id);
+    const setup = await service.beginSetup(user.id, 'current-password');
     const code = generateTotp(setup.secret, fixedNow);
     userRepo.update.mockClear();
     auditService.log.mockClear();
@@ -114,7 +146,7 @@ describe('MfaService', () => {
   });
 
   it('rejects an invalid TOTP without enabling MFA or persisting the challenge', async () => {
-    const setup = await service.beginSetup(user.id);
+    const setup = await service.beginSetup(user.id, 'current-password');
     const validCode = generateTotp(setup.secret, fixedNow);
     const invalidCode = validCode === '000000' ? '000001' : '000000';
     userRepo.update.mockClear();
