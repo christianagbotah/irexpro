@@ -23,6 +23,7 @@ export class VerificationService {
   private static readonly EMAIL_TOKEN_TTL_MINUTES = 15;
   private static readonly PHONE_CODE_TTL_MINUTES = 10;
   private static readonly PHONE_MAX_ATTEMPTS = 5;
+  private static readonly MAX_REQUEST_USER_AGENT_LENGTH = 500;
 
   constructor(
     @InjectRepository(User)
@@ -40,6 +41,7 @@ export class VerificationService {
     userId: string,
     context: { ipAddress?: string; userAgent?: string },
   ): Promise<void> {
+    const requestContext = this.normalizeRequestContext(context);
     const user = await this.userRepo.findOne({ where: { id: userId } });
     if (!user) throw new UnauthorizedException('User session is no longer valid');
     if (!user.email)
@@ -69,8 +71,8 @@ export class VerificationService {
       channel: VerificationChannel.EMAIL,
       expiresAt,
       usedAt: null,
-      requestedIp: context.ipAddress ?? null,
-      userAgent: context.userAgent?.slice(0, 500) ?? null,
+      requestedIp: requestContext.ipAddress ?? null,
+      userAgent: requestContext.userAgent ?? null,
       attemptCount: 0,
     });
     await this.tokenRepo.save(record);
@@ -90,8 +92,8 @@ export class VerificationService {
       action: AuditAction.USER_EMAIL_VERIFICATION_REQUESTED,
       resourceType: 'User',
       resourceId: user.id,
-      ipAddress: context.ipAddress,
-      userAgent: context.userAgent,
+      ipAddress: requestContext.ipAddress,
+      userAgent: requestContext.userAgent,
       metadata: {
         result: delivered ? 'sent' : 'delivery_failed',
         channel: 'email',
@@ -166,6 +168,7 @@ export class VerificationService {
     userId: string,
     context: { ipAddress?: string; userAgent?: string },
   ): Promise<void> {
+    const requestContext = this.normalizeRequestContext(context);
     const user = await this.userRepo.findOne({ where: { id: userId } });
     if (!user) throw new UnauthorizedException('User session is no longer valid');
     if (!user.phone) throw new BadRequestException('No phone number is registered on this account');
@@ -195,8 +198,8 @@ export class VerificationService {
       channel: VerificationChannel.PHONE,
       expiresAt,
       usedAt: null,
-      requestedIp: context.ipAddress ?? null,
-      userAgent: context.userAgent?.slice(0, 500) ?? null,
+      requestedIp: requestContext.ipAddress ?? null,
+      userAgent: requestContext.userAgent ?? null,
       attemptCount: 0,
     });
     await this.tokenRepo.save(record);
@@ -219,8 +222,8 @@ export class VerificationService {
       action: AuditAction.USER_PHONE_VERIFICATION_REQUESTED,
       resourceType: 'User',
       resourceId: user.id,
-      ipAddress: context.ipAddress,
-      userAgent: context.userAgent,
+      ipAddress: requestContext.ipAddress,
+      userAgent: requestContext.userAgent,
       metadata: {
         result: delivered ? 'sent' : 'delivery_failed',
         channel: 'phone',
@@ -350,6 +353,16 @@ export class VerificationService {
         metadata: { result: 'success', channel: 'phone' },
       });
     }
+  }
+
+  private normalizeRequestContext(context: {
+    ipAddress?: string;
+    userAgent?: string;
+  }): { ipAddress?: string; userAgent?: string } {
+    return {
+      ipAddress: context.ipAddress,
+      userAgent: context.userAgent?.slice(0, VerificationService.MAX_REQUEST_USER_AGENT_LENGTH),
+    };
   }
 
   private hash(value: string): string {
