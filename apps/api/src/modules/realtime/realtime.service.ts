@@ -12,6 +12,8 @@ import {
   ExecutionControlEventPayload,
   AiSignalEventPayload,
   SystemNotificationPayload,
+  ReconciliationRunEventPayload,
+  ReconciliationDiscrepancyEventPayload,
 } from '../events/interfaces/domain-event.interface';
 import { RealtimeEvent } from './events/realtime-event.enum';
 
@@ -263,6 +265,73 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
             instrument: payload.instrument,
             status: payload.status,
             reason: payload.reason,
+          });
+        },
+      ),
+
+      // Sprint 50 PR-4 — wire the previously-defined-but-unforwarded trade
+      // reconciliation-pending event (users see uncertain executions live).
+      this.eventBus.subscribe<TradeEventPayload>(
+        DomainEventType.TRADE_RECONCILIATION_PENDING,
+        ({ userId, payload }) => {
+          this.emitToUser(userId, RealtimeEvent.TRADE_RECONCILIATION_PENDING, {
+            tradeId: payload.tradeId,
+            instrument: payload.instrument,
+            direction: payload.direction,
+            volume: payload.volume,
+            status: payload.status,
+            reason: payload.reason,
+          });
+        },
+      ),
+
+      // Sprint 50 PR-4 — state reconciliation lifecycle (safe fields only)
+      this.eventBus.subscribe<ReconciliationRunEventPayload>(
+        DomainEventType.RECONCILIATION_RUN_COMPLETED,
+        ({ userId, payload }) => {
+          this.emitToUser(userId, RealtimeEvent.RECONCILIATION_RUN_COMPLETED, {
+            runId: payload.runId,
+            brokerConnectionId: payload.brokerConnectionId,
+            brokerId: payload.brokerId,
+            status: payload.status,
+            discrepanciesDetected: payload.discrepanciesDetected,
+            discrepanciesNew: payload.discrepanciesNew,
+            discrepanciesOpen: payload.discrepanciesOpen,
+            completedAt: payload.completedAt,
+          });
+        },
+      ),
+
+      this.eventBus.subscribe<ReconciliationDiscrepancyEventPayload>(
+        DomainEventType.RECONCILIATION_DISCREPANCY_DETECTED,
+        ({ userId, payload }) => {
+          this.emitToUser(userId, RealtimeEvent.RECONCILIATION_DISCREPANCY_DETECTED, {
+            discrepancyId: payload.discrepancyId,
+            brokerConnectionId: payload.brokerConnectionId,
+            type: payload.type,
+            severity: payload.severity,
+            internalRefType: payload.internalRefType ?? null,
+            internalRefId: payload.internalRefId ?? null,
+            providerRef: payload.providerRef ?? null,
+            clientOrderId: payload.clientOrderId ?? null,
+            detectedAt: payload.at,
+          });
+        },
+      ),
+
+      this.eventBus.subscribe<ReconciliationDiscrepancyEventPayload>(
+        DomainEventType.RECONCILIATION_DISCREPANCY_RESOLVED,
+        ({ userId, payload }) => {
+          this.emitToUser(userId, RealtimeEvent.RECONCILIATION_DISCREPANCY_RESOLVED, {
+            discrepancyId: payload.discrepancyId,
+            brokerConnectionId: payload.brokerConnectionId,
+            type: payload.type,
+            severity: payload.severity,
+            internalRefType: payload.internalRefType ?? null,
+            internalRefId: payload.internalRefId ?? null,
+            providerRef: payload.providerRef ?? null,
+            clientOrderId: payload.clientOrderId ?? null,
+            resolvedAt: payload.at,
           });
         },
       ),
