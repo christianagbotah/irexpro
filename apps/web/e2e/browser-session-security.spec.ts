@@ -125,7 +125,7 @@ test.describe('Sprint 49 browser session security — Web', () => {
 
     await clickResponsiveLogout(page);
 
-    await expect(page.getByText('Not signed in')).toBeVisible();
+    await expect(page.getByText('Sign in required')).toBeVisible();
     expect(refreshCalls).toBe(2);
     expect(logoutCalls).toBe(2);
     expect(logoutAuthorizations).toEqual([
@@ -139,7 +139,7 @@ test.describe('Sprint 49 browser session security — Web', () => {
     expect(storage).not.toContain('fresh-browser-access');
 
     await page.reload();
-    await expect(page.getByText('Not signed in')).toBeVisible();
+    await expect(page.getByText('Sign in required')).toBeVisible();
     expect(refreshCalls).toBe(3);
     expect(logoutCalls).toBe(2);
   });
