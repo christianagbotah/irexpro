@@ -1,13 +1,19 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ExecutionControlScope } from '../../execution-control/entities/execution-control.entity';
+import {
+  ExecutionControlScope,
+  ExecutionControlStatus,
+} from '../../execution-control/entities/execution-control.entity';
 
 /**
  * Admin Live Operations overview DTO (Sprint 50 PR-6 — Directive PHASE L §39).
  *
  * Mirrors AdminConnectionStateCounts / AdminDiscrepancyCounts /
- * AdminExecutionControlView / AdminProviderRegistryEntry /
- * AdminLiveOpsOverviewView from packages/types/src/admin-live-account.ts
- * EXACTLY: names, enums, nullability, ISO date strings.
+ * AdminExecutionControlView / AdminExpiredControlsView /
+ * AdminProviderRegistryEntry / AdminLiveOpsOverviewView from
+ * packages/types/src/admin-live-account.ts EXACTLY: names, enums,
+ * nullability, ISO date strings. (Compat nuance: control `status` and
+ * `expiredControls` are optional on the shared type — older payloads may omit
+ * them — while this API always emits both.)
  *
  * SECURITY: no credential material, no provider secrets, no audit metadata
  * blobs. Control `reason` is sanitized to plain text before mapping.
@@ -30,6 +36,13 @@ export class AdminConnectionStateCountsDto {
 
   @ApiProperty({
     minimum: 0,
+    description:
+      'connectionStatus = SUSPENDED (distinct from the authorizationStatus suspended bucket).',
+  })
+  suspendedConnectionStatus: number;
+
+  @ApiProperty({
+    minimum: 0,
     description: 'authorizationStatus granted (AUTHORIZED/READY/ACTIVE).',
   })
   authorized: number;
@@ -40,7 +53,10 @@ export class AdminConnectionStateCountsDto {
   @ApiProperty({ minimum: 0, description: 'authorizationStatus = REVOKED' })
   revoked: number;
 
-  @ApiProperty({ minimum: 0, description: 'authorizationStatus = SUSPENDED' })
+  @ApiProperty({
+    minimum: 0,
+    description: 'authorizationStatus = SUSPENDED (distinct from suspendedConnectionStatus).',
+  })
   suspended: number;
 
   @ApiProperty({ minimum: 0, description: 'accountType = DEMO' })
@@ -92,6 +108,24 @@ export class AdminExecutionControlViewDto {
 
   @ApiPropertyOptional({ nullable: true, type: String, format: 'date-time' })
   expiresAt: string | null;
+
+  @ApiProperty({
+    enum: ExecutionControlStatus,
+    description:
+      'Lifecycle status: ACTIVE = currently blocking; EXPIRED = retained record (never blocking; reactivation replaces it).',
+  })
+  status: 'ACTIVE' | 'EXPIRED';
+}
+
+export class AdminExpiredControlsViewDto {
+  @ApiProperty({ minimum: 0, description: 'Total retained expired records.' })
+  count: number;
+
+  @ApiProperty({
+    type: [AdminExecutionControlViewDto],
+    description: 'Most recent expired records by activatedAt desc (bounded to 50).',
+  })
+  controls: AdminExecutionControlViewDto[];
 }
 
 export class AdminProviderRegistryEntryDto {
@@ -126,6 +160,13 @@ export class AdminLiveOpsOverviewViewDto {
     description: 'Active emergency execution controls.',
   })
   activeControls: AdminExecutionControlViewDto[];
+
+  @ApiProperty({
+    type: AdminExpiredControlsViewDto,
+    description:
+      'Retained expired execution-control records — never blocking; reactivation replaces them.',
+  })
+  expiredControls: AdminExpiredControlsViewDto;
 
   @ApiProperty({ type: [AdminProviderRegistryEntryDto] })
   providers: AdminProviderRegistryEntryDto[];

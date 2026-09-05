@@ -112,6 +112,64 @@ describe('LiveAccountController (identity contract)', () => {
     });
   });
 
+  // ─── Phase F structural tenant-isolation proofs (verification, not paths) ──
+
+  describe('structural tenant-isolation proofs (Phase F)', () => {
+    const paramTypes = (
+      methodName: 'getOverview' | 'getOrders' | 'getPositions' | 'getActivity',
+    ): unknown[] =>
+      (Reflect.getMetadata(
+        'design:paramtypes',
+        Object.getPrototypeOf(controller),
+        methodName,
+      ) as unknown[]) ?? [];
+
+    it('identity-only handlers declare exactly one parameter (the userId)', () => {
+      expect(paramTypes('getOverview')).toHaveLength(1);
+      expect(paramTypes('getPositions')).toHaveLength(1);
+      expect(controller.getOverview.length).toBe(1);
+      expect(controller.getPositions.length).toBe(1);
+    });
+
+    it('query-parameter handlers accept ONLY scalars after the userId (no identifier objects)', () => {
+      const orderParams = paramTypes('getOrders');
+      const activityParams = paramTypes('getActivity');
+
+      expect(orderParams[0]).toBe(String);
+      expect(orderParams.slice(1).every((type) => type === String || type === Number)).toBe(true);
+      expect(activityParams[0]).toBe(String);
+      expect(activityParams.slice(1).every((type) => type === Number)).toBe(true);
+    });
+
+    it('no route accepts a client-supplied identifier as a path parameter', () => {
+      // All four endpoints are static paths — there is no :id route segment a
+      // client could use to address another tenant's connection/account.
+      for (const handler of [
+        controller.getOverview,
+        controller.getOrders,
+        controller.getPositions,
+        controller.getActivity,
+      ]) {
+        const path = Reflect.getMetadata('path', handler) as string;
+        expect(path).not.toMatch(/:/);
+      }
+    });
+
+    it('every service call is led by exactly the authenticated userId', async () => {
+      await controller.getOverview(USER_ID);
+      await controller.getPositions(USER_ID);
+      await controller.getOrders(USER_ID, 'ALL', 50, 0);
+      await controller.getActivity(USER_ID, 50, 0);
+
+      expect(service.getOverview.mock.calls[0]).toEqual([USER_ID]);
+      expect(service.getPositions.mock.calls[0]).toEqual([USER_ID]);
+      expect(service.getOrders.mock.calls[0][0]).toBe(USER_ID);
+      expect(service.getActivity.mock.calls[0][0]).toBe(USER_ID);
+      expect(service.getOrders).toHaveBeenCalledWith(USER_ID, 'ALL', 50, 0);
+      expect(service.getActivity).toHaveBeenCalledWith(USER_ID, 50, 0);
+    });
+  });
+
   describe('query validation (limit clamping, status fallback)', () => {
     it('falls back to ALL for an invalid status and clamps limit/offset', async () => {
       await controller.getOrders(USER_ID, 'NOT_A_STATUS', 999, -5);

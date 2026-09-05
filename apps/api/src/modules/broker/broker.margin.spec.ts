@@ -31,6 +31,9 @@ describe('BrokerService — account-scoped required margin', () => {
               id: 'conn-1',
               brokerId: 'metatrader5',
               accountType: BrokerMode.LIVE,
+              // A3: connected + usable credential state
+              status: 'CONNECTED',
+              credentialStatus: 'VERIFIED',
               encryptedCredentials: 'cipher',
               credentialIv: 'iv',
               credentialTag: 'tag',
@@ -91,6 +94,9 @@ describe('BrokerService — account-scoped required margin', () => {
               id: 'conn-2',
               brokerId: 'metatrader5',
               accountType: BrokerMode.LIVE,
+              // A3: connected + usable credential state
+              status: 'CONNECTED',
+              credentialStatus: 'VERIFIED',
               encryptedCredentials: 'cipher',
               credentialIv: 'iv',
               credentialTag: 'tag',

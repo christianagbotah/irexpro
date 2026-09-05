@@ -49,6 +49,7 @@ const CONNECTION_COUNTS = {
   connecting: 0,
   error: 2,
   disconnected: 1,
+  suspendedConnectionStatus: 0,
   authorized: 4,
   authorizationRequired: 1,
   revoked: 1,

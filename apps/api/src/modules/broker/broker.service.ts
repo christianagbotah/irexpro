@@ -234,6 +234,22 @@ export class BrokerService {
   // ─── Connect / Disconnect ─────────────────────────────────────────────────
 
   /**
+   * Credential-lifecycle guard (architect correction A3): fail closed BEFORE
+   * persisted credentials are decrypted or used. Only CREATED / VERIFIED /
+   * ROTATED credential states may be consumed — INVALID / EXPIRED / REVOKED /
+   * missing / unknown states never reach the provider adapter.
+   */
+  private assertCredentialsUsable(connection: BrokerConnection, operation: string): void {
+    if (!BrokerCredentialLifecycle.isUsable(connection.credentialStatus)) {
+      throw new ConflictException(
+        `Broker credentials for connection ${connection.id} are ` +
+          `${connection.credentialStatus ?? 'MISSING'} — ${operation} requires usable ` +
+          'credentials (fail-closed; rotate credentials to restore use)',
+      );
+    }
+  }
+
+  /**
    * Establish a live connection to the broker using stored encrypted credentials.
    * Decrypted credentials exist in memory only for the duration of this method.
    */
@@ -249,19 +265,33 @@ export class BrokerService {
       throw new BadRequestException('Broker connection has no stored credentials');
     }
 
+    // A3: the lifecycle gate runs BEFORE any decrypt/adapter call — a revoked,
+    // expired, or invalid credential set must never reach the provider.
+    this.assertCredentialsUsable(connection, 'connectBroker');
+
     const canEnterConnecting = BrokerAuthorizationStateMachine.canTransition(
       connection.authorizationStatus,
       BrokerAuthorizationStatus.CONNECTING,
     );
 
-    await this.connectionRepo.update(connectionId, {
-      status: BrokerConnectionStatus.CONNECTING,
-      consecutiveFailureCount: 0,
-      // State machine: CONNECTING is only valid from these states; when the
-      // current state does not allow it (e.g. mid-reconnect), the existing
-      // state is preserved and the terminal update below still applies.
-      ...(canEnterConnecting ? { authorizationStatus: BrokerAuthorizationStatus.CONNECTING } : {}),
-    });
+    // A4: conditional write — applies only while the persisted authorization
+    // state still matches the loaded row (concurrent writers surface as a
+    // Conflict instead of being silently overwritten).
+    await this.applyGuardedAuthorizationUpdate(
+      connectionId,
+      connection.authorizationStatus,
+      {
+        status: BrokerConnectionStatus.CONNECTING,
+        consecutiveFailureCount: 0,
+        // State machine: CONNECTING is only valid from these states; when the
+        // current state does not allow it (e.g. mid-reconnect), the existing
+        // state is preserved and the terminal update below still applies.
+        ...(canEnterConnecting
+          ? { authorizationStatus: BrokerAuthorizationStatus.CONNECTING }
+          : {}),
+      },
+      'connectBroker CONNECTING transition',
+    );
 
     // Effective in-flight state for terminal-transition validation: when we
     // entered CONNECTING, transitions must be validated FROM CONNECTING (the
@@ -284,21 +314,37 @@ export class BrokerService {
       const result = await adapter.connect(credentials);
 
       if (!result.success) {
-        await this.connectionRepo.update(connectionId, {
-          status: BrokerConnectionStatus.ERROR,
-          lastErrorMessage: result.error ?? 'Connection rejected by broker',
-          consecutiveFailureCount: () => 'consecutive_failure_count + 1',
-          ...(BrokerAuthorizationStateMachine.canTransition(
+        // A4: terminal ERROR write guarded on the in-flight state. On a
+        // concurrent state change the original broker failure remains the
+        // primary outcome (logged), and the winner's authoritative state is
+        // NOT overwritten.
+        try {
+          await this.applyGuardedAuthorizationUpdate(
+            connectionId,
             inFlightAuthorization,
-            BrokerAuthorizationStatus.ERROR,
-          )
-            ? { authorizationStatus: BrokerAuthorizationStatus.ERROR }
-            : {}),
-          // Auth-class failures mark the credential set INVALID (Directive §14)
-          ...(BrokerCredentialLifecycle.isAuthFailure(result.error)
-            ? { credentialStatus: BrokerCredentialStatus.INVALID }
-            : {}),
-        });
+            {
+              status: BrokerConnectionStatus.ERROR,
+              lastErrorMessage: result.error ?? 'Connection rejected by broker',
+              consecutiveFailureCount: () => 'consecutive_failure_count + 1',
+              ...(BrokerAuthorizationStateMachine.canTransition(
+                inFlightAuthorization,
+                BrokerAuthorizationStatus.ERROR,
+              )
+                ? { authorizationStatus: BrokerAuthorizationStatus.ERROR }
+                : {}),
+              // Auth-class failures mark the credential set INVALID (Directive §14)
+              ...(BrokerCredentialLifecycle.isAuthFailure(result.error)
+                ? { credentialStatus: BrokerCredentialStatus.INVALID }
+                : {}),
+            },
+            'connectBroker ERROR transition',
+          );
+        } catch (transitionErr) {
+          this.logger.warn(
+            `connectBroker ERROR transition lost a concurrent state race for ` +
+              `${connectionId}: ${(transitionErr as Error).message}`,
+          );
+        }
 
         await this.auditService.log({
           actorUserId: userId,
@@ -326,23 +372,31 @@ export class BrokerService {
           ? BrokerAuthorizationStatus.AUTHORIZED
           : BrokerAuthorizationStatus.CONNECTED;
 
-      await this.connectionRepo.update(connectionId, {
-        status: BrokerConnectionStatus.CONNECTED,
-        accountId: result.accountId,
-        accountCurrency: result.currency,
-        lastHealthCheckAt: new Date(),
-        consecutiveFailureCount: 0,
-        lastErrorMessage: null,
-        credentialStatus: BrokerCredentialStatus.VERIFIED,
-        ...(BrokerAuthorizationStateMachine.canTransition(
-          inFlightAuthorization,
-          postConnectAuthorization,
-        )
-          ? { authorizationStatus: postConnectAuthorization }
-          : {}),
-        // Dual-write legacy booleans (backward compatibility)
-        ...(connection.accountType === BrokerMode.DEMO ? { demoValidated: true } : {}),
-      });
+      // A4: success transition guarded on the in-flight state — a concurrent
+      // revoke/suspend between handshake and this write surfaces as a
+      // Conflict; the winner's state is never overwritten by a stale success.
+      await this.applyGuardedAuthorizationUpdate(
+        connectionId,
+        inFlightAuthorization,
+        {
+          status: BrokerConnectionStatus.CONNECTED,
+          accountId: result.accountId,
+          accountCurrency: result.currency,
+          lastHealthCheckAt: new Date(),
+          consecutiveFailureCount: 0,
+          lastErrorMessage: null,
+          credentialStatus: BrokerCredentialStatus.VERIFIED,
+          ...(BrokerAuthorizationStateMachine.canTransition(
+            inFlightAuthorization,
+            postConnectAuthorization,
+          )
+            ? { authorizationStatus: postConnectAuthorization }
+            : {}),
+          // Dual-write legacy booleans (backward compatibility)
+          ...(connection.accountType === BrokerMode.DEMO ? { demoValidated: true } : {}),
+        },
+        'connectBroker CONNECTED transition',
+      );
 
       await this.auditService.log({
         actorUserId: userId,
@@ -388,12 +442,20 @@ export class BrokerService {
       }
     }
 
-    await this.connectionRepo.update(connectionId, {
-      status: BrokerConnectionStatus.DISCONNECTED,
-      ...(this.canTransitionTo(connection, BrokerAuthorizationStatus.DISCONNECTED)
-        ? { authorizationStatus: BrokerAuthorizationStatus.DISCONNECTED }
-        : {}),
-    });
+    // A4: guarded on the loaded authorization state — a concurrent
+    // enable-live/revoke/connect that changed the state makes this stale
+    // disconnect fail visibly instead of overwriting the winner.
+    await this.applyGuardedAuthorizationUpdate(
+      connectionId,
+      connection.authorizationStatus,
+      {
+        status: BrokerConnectionStatus.DISCONNECTED,
+        ...(this.canTransitionTo(connection, BrokerAuthorizationStatus.DISCONNECTED)
+          ? { authorizationStatus: BrokerAuthorizationStatus.DISCONNECTED }
+          : {}),
+      },
+      'disconnectBroker transition',
+    );
 
     await this.auditService.log({
       actorUserId: userId,
@@ -478,12 +540,20 @@ export class BrokerService {
       );
     }
 
-    await this.connectionRepo.update(connectionId, {
-      liveTradingEnabled: true,
-      authorizationStatus: BrokerAuthorizationStatus.ACTIVE,
-      authorizedAt: new Date(),
-      authorizationRevokedAt: null,
-    });
+    // A4: guarded on the loaded authorization state — a concurrent
+    // revoke/suspend between validation and this write surfaces as a
+    // Conflict; ACTIVE is never set over a concurrently-revoked connection.
+    await this.applyGuardedAuthorizationUpdate(
+      connectionId,
+      connection.authorizationStatus,
+      {
+        liveTradingEnabled: true,
+        authorizationStatus: BrokerAuthorizationStatus.ACTIVE,
+        authorizedAt: new Date(),
+        authorizationRevokedAt: null,
+      },
+      'enableLiveTrading ACTIVE transition',
+    );
 
     this.eventBus.publish(DomainEventType.BROKER_AUTHORIZATION_CHANGED, userId, {
       userId,
@@ -525,12 +595,20 @@ export class BrokerService {
       );
     }
 
-    await this.connectionRepo.update(connectionId, {
-      authorizationStatus: BrokerAuthorizationStatus.REVOKED,
-      authorizationRevokedAt: new Date(),
-      // Fail-closed for legacy consumers
-      liveTradingEnabled: false,
-    });
+    // A4: guarded on the loaded authorization state — a concurrent
+    // suspend/enable-live between validation and this write surfaces as a
+    // Conflict; REVOKED is never overwritten by a stale revocation write.
+    await this.applyGuardedAuthorizationUpdate(
+      connectionId,
+      connection.authorizationStatus,
+      {
+        authorizationStatus: BrokerAuthorizationStatus.REVOKED,
+        authorizationRevokedAt: new Date(),
+        // Fail-closed for legacy consumers
+        liveTradingEnabled: false,
+      },
+      'revokeAuthorization REVOKED transition',
+    );
 
     this.eventBus.publish(DomainEventType.BROKER_AUTHORIZATION_CHANGED, userId, {
       userId,
@@ -683,6 +761,16 @@ export class BrokerService {
       return false;
     }
 
+    // A3: unusable credential states fail closed WITHOUT contacting the
+    // provider (recorded as a failed check, never a provider call).
+    if (!BrokerCredentialLifecycle.isUsable(connection.credentialStatus)) {
+      this.logger.warn(
+        `Connection ${connectionId} credential status is ` +
+          `${connection.credentialStatus ?? 'MISSING'} — skipping provider health check (fail-closed)`,
+      );
+      return false;
+    }
+
     // Decrypt in-memory only — NEVER logged
     const credentials = this.encryptionService.decrypt({
       ciphertext: connection.encryptedCredentials,
@@ -714,20 +802,44 @@ export class BrokerService {
       const failureCount = (connection.consecutiveFailureCount ?? 0) + 1;
       const SUSPEND_THRESHOLD = 3;
 
+      // Telemetry first (unguarded — not a state transition; WHERE id only).
       await this.connectionRepo.update(connectionId, {
         consecutiveFailureCount: failureCount,
         lastErrorMessage: (err as Error).message,
         lastHealthCheckAt: new Date(),
-        ...(failureCount >= SUSPEND_THRESHOLD
-          ? {
-              status: BrokerConnectionStatus.SUSPENDED,
-              // Fail-closed: suspended connections lose execution authorization
-              ...(this.canTransitionTo(connection, BrokerAuthorizationStatus.SUSPENDED)
-                ? { authorizationStatus: BrokerAuthorizationStatus.SUSPENDED }
-                : {}),
-            }
-          : {}),
       });
+
+      if (failureCount >= SUSPEND_THRESHOLD) {
+        // A4: the SUSPENDED transition is a guarded conditional write on the
+        // loaded authorization state. A concurrent revoke/enable-live that
+        // changed the state means this stale suspension MUST NOT overwrite
+        // the winner — the conflict is logged and the state is left alone
+        // (fail-closed for state, telemetry already recorded above).
+        const canSuspend = this.canTransitionTo(connection, BrokerAuthorizationStatus.SUSPENDED);
+        try {
+          if (canSuspend) {
+            await this.applyGuardedAuthorizationUpdate(
+              connectionId,
+              connection.authorizationStatus,
+              {
+                status: BrokerConnectionStatus.SUSPENDED,
+                // Fail-closed: suspended connections lose execution authorization
+                authorizationStatus: BrokerAuthorizationStatus.SUSPENDED,
+              },
+              'healthCheck SUSPENDED transition',
+            );
+          } else {
+            await this.connectionRepo.update(connectionId, {
+              status: BrokerConnectionStatus.SUSPENDED,
+            });
+          }
+        } catch (transitionErr) {
+          this.logger.warn(
+            `healthCheck suspend lost a concurrent state race for ${connectionId}: ` +
+              `${(transitionErr as Error).message} — leaving the authoritative state untouched`,
+          );
+        }
+      }
 
       if (failureCount >= SUSPEND_THRESHOLD) {
         this.logger.error(
@@ -784,6 +896,10 @@ export class BrokerService {
       throw new ForbiddenException('Broker connection credentials unavailable');
     }
 
+    // A3: lifecycle gate before decrypt — unusable credentials never reach the
+    // provider adapter.
+    this.assertCredentialsUsable(connection, 'getOhlcvForConnection');
+
     const credentials = this.encryptionService.decrypt({
       ciphertext: connection.encryptedCredentials,
       iv: connection.credentialIv,
@@ -838,6 +954,10 @@ export class BrokerService {
       throw new ForbiddenException('Broker connection credentials unavailable');
     }
 
+    // A3: lifecycle gate before decrypt — unusable credentials never reach the
+    // provider adapter.
+    this.assertCredentialsUsable(connection, 'getClosedTradesForConnection');
+
     const credentials = this.encryptionService.decrypt({
       ciphertext: connection.encryptedCredentials,
       iv: connection.credentialIv,
@@ -876,9 +996,65 @@ export class BrokerService {
   // ─── Internal helpers ─────────────────────────────────────────────────────
 
   /**
-   * Transition guard used by lifecycle methods — checks against the
-   * PERSISTED state (not optimistic in-memory state) so concurrent writers
-   * are bounded by the state machine, and DB check constraints back it up.
+   * Unwrap the affected-row count from a TypeORM UPDATE result. Depending on
+   * driver/version the repository.update() call resolves either to an
+   * UpdateResult ({ affected }) or a raw [rows, rowCount] tuple.
+   */
+  private unwrapAffectedRows(result: unknown): number {
+    if (Array.isArray(result)) {
+      const rowCount = result[1];
+      return typeof rowCount === 'number' ? rowCount : 0;
+    }
+    const affected = (result as { affected?: unknown })?.affected;
+    return typeof affected === 'number' ? affected : 0;
+  }
+
+  /**
+   * Atomic conditional transition write (architect correction A4).
+   *
+   * The UPDATE applies ONLY while the persisted authorization_status still
+   * equals `expected` — the state the in-memory state-machine validation was
+   * performed against (optimistic concurrency guard, same pattern as the
+   * order domain's applyTransition). A concurrent writer that changed the
+   * authoritative state in between makes the update match zero rows, which
+   * surfaces as a ConflictException instead of silently overwriting the
+   * winner. The DB CHECK constraints validate enum membership; THIS guard is
+   * what makes the transition itself atomic against concurrent writers.
+   */
+  private async applyGuardedAuthorizationUpdate(
+    connectionId: string,
+    expected: BrokerAuthorizationStatus,
+    patch: Record<string, unknown>,
+    operation: string,
+  ): Promise<void> {
+    const result = (await this.connectionRepo.update(
+      { id: connectionId, authorizationStatus: expected } as never,
+      patch as never,
+    )) as unknown;
+    const affected = this.unwrapAffectedRows(result);
+    if (affected === 0) {
+      // Reload for an honest error message (best-effort).
+      let current = 'UNKNOWN';
+      try {
+        const fresh = await this.connectionRepo.findOne({ where: { id: connectionId } });
+        current = fresh?.authorizationStatus ?? 'DELETED';
+      } catch {
+        // Keep UNKNOWN — the conflict stands regardless.
+      }
+      throw new ConflictException(
+        `${operation} failed: connection ${connectionId} authorization state changed ` +
+          `concurrently (expected ${expected}, persisted ${current}) — refusing to ` +
+          'overwrite the authoritative state',
+      );
+    }
+  }
+
+  /**
+   * In-memory transition pre-check for fast, honest error messages. The
+   * authoritative concurrency guarantee comes from
+   * applyGuardedAuthorizationUpdate (conditional UPDATE with affected-rows
+   * check), NOT from this check — the loaded row can be stale by the time the
+   * UPDATE runs, and the DB CHECK constraints only validate enum membership.
    */
   private canTransitionTo(connection: BrokerConnection, to: BrokerAuthorizationStatus): boolean {
     return BrokerAuthorizationStateMachine.canTransition(connection.authorizationStatus, to);
@@ -920,6 +1096,12 @@ export class BrokerService {
       where: { id: connectionId },
     });
     if (!connection) return null;
+
+    // A3: this path was previously FULLY unguarded (no status, no lifecycle).
+    // Fail closed for non-CONNECTED connections and unusable credentials —
+    // the adapter is never contacted.
+    if (connection.status !== BrokerConnectionStatus.CONNECTED) return null;
+    if (!BrokerCredentialLifecycle.isUsable(connection.credentialStatus)) return null;
 
     const adapter = this.adapterRegistry.getAdapter(connection.brokerId);
     adapter.setMode(connection.accountType);

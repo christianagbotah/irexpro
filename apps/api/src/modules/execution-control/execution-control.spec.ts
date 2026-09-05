@@ -2,7 +2,11 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ExecutionControlService } from './execution-control.service';
-import { ExecutionControl, ExecutionControlScope } from './entities/execution-control.entity';
+import {
+  ExecutionControl,
+  ExecutionControlScope,
+  ExecutionControlStatus,
+} from './entities/execution-control.entity';
 import { ActivateExecutionControlDto } from './dto/activate-execution-control.dto';
 import { AuditService } from '../audit/audit.service';
 import { DomainEventBus } from '../events/event-bus.service';
@@ -13,6 +17,10 @@ import { DomainEventBus } from '../events/event-bus.service';
  * Directive §28: GLOBAL/PROVIDER/ACCOUNT(USER)/CONNECTION-level execution
  * disable. Directive §48: fail closed — an unreadable control store blocks
  * ALL execution.
+ *
+ * Architect correction A2: expire-and-reactivate lifecycle — an EXPIRED row
+ * never blocks a future activation at the same (scope, scopeKey); concurrent
+ * activations resolve to a single winner (23505 → ConflictException).
  */
 
 const makeControl = (over: Partial<ExecutionControl> = {}): ExecutionControl =>
@@ -24,6 +32,7 @@ const makeControl = (over: Partial<ExecutionControl> = {}): ExecutionControl =>
     activatedByUserId: 'admin-1',
     activatedAt: new Date(),
     expiresAt: null,
+    status: ExecutionControlStatus.ACTIVE,
     ...over,
   }) as ExecutionControl;
 
@@ -35,6 +44,7 @@ describe('ExecutionControlService', () => {
     save: jest.Mock;
     create: jest.Mock;
     delete: jest.Mock;
+    update: jest.Mock;
   };
   let auditService: { log: jest.Mock };
   let eventBus: { publish: jest.Mock };
@@ -46,6 +56,7 @@ describe('ExecutionControlService', () => {
       save: jest.fn().mockImplementation(async (c) => c),
       create: jest.fn().mockImplementation((c) => c),
       delete: jest.fn().mockResolvedValue({ affected: 1 }),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
     };
     auditService = { log: jest.fn().mockResolvedValue(undefined) };
     eventBus = { publish: jest.fn() };
@@ -201,6 +212,13 @@ describe('ExecutionControlService', () => {
       const result = await service.checkExecutionPermission({ userId: 'user-1' });
       expect(result.allowed).toBe(false);
     });
+
+    it('does not block on a control whose persisted status is EXPIRED', async () => {
+      controlRepo.find.mockResolvedValue([makeControl({ status: ExecutionControlStatus.EXPIRED })]);
+
+      const result = await service.checkExecutionPermission({ userId: 'user-1' });
+      expect(result.allowed).toBe(true);
+    });
   });
 
   describe('activateControl (admin operation)', () => {
@@ -217,6 +235,7 @@ describe('ExecutionControlService', () => {
       const view = await service.activateControl(baseDto(), 'admin-1', '10.0.0.1');
 
       expect(view.scope).toBe(ExecutionControlScope.GLOBAL);
+      expect(view.status).toBe(ExecutionControlStatus.ACTIVE);
       expect(view.scopeKey).toBeNull();
       expect(controlRepo.save).toHaveBeenCalledTimes(1);
       expect(auditService.log).toHaveBeenCalledWith(
@@ -249,6 +268,150 @@ describe('ExecutionControlService', () => {
         ConflictException,
       );
       expect(controlRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('rejects duplicate activation when the existing control is ACTIVE with future expiry', async () => {
+      controlRepo.findOne.mockResolvedValue(
+        makeControl({ expiresAt: new Date(Date.now() + 60_000) }),
+      );
+
+      await expect(service.activateControl(baseDto(), 'admin-1')).rejects.toThrow(
+        ConflictException,
+      );
+      expect(controlRepo.save).not.toHaveBeenCalled();
+      expect(controlRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('reactivates at the same scope after the prior control expired in time (A2)', async () => {
+      // The prior row still occupies the (scope, scopeKey) slot but its
+      // expiry has passed — reactivation MUST succeed deterministically.
+      controlRepo.findOne.mockResolvedValue(
+        makeControl({
+          id: 'ctl-old',
+          expiresAt: new Date(Date.now() - 60_000),
+        }),
+      );
+
+      const view = await service.activateControl(baseDto(), 'admin-1');
+
+      expect(view.scope).toBe(ExecutionControlScope.GLOBAL);
+      // Old row flipped to EXPIRED (retained as a record — not deleted)
+      expect(controlRepo.update).toHaveBeenCalledWith(
+        { id: 'ctl-old' },
+        { status: ExecutionControlStatus.EXPIRED },
+      );
+      expect(controlRepo.delete).not.toHaveBeenCalled();
+      // A NEW row is inserted with status ACTIVE
+      expect(controlRepo.save).toHaveBeenCalledTimes(1);
+      expect(controlRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ status: ExecutionControlStatus.ACTIVE }),
+      );
+    });
+
+    it('reactivates when the prior slot row already has status EXPIRED (A2)', async () => {
+      controlRepo.findOne.mockResolvedValue(
+        makeControl({ id: 'ctl-old', status: ExecutionControlStatus.EXPIRED }),
+      );
+
+      const view = await service.activateControl(baseDto(), 'admin-1');
+
+      expect(view.scope).toBe(ExecutionControlScope.GLOBAL);
+      expect(controlRepo.update).toHaveBeenCalledWith(
+        { id: 'ctl-old' },
+        { status: ExecutionControlStatus.EXPIRED },
+      );
+      expect(controlRepo.save).toHaveBeenCalledTimes(1);
+    });
+
+    it('translates a concurrent-activation 23505 unique violation into ConflictException (A2)', async () => {
+      // No slot row visible to this writer (the concurrent winner's row is
+      // not visible to findOne in this mock) — the INSERT hits the partial
+      // unique index and must surface as a conflict, never a 500.
+      controlRepo.findOne.mockResolvedValue(null);
+      controlRepo.save.mockRejectedValue(
+        Object.assign(new Error('duplicate key value violates unique constraint'), {
+          code: '23505',
+        }),
+      );
+
+      await expect(service.activateControl(baseDto(), 'admin-1')).rejects.toThrow(
+        ConflictException,
+      );
+      await expect(service.activateControl(baseDto(), 'admin-1')).rejects.toThrow(
+        /concurrent activation/,
+      );
+    });
+
+    it('propagates non-unique store failures from insert (fail closed, no swallow)', async () => {
+      controlRepo.findOne.mockResolvedValue(null);
+      controlRepo.save.mockRejectedValue(new Error('connection refused'));
+
+      await expect(service.activateControl(baseDto(), 'admin-1')).rejects.toThrow(
+        'connection refused',
+      );
+    });
+  });
+
+  describe('listActiveControls (admin inventory)', () => {
+    it('lists only ACTIVE, unexpired controls — EXPIRED records are excluded', async () => {
+      controlRepo.find.mockResolvedValue([
+        makeControl({ id: 'ctl-a' }),
+        makeControl({
+          id: 'ctl-b',
+          status: ExecutionControlStatus.EXPIRED,
+        }),
+        makeControl({ id: 'ctl-c', expiresAt: new Date(Date.now() - 1_000) }),
+      ]);
+
+      const views = await service.listActiveControls();
+      expect(views.map((v) => v.id)).toEqual(['ctl-a']);
+      // Every active-inventory view explicitly carries status = ACTIVE.
+      expect(views.every((v) => v.status === ExecutionControlStatus.ACTIVE)).toBe(true);
+    });
+  });
+
+  describe('listControlsIncludingExpired (admin inventory — G4)', () => {
+    it('returns ALL rows with their effective status (ACTIVE and EXPIRED both present)', async () => {
+      controlRepo.find.mockResolvedValue([
+        makeControl({ id: 'ctl-live' }),
+        makeControl({ id: 'ctl-old', status: ExecutionControlStatus.EXPIRED }),
+      ]);
+
+      const views = await service.listControlsIncludingExpired();
+      expect(views.map((v) => v.id)).toEqual(['ctl-live', 'ctl-old']);
+      expect(views.map((v) => v.status)).toEqual([
+        ExecutionControlStatus.ACTIVE,
+        ExecutionControlStatus.EXPIRED,
+      ]);
+    });
+
+    it('reports EXPIRED for a persisted-ACTIVE row whose expiry has passed (effective status is honest)', async () => {
+      controlRepo.find.mockResolvedValue([
+        makeControl({
+          id: 'ctl-stale',
+          expiresAt: new Date(Date.now() - 60_000),
+        }),
+      ]);
+
+      const views = await service.listControlsIncludingExpired();
+      // Reads already ignore this row — the inventory must not present it as ACTIVE.
+      expect(views[0].status).toBe(ExecutionControlStatus.EXPIRED);
+    });
+
+    it('carries the full view shape (scope/scopeKey/reason/activatedBy/dates/status)', async () => {
+      controlRepo.find.mockResolvedValue([makeControl({ id: 'ctl-full' })]);
+
+      const [view] = await service.listControlsIncludingExpired();
+      expect(view).toMatchObject({
+        id: 'ctl-full',
+        scope: ExecutionControlScope.GLOBAL,
+        scopeKey: null,
+        reason: 'incident',
+        activatedByUserId: 'admin-1',
+        status: ExecutionControlStatus.ACTIVE,
+      });
+      expect(view.activatedAt).toBeInstanceOf(Date);
+      expect(view.expiresAt).toBeNull();
     });
   });
 
