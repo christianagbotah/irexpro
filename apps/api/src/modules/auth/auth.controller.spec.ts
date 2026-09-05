@@ -29,6 +29,7 @@ const mockAuthService = {
   register: jest.fn(),
   login: jest.fn(),
   refreshTokens: jest.fn(),
+  refreshBrowserTokens: jest.fn(),
   logout: jest.fn(),
   getAuthUserDto: jest.fn(),
 };
@@ -47,6 +48,10 @@ describe('AuthController — refresh token validation (hotfix)', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockAuthService.refreshBrowserTokens.mockImplementation(async (token: string) => ({
+      ...(await mockAuthService.refreshTokens(token)),
+      rememberMe: false,
+    }));
 
     module = await Test.createTestingModule({
       imports: [

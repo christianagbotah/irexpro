@@ -25,6 +25,15 @@ import { AuditAction } from '../../common/enums/audit-action.enum';
 import { JwtPayload } from './strategies/jwt.strategy';
 import { MfaService } from './mfa.service';
 
+export interface AuthTokens {
+  accessToken: string;
+  refreshToken: string;
+}
+
+export interface BrowserRefreshTokens extends AuthTokens {
+  rememberMe: boolean;
+}
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -50,10 +59,7 @@ export class AuthService {
     @Optional() private mfaService?: MfaService,
   ) {}
 
-  async register(
-    dto: RegisterDto,
-    ipAddress?: string,
-  ): Promise<{ accessToken: string; refreshToken: string }> {
+  async register(dto: RegisterDto, ipAddress?: string): Promise<AuthTokens> {
     if (!dto.email && !dto.phone) {
       throw new BadRequestException('At least one of email or phone is required');
     }
@@ -126,7 +132,7 @@ export class AuthService {
         metadata: { email: user.email, countryCode: user.countryCode },
       });
 
-      const tokens = this.generateTokens(user, [RoleName.USER]);
+      const tokens = this.generateTokens(user, [RoleName.USER], dto.rememberMe === true);
       this.logger.log('New user registered');
       return tokens;
     } catch (err) {
@@ -137,10 +143,7 @@ export class AuthService {
     }
   }
 
-  async login(
-    dto: LoginDto,
-    ipAddress?: string,
-  ): Promise<{ accessToken: string; refreshToken: string }> {
+  async login(dto: LoginDto, ipAddress?: string): Promise<AuthTokens> {
     const identifier = dto.identifier.trim();
     const emailLogin = isEmail(identifier);
     const phoneLookup = emailLogin ? null : normalizePhone(identifier);
@@ -249,7 +252,7 @@ export class AuthService {
       metadata: { result: 'success', mfaVerified: user.mfaEnabled },
     });
 
-    return this.generateTokens(user, roles);
+    return this.generateTokens(user, roles, dto.rememberMe === true);
   }
 
   /**
@@ -268,9 +271,19 @@ export class AuthService {
     });
   }
 
-  async refreshTokens(
-    refreshToken: string,
-  ): Promise<{ accessToken: string; refreshToken: string }> {
+  /** Native/body-token refresh contract: return only the two JWTs. */
+  async refreshTokens(refreshToken: string): Promise<AuthTokens> {
+    const { accessToken, refreshToken: rotatedRefreshToken } =
+      await this.rotateRefreshToken(refreshToken);
+    return { accessToken, refreshToken: rotatedRefreshToken };
+  }
+
+  /** Browser-cookie refresh contract: include only signed cookie-persistence metadata. */
+  async refreshBrowserTokens(refreshToken: string): Promise<BrowserRefreshTokens> {
+    return this.rotateRefreshToken(refreshToken);
+  }
+
+  private async rotateRefreshToken(refreshToken: string): Promise<BrowserRefreshTokens> {
     let payload: JwtPayload;
     try {
       payload = this.jwtService.verify<JwtPayload>(refreshToken);
@@ -318,6 +331,9 @@ export class AuthService {
 
     user.sessionVersion = nextVersion;
     const roles = user.userRoles?.map((ur) => ur.role.name) ?? [RoleName.USER];
+    // Only a literal signed boolean true preserves persistence. Missing/invalid
+    // claims from already-issued tokens downgrade conservatively to session-only.
+    const rememberMe = payload.rememberMe === true;
 
     await this.auditService.log({
       actorUserId: user.id,
@@ -331,7 +347,8 @@ export class AuthService {
       },
     });
 
-    return this.generateTokens(user, roles);
+    const tokens = this.generateTokens(user, roles, rememberMe);
+    return { ...tokens, rememberMe };
   }
 
   async logout(userId: string, ipAddress?: string): Promise<void> {
@@ -353,10 +370,7 @@ export class AuthService {
     });
   }
 
-  private generateTokens(
-    user: User,
-    roles: string[],
-  ): { accessToken: string; refreshToken: string } {
+  private generateTokens(user: User, roles: string[], rememberMe = false): AuthTokens {
     const basePayload = {
       sub: user.id,
       email: user.email,
@@ -379,6 +393,7 @@ export class AuthService {
       {
         ...basePayload,
         tokenType: 'refresh' as const,
+        rememberMe,
         jti: randomUUID(),
       },
       {
