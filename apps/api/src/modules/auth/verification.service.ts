@@ -53,12 +53,9 @@ export class VerificationService {
       throw new ServiceUnavailableException('Email verification is temporarily unavailable');
     }
 
+    // Generate the single-use challenge before acquiring the issuance lock so
+    // configuration/entropy failures cannot invalidate an existing challenge.
     const now = new Date();
-    await this.tokenRepo.update(
-      { userId: user.id, channel: VerificationChannel.EMAIL, usedAt: IsNull() },
-      { usedAt: now },
-    );
-
     const rawToken = randomBytes(32).toString('base64url');
     const tokenHash = this.hash(rawToken);
     const expiresAt = new Date(
@@ -75,10 +72,12 @@ export class VerificationService {
       userAgent: requestContext.userAgent ?? null,
       attemptCount: 0,
     });
-    await this.tokenRepo.save(record);
 
-    // Keep the single-use secret in the fragment so browsers never send it in
-    // the initial navigation request URL to the Web server or reverse proxy.
+    const persisted = await this.persistIssuedChallenge(user.id, VerificationChannel.EMAIL, record);
+    if (!persisted) throw new UnauthorizedException('User session is no longer valid');
+
+    // External delivery is intentionally outside the DB transaction so network
+    // I/O never extends the per-user issuance lock.
     const verificationLink = `${webBaseUrl.replace(/\/$/u, '')}/verify-email#token=${encodeURIComponent(rawToken)}`;
     const fromAddress = this.configService.get<string>('email.fromAddress', 'no-reply@irexpro.com');
     const delivered = await this.emailDelivery.send({
@@ -180,13 +179,11 @@ export class VerificationService {
       throw new ServiceUnavailableException('Phone verification is temporarily unavailable');
     }
 
+    // Resolve the required pepper and generate the challenge before acquiring
+    // the issuance lock. A missing/invalid pepper must not consume an existing
+    // usable phone verification challenge.
     const pepper = this.verificationPepper();
     const now = new Date();
-    await this.tokenRepo.update(
-      { userId: user.id, channel: VerificationChannel.PHONE, usedAt: IsNull() },
-      { usedAt: now },
-    );
-
     const code = randomInt(0, 1_000_000).toString().padStart(6, '0');
     const tokenHash = this.hashPhoneCode(user.id, user.phone, code, pepper);
     const expiresAt = new Date(
@@ -202,7 +199,9 @@ export class VerificationService {
       userAgent: requestContext.userAgent ?? null,
       attemptCount: 0,
     });
-    await this.tokenRepo.save(record);
+
+    const persisted = await this.persistIssuedChallenge(user.id, VerificationChannel.PHONE, record);
+    if (!persisted) throw new UnauthorizedException('User session is no longer valid');
 
     const delivered = await this.phoneDelivery.sendVerificationCode(user.phone, code);
     if (!delivered) {
@@ -352,6 +351,44 @@ export class VerificationService {
         ipAddress,
         metadata: { result: 'success', channel: 'phone' },
       });
+    }
+  }
+
+  private async persistIssuedChallenge(
+    userId: string,
+    channel: VerificationChannel,
+    record: AuthVerificationToken,
+  ): Promise<boolean> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      // The user row is the canonical serialization point. This intentionally
+      // serializes issuance for the account while only invalidating the target
+      // channel, so EMAIL and PHONE challenge state remain independent.
+      const lockedUser = await queryRunner.manager.findOne(User, {
+        where: { id: userId },
+        select: { id: true },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!lockedUser) {
+        await queryRunner.rollbackTransaction();
+        return false;
+      }
+
+      const tokenRepo = queryRunner.manager.getRepository(AuthVerificationToken);
+      await tokenRepo.update({ userId, channel, usedAt: IsNull() }, { usedAt: new Date() });
+      await tokenRepo.save(record);
+
+      await queryRunner.commitTransaction();
+      return true;
+    } catch (error) {
+      if (queryRunner.isTransactionActive) await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
     }
   }
 
