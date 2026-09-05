@@ -28,6 +28,10 @@ interface WsJwtPayload {
  * JwtStrategy. A socket handshake must present an ACCESS token whose
  * sessionVersion still matches identity.users.session_version. Refresh tokens,
  * stale tokens, and tokens for inactive users are rejected before room join.
+ *
+ * Connection-time and per-message authentication intentionally share the same
+ * authenticateClient() implementation so a socket cannot remain connected with
+ * credentials that would be rejected by guarded message handlers.
  */
 @Injectable()
 export class WsJwtGuard implements CanActivate {
@@ -41,7 +45,12 @@ export class WsJwtGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const client: Socket = context.switchToWs().getClient<Socket>();
+    const client = context.switchToWs().getClient<Socket>();
+    await this.authenticateClient(client);
+    return true;
+  }
+
+  async authenticateClient(client: Socket): Promise<void> {
     const token = this.extractToken(client);
 
     if (!token) {
@@ -89,8 +98,6 @@ export class WsJwtGuard implements CanActivate {
       client.data.userId = user.id;
       client.data.userEmail = user.email;
       client.data.userRoles = payload.roles ?? [];
-
-      return true;
     } catch {
       this.logger.warn(`WsJwtGuard: invalid token on socket ${client.id}`);
       throw new WsException('Unauthorized: invalid, expired, or revoked token');
