@@ -17,6 +17,7 @@ import { User, UserStatus } from '../../users/entities/user.entity';
  *   - email and phone are nullable
  *   - SUSPENDED/PERMANENTLY_LOCKED/CLOSED users are rejected
  *   - missing subject is rejected
+ *   - only explicitly typed access tokens are accepted
  */
 describe('JwtStrategy (Hotfix — sanitized principal)', () => {
   let strategy: JwtStrategy;
@@ -46,6 +47,8 @@ describe('JwtStrategy (Hotfix — sanitized principal)', () => {
     sub: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
     email: 'user@example.com',
     roles: ['USER'],
+    tokenType: 'access',
+    sessionVersion: 1,
   };
 
   const mockUser = {
@@ -53,6 +56,7 @@ describe('JwtStrategy (Hotfix — sanitized principal)', () => {
     email: 'user@example.com',
     phone: '+233243618186',
     status: UserStatus.ACTIVE,
+    sessionVersion: 1,
     // These fields would be on the full entity but should NEVER be in the principal
     passwordHash: 'super_secret_hash',
     mfaSecret: 'super_secret_mfa',
@@ -130,6 +134,22 @@ describe('JwtStrategy (Hotfix — sanitized principal)', () => {
     await expect(strategy.validate({ ...validPayload, sub: '' } as JwtPayload)).rejects.toThrow(
       UnauthorizedException,
     );
+  });
+
+  it('should reject a bearer token with no explicit tokenType', async () => {
+    const { tokenType: _tokenType, ...untypedPayload } = validPayload;
+
+    await expect(strategy.validate(untypedPayload as JwtPayload)).rejects.toThrow(
+      UnauthorizedException,
+    );
+    expect(userRepo.findOne).not.toHaveBeenCalled();
+  });
+
+  it('should reject a refresh token at the bearer access boundary', async () => {
+    await expect(
+      strategy.validate({ ...validPayload, tokenType: 'refresh' }),
+    ).rejects.toThrow(UnauthorizedException);
+    expect(userRepo.findOne).not.toHaveBeenCalled();
   });
 
   it('should return a principal that satisfies the AuthenticatedPrincipal interface', async () => {
