@@ -30,6 +30,8 @@ const connection = (): BrokerConnection =>
     accountId: 'paper-account-001',
     accountType: 'DEMO',
     status: 'CONNECTED',
+    // A3: usable credential lifecycle (tests override for the guard cases)
+    credentialStatus: 'VERIFIED',
     encryptedCredentials: null,
     credentialIv: null,
     credentialTag: null,
@@ -66,6 +68,108 @@ const pendingOrder = (): Order =>
     requestedPrice: '1.10000',
     tradeId: null,
   }) as unknown as Order;
+
+describe('StateReconciliationService — Phase E: credential lifecycle + security model (architect corrections)', () => {
+  let service: StateReconciliationService;
+  let persistence: {
+    createRun: jest.Mock;
+    completeRun: jest.Mock;
+    failRun: jest.Mock;
+    persistDiscrepancies: jest.Mock;
+    resolveDiscrepanciesByRef: jest.Mock;
+    countOpenDiscrepancies: jest.Mock;
+  };
+  let adapter: { setMode: jest.Mock; connect: jest.Mock; listOrders: jest.Mock };
+  let encryptionService: { decrypt: jest.Mock };
+  let auditService: { log: jest.Mock };
+
+  beforeEach(async () => {
+    adapter = {
+      setMode: jest.fn(),
+      connect: jest.fn().mockResolvedValue({ success: true }),
+      listOrders: jest.fn().mockResolvedValue([]),
+    };
+    encryptionService = { decrypt: jest.fn().mockReturnValue({ accountId: 'acc' }) };
+    persistence = {
+      createRun: jest.fn().mockResolvedValue({ id: 'run-1', status: 'RUNNING' }),
+      completeRun: jest.fn().mockResolvedValue(undefined),
+      failRun: jest.fn().mockResolvedValue(undefined),
+      persistDiscrepancies: jest.fn().mockResolvedValue({ inserted: 0, refreshed: 0, newRows: [] }),
+      resolveDiscrepanciesByRef: jest.fn().mockResolvedValue([]),
+      countOpenDiscrepancies: jest.fn().mockResolvedValue(0),
+    };
+    auditService = { log: jest.fn().mockResolvedValue(undefined) };
+
+    const module = await Test.createTestingModule({
+      providers: [
+        StateReconciliationService,
+        {
+          provide: TRADE_REPO,
+          useValue: { find: jest.fn().mockResolvedValue([]), createQueryBuilder: jest.fn() },
+        },
+        {
+          provide: ORDER_REPO,
+          useValue: { find: jest.fn().mockResolvedValue([]), createQueryBuilder: jest.fn() },
+        },
+        {
+          provide: ACCOUNT_REPO,
+          useValue: { findOne: jest.fn().mockResolvedValue(null), createQueryBuilder: jest.fn() },
+        },
+        {
+          provide: BrokerService,
+          useValue: {
+            applyProviderAccountSnapshot: jest.fn(),
+            findConnectionsByIds: jest.fn().mockResolvedValue([]),
+          },
+        },
+        {
+          provide: BrokerAdapterRegistry,
+          useValue: { getAdapter: jest.fn().mockReturnValue(adapter) },
+        },
+        { provide: CredentialEncryptionService, useValue: encryptionService },
+        { provide: ReconciliationPersistenceService, useValue: persistence },
+        {
+          provide: ReconciliationResolutionService,
+          useValue: {
+            closeTradeFromProvider: jest.fn(),
+            recoverTradeToOpen: jest.fn(),
+            resolveOrderFromProviderState: jest.fn(),
+          },
+        },
+        { provide: OrderService, useValue: {} },
+        { provide: AuditService, useValue: auditService },
+        { provide: DomainEventBus, useValue: { publish: jest.fn() } },
+      ],
+    }).compile();
+    service = module.get(StateReconciliationService);
+  });
+
+  it.each(['INVALID', 'EXPIRED', 'REVOKED', undefined])(
+    'A3: unusable credential lifecycle (%s) fails the run closed — adapter NEVER contacted',
+    async (credentialStatus) => {
+      const conn = { ...connection(), credentialStatus } as unknown as BrokerConnection;
+
+      await service.runForConnection(conn);
+
+      expect(adapter.connect).not.toHaveBeenCalled();
+      expect(adapter.listOrders).not.toHaveBeenCalled();
+      expect(encryptionService.decrypt).not.toHaveBeenCalled();
+      // The run is recorded FAILED with the honest reason (never fabricated)
+      expect(persistence.failRun).toHaveBeenCalledWith(
+        'run-1',
+        expect.stringContaining('credential lifecycle state'),
+      );
+      expect(auditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'RECONCILIATION_RUN_FAILED' }),
+      );
+    },
+  );
+
+  it('usable credential lifecycle proceeds to the provider read', async () => {
+    await service.runForConnection(connection());
+    expect(adapter.connect).toHaveBeenCalled();
+  });
+});
 
 describe('StateReconciliationService', () => {
   let service: StateReconciliationService;
