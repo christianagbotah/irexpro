@@ -33,15 +33,12 @@ import { RealtimeService } from './realtime.service';
  *   - Users can only join their own rooms (enforced by extracting userId from JWT)
  *   - No broker secrets, tokens, or stack traces are ever emitted
  *   - Payloads are type-checked via RealtimeService methods
+ *   - Browser-origin policy is owned centrally by RealtimeIoAdapter at bootstrap
  *
  * See: docs/architecture/06-realtime-event-layer.md
  */
 @WebSocketGateway({
   namespace: '/realtime',
-  cors: {
-    origin: '*',
-    credentials: true,
-  },
   transports: ['websocket', 'polling'],
 })
 export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
