@@ -99,6 +99,9 @@ jobs:
       - name: Validate EAS release configuration
         run: pnpm --filter @irexpro/mobile validate:release-config
 
+      - name: Validate Expo SDK dependency alignment
+        run: pnpm --filter @irexpro/mobile exec expo install --check
+
       - name: Typecheck mobile app against shared workspace contracts
         run: pnpm --filter @irexpro/mobile typecheck
 
