@@ -1,7 +1,10 @@
 /**
  * LiveAccountScreen logic tests (Directive §J — §36 banner + §38 alerts).
  */
-import type { LiveAccountOverviewView } from "@irexpro/types";
+import type {
+  LiveAccountEnvironment,
+  LiveAccountOverviewView,
+} from "@irexpro/types";
 import {
   alertSeverityColor,
   environmentBanner,
@@ -11,19 +14,30 @@ import {
 } from "../live-account-screen.logic";
 
 describe("environmentBanner (§36 — distinct, never ambiguous)", () => {
-  it("gives PAPER, DEMO and LIVE distinct color triples", () => {
+  it("gives PAPER, DEMO, LIVE and UNKNOWN distinct color triples", () => {
     const paper = environmentBanner("PAPER");
     const demo = environmentBanner("DEMO");
     const live = environmentBanner("LIVE");
+    const unknown = environmentBanner("UNKNOWN");
     expect(paper.borderColor).not.toBe(demo.borderColor);
     expect(demo.borderColor).not.toBe(live.borderColor);
     expect(live.label).toBe("LIVE TRADING");
     expect(live.textColor).not.toBe(paper.textColor);
+    // UNKNOWN is its own cautionary treatment — never PAPER's teal triple.
+    expect(unknown.label).toBe("UNKNOWN");
+    expect(unknown.borderColor).not.toBe(paper.borderColor);
+    expect(unknown.backgroundColor).not.toBe(paper.backgroundColor);
+    expect(unknown.textColor).not.toBe(paper.textColor);
   });
 
-  it("falls back to PAPER styling for unknown values (fail-closed)", () => {
-    const banner = environmentBanner("PAPER");
-    expect(banner.label).toBe("PAPER");
+  it("falls back to UNKNOWN styling for unrecognized runtime values (never PAPER)", () => {
+    // Runtime values from a contract-violating payload bypass the TS union —
+    // the fallback must be the UNKNOWN banner, never a silent PAPER claim
+    // (Phase F fail-closed provenance).
+    const banner = environmentBanner("MYSTERY" as LiveAccountEnvironment);
+    expect(banner.label).toBe("UNKNOWN");
+    expect(banner.borderColor).toBe("#92400e");
+    expect(banner.backgroundColor).not.toBe("#ccfbf1");
   });
 });
 

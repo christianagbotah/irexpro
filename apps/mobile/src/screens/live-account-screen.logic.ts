@@ -39,13 +39,28 @@ const BANNERS: Record<LiveAccountEnvironment, EnvironmentBannerStyle> = {
     backgroundColor: "#ffe4e6",
     textColor: "#881337",
   },
+  /**
+   * UNKNOWN (Phase F) — environment provenance could not be established.
+   * Cautionary deep-amber/orange treatment, visually distinct from PAPER's
+   * teal: an unproven environment is NEVER styled as the safe paper mode.
+   */
+  UNKNOWN: {
+    label: "UNKNOWN",
+    borderColor: "#92400e",
+    backgroundColor: "#ffedd5",
+    textColor: "#7c2d12",
+  },
 };
 
-/** §36 — visually distinct, never-ambiguous environment banner class. */
+/**
+ * §36 — visually distinct, never-ambiguous environment banner class.
+ * Unrecognized RUNTIME values (contract violation) fall back to the UNKNOWN
+ * banner — never to PAPER styling (fail-closed, Phase F).
+ */
 export function environmentBanner(
   environment: LiveAccountEnvironment,
 ): EnvironmentBannerStyle {
-  return BANNERS[environment] ?? BANNERS.PAPER;
+  return BANNERS[environment] ?? BANNERS.UNKNOWN;
 }
 
 const SEVERITY_ORDER: Record<LiveAccountAlertSeverity, number> = {
