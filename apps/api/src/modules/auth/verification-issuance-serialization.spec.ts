@@ -147,8 +147,7 @@ describe('VerificationService issuance serialization', () => {
       expect(harness.txTokenRepo.update).toHaveBeenCalledWith(
         expect.objectContaining({
           userId: harness.user.id,
-          channel:
-            channel === 'email' ? VerificationChannel.EMAIL : VerificationChannel.PHONE,
+          channel: channel === 'email' ? VerificationChannel.EMAIL : VerificationChannel.PHONE,
         }),
         { usedAt: expect.any(Date) },
       );
