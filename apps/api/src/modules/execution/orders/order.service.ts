@@ -245,7 +245,7 @@ export class OrderService {
       throw new ConflictException(`Order ${orderId} is not fillable (status: ${current.status})`);
     }
 
-    const rows = await this.dataSource.query(
+    const result = await this.dataSource.query(
       `UPDATE trading.orders
        SET
          filled_quantity = filled_quantity + $2::numeric,
@@ -270,6 +270,14 @@ export class OrderService {
        RETURNING *`,
       [orderId, fill.quantity, fill.price, fill.providerOrderId ?? null, current.status],
     );
+
+    // TypeORM's Postgres driver returns [rows, rowCount] for UPDATE queries
+    // (even with RETURNING *) — unwrap the nested rows array before use.
+    // INSERT/SELECT queries return the flat rows array directly.
+    const rows: Record<string, unknown>[] =
+      Array.isArray(result) && Array.isArray(result[0])
+        ? (result[0] as Record<string, unknown>[])
+        : (result as unknown as Record<string, unknown>[]);
 
     if (rows.length === 0) {
       // Either a concurrent state change or an overfill — both fail closed.
