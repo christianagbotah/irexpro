@@ -102,10 +102,7 @@ describe('AuthController — refresh token validation (hotfix)', () => {
     return jwtService.sign(payload, { expiresIn: '7d' });
   }
 
-  function mockRequest(
-    cookies: Record<string, string> = {},
-    origin?: string,
-  ): Request {
+  function mockRequest(cookies: Record<string, string> = {}, origin?: string): Request {
     return {
       cookies,
       headers: origin ? { origin } : {},
