@@ -355,10 +355,10 @@ export class VerificationService {
     }
   }
 
-  private normalizeRequestContext(context: {
+  private normalizeRequestContext(context: { ipAddress?: string; userAgent?: string }): {
     ipAddress?: string;
     userAgent?: string;
-  }): { ipAddress?: string; userAgent?: string } {
+  } {
     return {
       ipAddress: context.ipAddress,
       userAgent: context.userAgent?.slice(0, VerificationService.MAX_REQUEST_USER_AGENT_LENGTH),
