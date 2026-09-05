@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   Headers,
   HttpCode,
   HttpStatus,
@@ -59,6 +60,8 @@ export class AccountGovernanceController {
   @UseGuards(RolesGuard)
   @Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN)
   @ApiBearerAuth('access-token')
+  @Header('Cache-Control', 'no-store')
+  @Header('Pragma', 'no-cache')
   @ApiOperation({ summary: '[Admin] List account-access appeals' })
   async listAppeals(
     @Query('status', new ParseEnumPipe(AccountAppealStatus, { optional: true }))
@@ -71,6 +74,8 @@ export class AccountGovernanceController {
   @UseGuards(RolesGuard)
   @Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN)
   @ApiBearerAuth('access-token')
+  @Header('Cache-Control', 'no-store')
+  @Header('Pragma', 'no-cache')
   @ApiOperation({ summary: '[Admin] Resolve an account-access appeal' })
   async resolveAppeal(
     @Param('id') appealId: string,
@@ -84,6 +89,8 @@ export class AccountGovernanceController {
   @UseGuards(RolesGuard)
   @Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN)
   @ApiBearerAuth('access-token')
+  @Header('Cache-Control', 'no-store')
+  @Header('Pragma', 'no-cache')
   @ApiOperation({ summary: '[Admin] Deactivate, permanently lock, or soft-delete an account' })
   async updateAccountStatus(
     @Param('id') userId: string,
