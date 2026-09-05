@@ -1,5 +1,5 @@
-import type { ApiClient } from '@irexpro/api-client';
-import { createApiClient } from '@irexpro/api-client';
+import type { ApiClient } from "@irexpro/api-client";
+import { createApiClient } from "@irexpro/api-client";
 
 /**
  * Shared API client for the mobile app.
@@ -15,7 +15,7 @@ const baseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
 
 if (!baseUrl) {
   throw new Error(
-    'EXPO_PUBLIC_API_BASE_URL is not set. Copy apps/mobile/.env.example to .env.',
+    "EXPO_PUBLIC_API_BASE_URL is not set. Copy apps/mobile/.env.example to .env.",
   );
 }
 
@@ -23,6 +23,16 @@ let cachedAccessToken: string | null = null;
 
 export function setAccessToken(token: string | null): void {
   cachedAccessToken = token;
+}
+
+/**
+ * Read the current in-memory access token (Sprint 51 PR-8). Used by the
+ * realtime context for the Socket.IO auth handshake — the token is ONLY
+ * ever held in memory here (persistent storage remains Expo SecureStore,
+ * owned by auth-context).
+ */
+export function getAccessTokenValue(): string | null {
+  return cachedAccessToken;
 }
 
 export const api: ApiClient = createApiClient({
