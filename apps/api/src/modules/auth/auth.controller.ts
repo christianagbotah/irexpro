@@ -169,10 +169,7 @@ export class AuthController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @Throttle({ default: { ttl: 60 * 1000, limit: 30 } })
   @ApiOperation({ summary: 'Idempotently clear the browser HttpOnly refresh cookie' })
-  clearBrowserSession(
-    @Req() req: Request,
-    @Res({ passthrough: true }) res: Response,
-  ): void {
+  clearBrowserSession(@Req() req: Request, @Res({ passthrough: true }) res: Response): void {
     this.authCookieService.assertTrustedBrowserRequest(req);
     this.authCookieService.clearRefreshCookie(res);
   }
