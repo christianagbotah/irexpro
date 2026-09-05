@@ -14,7 +14,9 @@ import {
  *
  * STATUS HONESTY (Directive §AB): every entry's status MUST match actual
  * implementation evidence in this repository:
- * - metatrader5  → SUPPORTED (full IBrokerAdapter via MetaApi, tested)
+ * - metatrader5  → SUPPORTED (full IBrokerAdapter via MetaApi, tested;
+ *   production-LIVE VERIFIED — live-proven in production via the MetaApi
+ *   bridge)
  * - paper-broker → SUPPORTED (deterministic simulation adapter, tested; cannot go LIVE)
  * - OANDA        → BETA (Sprint 51 PR-7: full v20 REST adapter implemented +
  *   shared §AN contract suite + unit specs; NOT yet live-verified against a
@@ -24,6 +26,13 @@ import {
  * - Pepperstone / IC Markets / FP Markets via cTrader → PARTNER_APPROVAL_REQUIRED
  *   (requires operator research + partner approval before any build — see
  *   docs/brokers/provider-matrix.md)
+ *
+ * PRODUCTION-LIVE VERIFICATION (architect Phase H): `status` describes
+ * implementation evidence only — it is NOT production-LIVE approval. The
+ * separate `productionLiveVerification` field records operator-attested
+ * LIVE evidence; absent/UNVERIFIED fails closed (LIVE connections and
+ * enable-live are rejected — BETA is DEMO-only). Only metatrader5 carries
+ * VERIFIED evidence today.
  */
 
 export const BROKER_CATALOG: readonly BrokerDefinition[] = [
@@ -35,6 +44,15 @@ export const BROKER_CATALOG: readonly BrokerDefinition[] = [
       'position, margin and history support with per-account RPC pooling.',
     adapterId: 'metatrader5',
     status: BrokerAvailabilityStatus.SUPPORTED,
+    // Production-LIVE verified: MetaTrader via MetaApi is the live-proven
+    // production route (docs/brokers/provider-matrix.md). No single
+    // attestation date exists in the repo history, so verifiedAt is null —
+    // evidenceRef describes the production-operation evidence instead.
+    productionLiveVerification: {
+      status: 'VERIFIED',
+      verifiedAt: null,
+      evidenceRef: 'production operation — MetaApi bridge, live in production',
+    },
     connectionRoutes: [BrokerConnectionRoute.METATRADER],
     capabilities: [
       BrokerCapability.ACCOUNT_READ,
@@ -97,6 +115,12 @@ export const BROKER_CATALOG: readonly BrokerDefinition[] = [
       'streaming (SSE price streams) is not implemented — REST polling only.',
     adapterId: 'oanda',
     status: BrokerAvailabilityStatus.BETA,
+    // Phase H: adapter implemented + contract-tested, but production-LIVE is
+    // UNVERIFIED — no operator-attested practice-account validation records
+    // exist yet. LIVE fails closed (isProductionLiveEligible === false);
+    // required evidence is documented in docs/brokers/oanda-v20-adapter.md
+    // ("Requirements before SUPPORTED").
+    productionLiveVerification: { status: 'UNVERIFIED' },
     connectionRoutes: [BrokerConnectionRoute.NATIVE_API],
     capabilities: [
       BrokerCapability.ACCOUNT_READ,
