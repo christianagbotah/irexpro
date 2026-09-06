@@ -32,7 +32,7 @@ env:
 jobs:
   real-postgres-concurrency:
     name: Real PostgreSQL 16 Execution Concurrency
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
 
     services:

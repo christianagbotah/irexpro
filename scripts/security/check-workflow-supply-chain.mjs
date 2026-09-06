@@ -4,6 +4,7 @@ import { join } from 'node:path';
 const WORKFLOW_DIRECTORY = '.github/workflows';
 const FULL_COMMIT_SHA = /^[0-9a-f]{40}$/i;
 const ALLOWED_WRITE_PERMISSIONS = new Set(['security-events']);
+const FLOATING_GITHUB_RUNNER = /^(?:ubuntu|windows|macos)-latest$/i;
 
 function stripMatchingQuotes(value) {
   if (
@@ -18,6 +19,12 @@ function stripMatchingQuotes(value) {
 
 function actionReferenceFromLine(line) {
   const match = line.match(/^\s*(?:-\s*)?uses:\s*([^\s#]+)(?:\s+#.*)?$/);
+  if (!match) return null;
+  return stripMatchingQuotes(match[1]);
+}
+
+function runnerLabelFromLine(line) {
+  const match = line.match(/^\s*runs-on:\s*([^\s#]+)(?:\s+#.*)?$/);
   if (!match) return null;
   return stripMatchingQuotes(match[1]);
 }
@@ -84,6 +91,13 @@ export function auditWorkflowText(workflowName, source) {
       );
     }
 
+    const runnerLabel = runnerLabelFromLine(line);
+    if (runnerLabel && FLOATING_GITHUB_RUNNER.test(runnerLabel)) {
+      failures.push(
+        `${workflowName}: floating GitHub-hosted runner label ${runnerLabel} is forbidden; pin an explicit runner image`,
+      );
+    }
+
     const reference = actionReferenceFromLine(line);
     if (!reference || isLocalReference(reference)) continue;
 
@@ -102,13 +116,22 @@ function assert(condition, message) {
 }
 
 function goodWorkflow(extra = '') {
-  return `name: Fixture\n\non:\n  pull_request:\n\npermissions:\n  contents: read\n${extra}\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09\n        with:\n          persist-credentials: false\n`;
+  return `name: Fixture\n\non:\n  pull_request:\n\npermissions:\n  contents: read\n${extra}\njobs:\n  test:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09\n        with:\n          persist-credentials: false\n`;
 }
 
 export function runSelfTests() {
   const clean = auditWorkflowText('clean.yml', goodWorkflow());
   assert(clean.failures.length === 0, `clean fixture failed: ${clean.failures}`);
   assert(clean.externalActionCount === 1, 'clean fixture should find one external action');
+
+  const floatingRunner = auditWorkflowText(
+    'floating-runner.yml',
+    goodWorkflow().replace('runs-on: ubuntu-24.04', 'runs-on: ubuntu-latest'),
+  );
+  assert(
+    floatingRunner.failures.some((failure) => failure.includes('floating GitHub-hosted runner')),
+    'floating GitHub-hosted runner labels must fail',
+  );
 
   const tagged = auditWorkflowText(
     'tagged.yml',
