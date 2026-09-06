@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from '@/context/auth-context';
 import AppErrorBoundary from '@/components/AppErrorBoundary';
 import LoginScreen from './src/screens/LoginScreen';
@@ -29,11 +30,13 @@ type Tab = 'dashboard' | 'account' | 'payments';
 
 export default function App() {
   return (
-    <AppErrorBoundary>
-      <AuthProvider>
-        <AppShell />
-      </AuthProvider>
-    </AppErrorBoundary>
+    <SafeAreaProvider>
+      <AppErrorBoundary>
+        <AuthProvider>
+          <AppShell />
+        </AuthProvider>
+      </AppErrorBoundary>
+    </SafeAreaProvider>
   );
 }
 
@@ -44,17 +47,17 @@ function AppShell() {
 
   if (loading && !user) {
     return (
-      <View style={styles.shell}>
+      <SafeAreaView style={styles.shell}>
         <View style={styles.loading} accessibilityLiveRegion="polite">
           <Text style={styles.loadingText}>Restoring session…</Text>
         </View>
-      </View>
+      </SafeAreaView>
     );
   }
 
   if (!user) {
     return (
-      <View style={styles.shell}>
+      <SafeAreaView style={styles.shell}>
         {error ? (
           <View
             style={styles.restoreAlert}
@@ -77,18 +80,22 @@ function AppShell() {
         ) : (
           <LoginScreen onForgotPassword={() => setShowForgotPassword(true)} />
         )}
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
     <View style={styles.shell}>
-      <View style={styles.content}>
+      <SafeAreaView style={styles.content} edges={['top', 'left', 'right']}>
         {tab === 'dashboard' && <DashboardScreen />}
         {tab === 'account' && <AccountScreen />}
         {tab === 'payments' && <PaymentsScreen />}
-      </View>
-      <View style={styles.tabBar} accessibilityRole="tablist">
+      </SafeAreaView>
+      <SafeAreaView
+        style={styles.tabBar}
+        edges={['bottom', 'left', 'right']}
+        accessibilityRole="tablist"
+      >
         <TabButton
           label="Dashboard"
           active={tab === 'dashboard'}
@@ -104,7 +111,7 @@ function AppShell() {
           active={tab === 'account'}
           onPress={() => setTab('account')}
         />
-      </View>
+      </SafeAreaView>
     </View>
   );
 }
