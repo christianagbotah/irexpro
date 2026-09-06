@@ -1,19 +1,20 @@
 # iRexPro Mobile — Expo SDK Modernization Plan
 
-The mobile app currently uses Expo SDK 51. The current stable Expo line is SDK 57, so modernization must be incremental rather than a single multi-major dependency jump.
+The mobile app is now on Expo SDK 54. The current stable Expo line is SDK 57, so modernization remains incremental rather than a multi-major dependency jump.
 
 ## Governing rule
 
 Upgrade one Expo SDK at a time and require the complete exact-head mobile release gate after every step:
 
-1. SDK 51 → 52
-2. SDK 52 → 53
-3. SDK 53 → 54
-4. SDK 54 → 55
-5. SDK 55 → 56
-6. SDK 56 → 57
+1. SDK 51 → 52 — completed
+2. SDK 52 → 53 — completed
+3. SDK 53 → 54 — completed
+4. React Native New Architecture on SDK 54 — current checkpoint
+5. SDK 54 → 55
+6. SDK 55 → 56
+7. SDK 56 → 57
 
-Each SDK step must be a separate pull request. Do not stack the next SDK change until the preceding one is merged into `main` and its exact combined state is green.
+Each checkpoint must be a separate pull request. Do not stack the next SDK change until the preceding checkpoint is merged into `main` and its exact combined state is green.
 
 ## Required validation for every SDK step
 
@@ -24,50 +25,46 @@ From a clean frozen-lock install, every candidate must pass:
 - `pnpm --filter @irexpro/mobile typecheck`
 - Android Metro export
 - iOS Metro export
-- Release Security
+- Release Security and every other workflow selected by the exact-head path matrix
 - Required CI Gate
 
 When dependency versions change, regenerate `pnpm-lock.yaml` with pnpm rather than hand-editing resolved dependency graphs. Run Expo's dependency fixer for the target SDK, then review every package change before committing it.
 
-## First migration: SDK 51 → 52
+## New Architecture checkpoint on SDK 54
 
-SDK 52 is the only allowed next target from the current baseline.
+SDK 54 is the final Expo release that permits opting out of React Native New Architecture. The dedicated Sprint 53 checkpoint therefore enables New Architecture on SDK 54 before any SDK 55 dependency upgrade.
 
-Expected platform/runtime changes from the SDK 52 release notes include:
+Required proof for this checkpoint:
 
-- React Native 0.76 baseline
-- minimum supported iOS version 15.1
-- Android minimum SDK 24
-- Android compile SDK 35
+1. Do not change Expo, React Native, React, or lockfile versions merely to enable the architecture.
+2. Remove the explicit `newArchEnabled: false` opt-out from app configuration so SDK 54 uses its New Architecture default.
+3. Run `expo-doctor@latest` and review every compatibility result rather than assuming native-module support.
+4. Generate disposable Android and iOS native projects with Expo prebuild and verify that both resolve New Architecture as enabled.
+5. Preserve SecureStore session behavior, safe-area handling, accessibility, EAS identifiers/profiles, and production API configuration.
+6. Pass mobile TypeScript, Android export, iOS export, and all exact-head repository gates.
+7. Once accepted, release configuration must reject any attempt to restore the Legacy Architecture opt-out.
 
-These platform changes must be accepted explicitly in the SDK 52 PR and later proven by native/EAS build evidence after the authorized EAS project is linked.
+## SDK 54 monorepo resolution baseline
 
-### New Architecture isolation
+The Sprint 53 compatibility probe demonstrated that the old SDK-51-era Metro overrides and forced pnpm hoisting are no longer appropriate on SDK 54. With those legacy settings present, Expo Doctor reported a Metro-default mismatch and duplicate React/native-module resolution. The validated SDK 54 baseline therefore:
 
-Do **not** combine SDK 51 → 52 with intentional New Architecture adoption. The first SDK 52 candidate should keep the existing architecture behavior explicitly disabled where supported, so any dependency or runtime regression can be attributed to the SDK/React Native upgrade itself.
+- uses Expo's default `getDefaultConfig(__dirname)` Metro configuration without custom `watchFolders` or `resolver.nodeModulesPaths`
+- uses pnpm's isolated dependency layout by removing the workspace-level `nodeLinker: hoisted` override
+- keeps root/web/admin React and ReactDOM on 19.2.8 while mobile resolves its Expo-aligned React 19.1.0 independently
+- retains the existing lockfile because the isolated layout installs successfully from the frozen SDK 54 lock
 
-New Architecture adoption gets its own later checkpoint after the SDK 52 baseline is green.
+This combination passed Expo Doctor, Expo dependency alignment, mobile TypeScript, Android and iOS Metro exports, Web and Admin production builds, and disposable Android/iOS native generation before being committed.
 
-### SDK 52 checklist
+## Remaining SDK checkpoints
 
-1. Start from current `main` after all preceding mobile PRs are merged.
-2. Upgrade `expo` to the SDK 52 release line using pnpm.
-3. Run Expo dependency alignment/fix tooling for the installed SDK.
-4. Review and commit the generated `package.json` and `pnpm-lock.yaml` changes together.
-5. Review whether the SDK 51-specific pnpm hoisted linker remains necessary.
-6. Review the custom pre-SDK-52 Metro monorepo configuration; remove compatibility workarounds only when SDK 52 validation proves they are no longer needed.
-7. Keep New Architecture adoption isolated from this dependency step.
-8. Run Expo dependency alignment, release validation, TypeScript, Android export, and iOS export.
-9. Merge only after Release Security and Required CI Gate are green on the exact current head.
+After New Architecture is proven on SDK 54, continue in order: SDK 54 → 55, SDK 55 → 56, then SDK 56 → 57. Read each release's current migration notes before changing dependencies because minimum tooling and platform requirements can advance between releases.
 
-## Later SDK checkpoints
-
-For SDK 53 through 57, repeat the same pattern: read that SDK's release notes, update only one SDK line, align dependencies, review native/platform changes, pass the complete gate, merge, then start the next version.
-
-Do not remove compatibility workarounds merely because a newer SDK supports a cleaner default. Remove each workaround only in the PR where CI/build evidence proves the default replacement works in this monorepo.
+Do not remove compatibility workarounds merely because a newer SDK supports a cleaner default. Remove each workaround only in the checkpoint where CI/build evidence proves the default replacement works in this monorepo.
 
 ## EAS/native proof boundary
 
-Metro export proves JavaScript bundling and module resolution; it does not replace signed native-build evidence. Once an authorized operator links the app to its EAS project and configures platform credentials, preview native builds for both Android and iOS must be added to the release evidence before store release.
+Metro export proves JavaScript bundling and module resolution; it does not replace signed native-build evidence. Disposable `expo prebuild` output can prove generated architecture configuration, but store-grade native proof still requires authorized EAS project linkage and platform signing credentials.
+
+Once an authorized operator links the app to its EAS project and configures platform credentials, preview native builds for both Android and iOS must be added to the release evidence before store release.
 
 No Expo/EAS account tokens, Apple credentials, Android signing keys, or backend secrets belong in this repository.
