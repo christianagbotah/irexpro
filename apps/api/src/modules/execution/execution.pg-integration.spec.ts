@@ -189,16 +189,21 @@ describe('ExecutionService — real PostgreSQL advisory-lock concurrency', () =>
       listOrders: jest.fn(),
       getOrderById: jest.fn(),
     } as IBrokerAdapter;
+    // Sprint 50 correction round: the connection fixture carries the
+    // credential lifecycle state, and the (Phase D) orchestrator boundary
+    // re-loads the persisted connection — the mock answers both entry points
+    // with the same usable-state connection.
     const connection = {
       id: connectionId,
       brokerId: 'paper-broker',
       accountType: BrokerMode.DEMO,
       status: 'CONNECTED',
+      authorizationStatus: 'ACTIVE',
+      credentialStatus: 'VERIFIED',
       encryptedCredentials: 'ciphertext',
       credentialIv: 'iv',
       credentialTag: 'tag',
       encryptionKeyId: 'test-key',
-      authorizationStatus: 'ACTIVE',
     };
     const brokerService = {
       findActiveConnectionForUser: jest.fn().mockResolvedValue(connection),

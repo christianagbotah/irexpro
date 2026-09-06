@@ -109,12 +109,16 @@ jobs:
         run: >-
           pnpm --filter @irexpro/mobile exec expo export
           --platform android
-          --output-dir "$RUNNER_TEMP/irexpro-mobile-android"
+          --output-dir .ci-export-android
           --clear
 
       - name: Export iOS bundle with Metro
         run: >-
           pnpm --filter @irexpro/mobile exec expo export
           --platform ios
-          --output-dir "$RUNNER_TEMP/irexpro-mobile-ios"
+          --output-dir .ci-export-ios
           --clear
+
+      - name: Remove disposable Metro export directories
+        if: always()
+        run: rm -rf apps/mobile/.ci-export-android apps/mobile/.ci-export-ios

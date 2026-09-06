@@ -1,5 +1,5 @@
 import { ConflictException } from '@nestjs/common';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, FindOptionsWhere, IsNull, Repository } from 'typeorm';
 import { ExecutionControlService } from './execution-control.service';
 import {
   ExecutionControl,
@@ -113,10 +113,11 @@ describe('ExecutionControlService — real PostgreSQL lifecycle (architect A2)',
   const activeRows = async (
     scope: ExecutionControlScope,
     scopeKey: string | null,
-  ): Promise<ExecutionControl[]> =>
-    controlRepo.find({
-      where: { scope, ...(scopeKey === null ? { scopeKey: null } : { scopeKey }) },
-    });
+  ): Promise<ExecutionControl[]> => {
+    const where: FindOptionsWhere<ExecutionControl> = { scope };
+    where.scopeKey = scopeKey === null ? IsNull() : scopeKey;
+    return controlRepo.find({ where });
+  };
 
   it('activate → expire → re-activate at the same scope/key succeeds deterministically (A2)', async () => {
     const first = await service.activateControl(
