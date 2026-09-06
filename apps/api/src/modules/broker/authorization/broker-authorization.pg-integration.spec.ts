@@ -1,17 +1,17 @@
 import { ConflictException } from '@nestjs/common';
 import { DataSource, Repository } from 'typeorm';
-import { BrokerService } from '../../broker.service';
-import { BrokerConnection } from '../../entities/broker-connection.entity';
-import { BrokerAdapterRegistry } from '../../adapters/broker-adapter.registry';
-import { BrokerProviderRegistryService } from '../../registry/broker-provider-registry.service';
-import { CredentialEncryptionService } from '../../services/credential-encryption.service';
-import { AuditService } from '../../../audit/audit.service';
-import { DomainEventBus } from '../../../events/event-bus.service';
+import { BrokerService } from '../broker.service';
+import { BrokerConnection } from '../entities/broker-connection.entity';
+import { BrokerAdapterRegistry } from '../adapters/broker-adapter.registry';
+import { BrokerProviderRegistryService } from '../registry/broker-provider-registry.service';
+import { CredentialEncryptionService } from '../services/credential-encryption.service';
+import { AuditService } from '../../audit/audit.service';
+import { DomainEventBus } from '../../events/event-bus.service';
 import {
   BrokerAuthorizationStatus,
   BrokerAuthorizationStateMachine,
 } from './broker-authorization-status';
-import { BrokerConnectionStatus, BrokerMode } from '../../interfaces/broker-adapter.interface';
+import { BrokerConnectionStatus, BrokerMode } from '../interfaces/broker-adapter.interface';
 
 /**
  * Sprint 50 correction (architect review A4) — atomic authorization
