@@ -42,6 +42,28 @@ export interface TradeEventPayload {
   idempotencyKey?: string;
 }
 
+/**
+ * Sprint 50 PR-3 — normalized order lifecycle event (safe fields only).
+ * Mirrors the frontend-safe OrderView projection: decimal strings, no
+ * idempotency keys, no broker connection internals.
+ */
+export interface OrderEventPayload {
+  orderId: string;
+  userId: string;
+  clientOrderId: string;
+  tradeId?: string | null;
+  signalId?: string | null;
+  instrument: string;
+  direction: string;
+  orderKind: string;
+  status: string;
+  requestedQuantity: string;
+  filledQuantity?: string;
+  avgFillPrice?: string;
+  providerOrderId?: string | null;
+  reason?: string;
+}
+
 export interface RiskDecisionEventPayload {
   userId: string;
   sessionId?: string;
@@ -58,6 +80,23 @@ export interface BrokerStatusEventPayload {
   connectionId: string;
   status: string;
   previousStatus?: string;
+  reason?: string;
+}
+
+/** Sprint 50 — authorization state machine transition (safe fields only). */
+export interface BrokerAuthorizationEventPayload {
+  userId: string;
+  connectionId: string;
+  brokerId?: string;
+  status: string;
+  previousStatus?: string;
+}
+
+/** Sprint 50 — emergency control plane change (safe fields only). */
+export interface ExecutionControlEventPayload {
+  scope: string;
+  scopeKey?: string | null;
+  action: 'activated' | 'deactivated';
   reason?: string;
 }
 
