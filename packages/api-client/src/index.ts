@@ -4,6 +4,7 @@ import {
   AuthTokens,
   AuthUser,
   BrokerConnectionView,
+  BrokerRegistryCatalog,
   BrokerTestResult,
   CreateBrokerConnectionRequest,
   ForgotPasswordRequest,
@@ -31,7 +32,7 @@ import {
   SupportedBroker,
   UpdateMyProfileRequest,
   UpdateRiskProfileRequest,
-} from '@irexpro/types';
+} from "@irexpro/types";
 
 /**
  * Options for the shared API client.
@@ -104,16 +105,23 @@ export interface ApiClient {
 
   // ── Sprint 43: Account governance ───────────────────────────────────────
   /** Public, generic-response account-access appeal request. */
-  submitAccountAppeal(body: SubmitAccountAppealRequest): Promise<SubmitAccountAppealResponse>;
+  submitAccountAppeal(
+    body: SubmitAccountAppealRequest,
+  ): Promise<SubmitAccountAppealResponse>;
   /** Admin-only appeal queue. */
-  listAccountAppeals(status?: AccountAppealStatus): Promise<AccountAppealAdminView[]>;
+  listAccountAppeals(
+    status?: AccountAppealStatus,
+  ): Promise<AccountAppealAdminView[]>;
   /** Admin-only review decision. */
   resolveAccountAppeal(
     appealId: string,
     body: ResolveAccountAppealRequest,
   ): Promise<AccountAppealAdminView>;
   /** Admin-only account-access action. */
-  updateAccountStatus(userId: string, body: UpdateAccountStatusRequest): Promise<AdminAccountStatusView>;
+  updateAccountStatus(
+    userId: string,
+    body: UpdateAccountStatusRequest,
+  ): Promise<AdminAccountStatusView>;
 
   // ── Sprint 29: Users / onboarding / risk / broker ─────────────────────────
   /** GET /users/me → current user profile (full entity with profile relation). */
@@ -128,12 +136,23 @@ export interface ApiClient {
   updateRiskProfile(body: UpdateRiskProfileRequest): Promise<RiskProfile>;
   /** GET /broker/connections/supported → list of supported brokers. */
   listSupportedBrokers(): Promise<SupportedBroker[]>;
+  /**
+   * GET /broker/registry → server-authoritative broker catalog (Directive
+   * §AU). The server returns the CATALOG WRAPPER
+   * `{ catalogVersion, brokers: BrokerRegistryEntry[] }` — consumers must
+   * read `.brokers`, never map the wrapper itself (Phase I1 shape fix).
+   */
+  getBrokerRegistry(): Promise<BrokerRegistryCatalog>;
   /** GET /broker/connections → user's broker connections (no credentials). */
   listBrokerConnections(): Promise<BrokerConnectionView[]>;
   /** POST /broker/connections → create a new broker connection (encrypts credentials). */
-  createBrokerConnection(body: CreateBrokerConnectionRequest): Promise<BrokerConnectionView>;
+  createBrokerConnection(
+    body: CreateBrokerConnectionRequest,
+  ): Promise<BrokerConnectionView>;
   /** POST /broker/connections/test → test credentials without saving (returns success/error). */
-  testBrokerCredentials(body: CreateBrokerConnectionRequest): Promise<BrokerTestResult>;
+  testBrokerCredentials(
+    body: CreateBrokerConnectionRequest,
+  ): Promise<BrokerTestResult>;
   /** POST /broker/connections/:id/connect → connect (set status to CONNECTED). */
   connectBroker(connectionId: string): Promise<BrokerConnectionView>;
   /** POST /broker/connections/:id/disconnect → disconnect. */
@@ -155,7 +174,7 @@ export class ApiClientError extends Error {
     public readonly raw?: unknown,
   ) {
     super(message);
-    this.name = 'ApiClientError';
+    this.name = "ApiClientError";
   }
 }
 
@@ -175,21 +194,21 @@ export function createApiClient(options: CreateApiClientOptions): ApiClient {
 
   if (!baseUrl) {
     throw new Error(
-      'ApiClient: baseUrl is required. Pass the API base URL from your app env config.',
+      "ApiClient: baseUrl is required. Pass the API base URL from your app env config.",
     );
   }
 
   async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const url = `${baseUrl}${path}`;
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
+      "Content-Type": "application/json",
+      Accept: "application/json",
       ...((init?.headers as Record<string, string>) ?? {}),
     };
 
     const token = getAccessToken?.();
-    if (token && !headers['Authorization']) {
-      headers['Authorization'] = `Bearer ${token}`;
+    if (token && !headers["Authorization"]) {
+      headers["Authorization"] = `Bearer ${token}`;
     }
 
     let res: Response;
@@ -197,7 +216,7 @@ export function createApiClient(options: CreateApiClientOptions): ApiClient {
       res = await fetch(url, {
         ...init,
         headers,
-        credentials: includeCredentials ? 'include' : 'same-origin',
+        credentials: includeCredentials ? "include" : "same-origin",
       });
     } catch (err) {
       throw new ApiClientError(
@@ -229,23 +248,23 @@ export function createApiClient(options: CreateApiClientOptions): ApiClient {
   return {
     baseUrl,
 
-    health: () => request<HealthResponse>('/health'),
+    health: () => request<HealthResponse>("/health"),
 
     register: (body) =>
-      request<AuthTokens>('/auth/register', {
-        method: 'POST',
+      request<AuthTokens>("/auth/register", {
+        method: "POST",
         body: JSON.stringify(body),
       }),
 
     login: (body) =>
-      request<AuthTokens>('/auth/login', {
-        method: 'POST',
+      request<AuthTokens>("/auth/login", {
+        method: "POST",
         body: JSON.stringify(body),
       }),
 
     refresh: (refreshToken?: string) =>
-      request<AuthTokens>('/auth/refresh', {
-        method: 'POST',
+      request<AuthTokens>("/auth/refresh", {
+        method: "POST",
         // Sprint 25: if refreshToken is provided (mobile), send it in the body.
         // If omitted (web/admin), send '{}' as the body — the httpOnly cookie
         // is sent automatically via credentials:'include' set in request().
@@ -260,131 +279,149 @@ export function createApiClient(options: CreateApiClientOptions): ApiClient {
           : JSON.stringify({}),
       }),
 
-    logout: () =>
-      request<LogoutResponse>('/auth/logout', { method: 'POST' }),
+    logout: () => request<LogoutResponse>("/auth/logout", { method: "POST" }),
 
-    me: () => request<AuthUser>('/auth/me'),
+    me: () => request<AuthUser>("/auth/me"),
 
     beginMfaSetup: () =>
-      request<MfaSetupResponse>('/auth/mfa/setup', { method: 'POST' }),
+      request<MfaSetupResponse>("/auth/mfa/setup", { method: "POST" }),
 
     enableMfa: (code) =>
-      request<AuthActionResponse>('/auth/mfa/enable', {
-        method: 'POST',
+      request<AuthActionResponse>("/auth/mfa/enable", {
+        method: "POST",
         body: JSON.stringify({ code }),
       }),
 
     disableMfa: (code, password) =>
-      request<AuthActionResponse>('/auth/mfa/disable', {
-        method: 'POST',
+      request<AuthActionResponse>("/auth/mfa/disable", {
+        method: "POST",
         body: JSON.stringify({ code, password }),
       }),
 
     requestEmailVerification: () =>
-      request<AuthActionResponse>('/auth/verification/email/request', { method: 'POST' }),
+      request<AuthActionResponse>("/auth/verification/email/request", {
+        method: "POST",
+      }),
 
     confirmEmailVerification: (token) =>
-      request<AuthActionResponse>('/auth/verification/email/confirm', {
-        method: 'POST',
+      request<AuthActionResponse>("/auth/verification/email/confirm", {
+        method: "POST",
         body: JSON.stringify({ token }),
       }),
 
     requestPhoneVerification: () =>
-      request<AuthActionResponse>('/auth/verification/phone/request', { method: 'POST' }),
+      request<AuthActionResponse>("/auth/verification/phone/request", {
+        method: "POST",
+      }),
 
     confirmPhoneVerification: (code) =>
-      request<AuthActionResponse>('/auth/verification/phone/confirm', {
-        method: 'POST',
+      request<AuthActionResponse>("/auth/verification/phone/confirm", {
+        method: "POST",
         body: JSON.stringify({ code }),
       }),
 
     // Sprint 28: password reset
     forgotPassword: (body) =>
-      request<ForgotPasswordResponse>('/auth/forgot-password', {
-        method: 'POST',
+      request<ForgotPasswordResponse>("/auth/forgot-password", {
+        method: "POST",
         body: JSON.stringify(body),
       }),
 
     resetPassword: (body) =>
-      request<ResetPasswordResponse>('/auth/reset-password', {
-        method: 'POST',
+      request<ResetPasswordResponse>("/auth/reset-password", {
+        method: "POST",
         body: JSON.stringify(body),
       }),
 
     // Sprint 43: account governance
     submitAccountAppeal: (body) =>
-      request<SubmitAccountAppealResponse>('/account-appeals', {
-        method: 'POST',
+      request<SubmitAccountAppealResponse>("/account-appeals", {
+        method: "POST",
         body: JSON.stringify(body),
       }),
 
     listAccountAppeals: (status?: AccountAppealStatus) =>
       request<AccountAppealAdminView[]>(
-        status ? `/admin/account-appeals?status=${encodeURIComponent(status)}` : '/admin/account-appeals',
+        status
+          ? `/admin/account-appeals?status=${encodeURIComponent(status)}`
+          : "/admin/account-appeals",
       ),
 
     resolveAccountAppeal: (appealId, body) =>
-      request<AccountAppealAdminView>(`/admin/account-appeals/${encodeURIComponent(appealId)}/resolve`, {
-        method: 'POST',
-        body: JSON.stringify(body),
-      }),
+      request<AccountAppealAdminView>(
+        `/admin/account-appeals/${encodeURIComponent(appealId)}/resolve`,
+        {
+          method: "POST",
+          body: JSON.stringify(body),
+        },
+      ),
 
     updateAccountStatus: (userId, body) =>
-      request<AdminAccountStatusView>(`/admin/users/${encodeURIComponent(userId)}/account-status`, {
-        method: 'PATCH',
-        body: JSON.stringify(body),
-      }),
+      request<AdminAccountStatusView>(
+        `/admin/users/${encodeURIComponent(userId)}/account-status`,
+        {
+          method: "PATCH",
+          body: JSON.stringify(body),
+        },
+      ),
 
     // Sprint 29: users / onboarding / risk / broker
-    getMyProfile: () => request<unknown>('/users/me'),
+    getMyProfile: () => request<unknown>("/users/me"),
 
     updateMyProfile: (body) =>
-      request<unknown>('/users/me', {
-        method: 'PATCH',
+      request<unknown>("/users/me", {
+        method: "PATCH",
         body: JSON.stringify(body),
       }),
 
     getOnboardingStatus: () =>
-      request<OnboardingStatus>('/users/me/onboarding-status'),
+      request<OnboardingStatus>("/users/me/onboarding-status"),
 
-    getRiskProfile: () => request<RiskProfile>('/risk/profile'),
+    getRiskProfile: () => request<RiskProfile>("/risk/profile"),
 
     updateRiskProfile: (body) =>
-      request<RiskProfile>('/risk/profile', {
-        method: 'PATCH',
+      request<RiskProfile>("/risk/profile", {
+        method: "PATCH",
         body: JSON.stringify(body),
       }),
 
     listSupportedBrokers: () =>
-      request<SupportedBroker[]>('/broker/connections/supported'),
+      request<SupportedBroker[]>("/broker/connections/supported"),
+
+    // Phase I1: typed as the catalog wrapper the server actually returns
+    // ({ catalogVersion, brokers }) — the entry array lives under `.brokers`.
+    getBrokerRegistry: () =>
+      request<BrokerRegistryCatalog>("/broker/registry"),
 
     listBrokerConnections: () =>
-      request<BrokerConnectionView[]>('/broker/connections'),
+      request<BrokerConnectionView[]>("/broker/connections"),
 
     createBrokerConnection: (body) =>
-      request<BrokerConnectionView>('/broker/connections', {
-        method: 'POST',
+      request<BrokerConnectionView>("/broker/connections", {
+        method: "POST",
         body: JSON.stringify(body),
       }),
 
     testBrokerCredentials: (body) =>
-      request<BrokerTestResult>('/broker/connections/test', {
-        method: 'POST',
+      request<BrokerTestResult>("/broker/connections/test", {
+        method: "POST",
         body: JSON.stringify(body),
       }),
 
     connectBroker: (connectionId) =>
-      request<BrokerConnectionView>(`/broker/connections/${connectionId}/connect`, {
-        method: 'POST',
-      }),
+      request<BrokerConnectionView>(
+        `/broker/connections/${connectionId}/connect`,
+        {
+          method: "POST",
+        },
+      ),
 
     disconnectBroker: (connectionId) =>
       request<void>(`/broker/connections/${connectionId}/disconnect`, {
-        method: 'POST',
+        method: "POST",
       }),
 
-    listProviders: () =>
-      request<PaymentProviderInfo[]>('/payments/providers'),
+    listProviders: () => request<PaymentProviderInfo[]>("/payments/providers"),
 
     getInvoice: (invoiceId) =>
       request<Invoice>(`/payments/invoices/${invoiceId}`),
@@ -397,3 +434,8 @@ export function createApiClient(options: CreateApiClientOptions): ApiClient {
     request,
   };
 }
+// ─── Sprint 51 PR-8: live-account client re-export ──────────────────────────
+// Re-exported from the main entry so Metro (which does not resolve package
+// `exports` subpaths) can import it from '@irexpro/api-client' directly.
+export { createLiveAccountApi } from "./live-account";
+export type { LiveAccountApi } from "./live-account";

@@ -1,13 +1,16 @@
-import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
-import { AuthProvider, useAuth } from '@/context/auth-context';
-import AppErrorBoundary from '@/components/AppErrorBoundary';
-import LoginScreen from './src/screens/LoginScreen';
-import ForgotPasswordScreen from './src/screens/ForgotPasswordScreen';
-import DashboardScreen from './src/screens/DashboardScreen';
-import AccountScreen from './src/screens/AccountScreen';
-import PaymentsScreen from './src/screens/PaymentsScreen';
+import { useState } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+import { AuthProvider, useAuth } from "@/context/auth-context";
+import { RealtimeProvider } from "@/context/realtime-context";
+import AppErrorBoundary from "@/components/AppErrorBoundary";
+import LoginScreen from "./src/screens/LoginScreen";
+import ForgotPasswordScreen from "./src/screens/ForgotPasswordScreen";
+import DashboardScreen from "./src/screens/DashboardScreen";
+import AccountScreen from "./src/screens/AccountScreen";
+import PaymentsScreen from "./src/screens/PaymentsScreen";
+import BrokerScreen from "./src/screens/BrokerScreen";
+import LiveAccountScreen from "./src/screens/LiveAccountScreen";
 
 /**
  * iRexPro mobile app entry (Expo + React Native + TypeScript).
@@ -24,9 +27,19 @@ import PaymentsScreen from './src/screens/PaymentsScreen';
  *
  * Tokens are never stored in AsyncStorage. The app talks only to the public API
  * (EXPO_PUBLIC_API_BASE_URL), never directly to the internal AI engine.
+ *
+ * Sprint 51 PR-8: the authenticated shell mounts RealtimeProvider (the
+ * /realtime socket only lives while signed in) and adds the Brokers + Live
+ * Account tabs alongside the existing tabs.
+ *
+ * Architect Phase I3 (structural teardown guarantee): RealtimeProvider is
+ * mounted ONLY in the authenticated branch below — when the user becomes
+ * null (logout, revoked session), React unmounts the provider and its
+ * effect cleanup disconnects the socket, so no realtime channel ever
+ * outlives the authenticated session.
  */
 
-type Tab = 'dashboard' | 'account' | 'payments';
+type Tab = "dashboard" | "brokers" | "live" | "account" | "payments";
 
 export default function App() {
   return (
@@ -42,7 +55,7 @@ export default function App() {
 
 function AppShell() {
   const { user, loading, error, restoreSession } = useAuth();
-  const [tab, setTab] = useState<Tab>('dashboard');
+  const [tab, setTab] = useState<Tab>("dashboard");
   const [showForgotPassword, setShowForgotPassword] = useState(false);
 
   if (loading && !user) {
@@ -85,34 +98,48 @@ function AppShell() {
   }
 
   return (
-    <View style={styles.shell}>
-      <SafeAreaView style={styles.content} edges={['top', 'left', 'right']}>
-        {tab === 'dashboard' && <DashboardScreen />}
-        {tab === 'account' && <AccountScreen />}
-        {tab === 'payments' && <PaymentsScreen />}
-      </SafeAreaView>
-      <SafeAreaView
-        style={styles.tabBar}
-        edges={['bottom', 'left', 'right']}
-        accessibilityRole="tablist"
-      >
-        <TabButton
-          label="Dashboard"
-          active={tab === 'dashboard'}
-          onPress={() => setTab('dashboard')}
-        />
-        <TabButton
-          label="Payments"
-          active={tab === 'payments'}
-          onPress={() => setTab('payments')}
-        />
-        <TabButton
-          label="Account"
-          active={tab === 'account'}
-          onPress={() => setTab('account')}
-        />
-      </SafeAreaView>
-    </View>
+    <RealtimeProvider>
+      <View style={styles.shell}>
+        <SafeAreaView style={styles.content} edges={["top", "left", "right"]}>
+          {tab === "dashboard" && <DashboardScreen />}
+          {tab === "brokers" && <BrokerScreen />}
+          {tab === "live" && <LiveAccountScreen />}
+          {tab === "account" && <AccountScreen />}
+          {tab === "payments" && <PaymentsScreen />}
+        </SafeAreaView>
+        <SafeAreaView
+          style={styles.tabBar}
+          edges={["bottom", "left", "right"]}
+          accessibilityRole="tablist"
+        >
+          <TabButton
+            label="Dashboard"
+            active={tab === "dashboard"}
+            onPress={() => setTab("dashboard")}
+          />
+          <TabButton
+            label="Brokers"
+            active={tab === "brokers"}
+            onPress={() => setTab("brokers")}
+          />
+          <TabButton
+            label="Live"
+            active={tab === "live"}
+            onPress={() => setTab("live")}
+          />
+          <TabButton
+            label="Payments"
+            active={tab === "payments"}
+            onPress={() => setTab("payments")}
+          />
+          <TabButton
+            label="Account"
+            active={tab === "account"}
+            onPress={() => setTab("account")}
+          />
+        </SafeAreaView>
+      </View>
+    </RealtimeProvider>
   );
 }
 
@@ -133,36 +160,38 @@ function TabButton({
       onPress={onPress}
       style={[styles.tab, active && styles.tabActive]}
     >
-      <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{label}</Text>
+      <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>
+        {label}
+      </Text>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  shell: { flex: 1, backgroundColor: '#0b1020' },
+  shell: { flex: 1, backgroundColor: "#0b1020" },
   content: { flex: 1 },
-  loading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { color: '#9aa7c7', fontSize: 16 },
+  loading: { flex: 1, justifyContent: "center", alignItems: "center" },
+  loadingText: { color: "#9aa7c7", fontSize: 16 },
   restoreAlert: {
     marginTop: 48,
     marginHorizontal: 20,
     borderWidth: 1,
-    borderColor: '#7c2d12',
-    backgroundColor: '#2a1714',
+    borderColor: "#7c2d12",
+    backgroundColor: "#2a1714",
     borderRadius: 10,
     padding: 14,
   },
-  restoreAlertText: { color: '#fed7aa', fontSize: 13, lineHeight: 19 },
-  retryButton: { alignSelf: 'flex-start', marginTop: 10, paddingVertical: 4 },
-  retryButtonText: { color: '#2dd4bf', fontSize: 13, fontWeight: '700' },
+  restoreAlertText: { color: "#fed7aa", fontSize: 13, lineHeight: 19 },
+  retryButton: { alignSelf: "flex-start", marginTop: 10, paddingVertical: 4 },
+  retryButtonText: { color: "#2dd4bf", fontSize: 13, fontWeight: "700" },
   tabBar: {
-    flexDirection: 'row',
+    flexDirection: "row",
     borderTopWidth: 1,
-    borderTopColor: '#243049',
+    borderTopColor: "#243049",
     paddingBottom: 16,
   },
-  tab: { flex: 1, paddingVertical: 14, alignItems: 'center' },
-  tabActive: { borderTopWidth: 2, borderTopColor: '#14b8a6' },
-  tabLabel: { color: '#6b7494', fontSize: 13 },
-  tabLabelActive: { color: '#14b8a6', fontWeight: '700' },
+  tab: { flex: 1, paddingVertical: 14, alignItems: "center" },
+  tabActive: { borderTopWidth: 2, borderTopColor: "#14b8a6" },
+  tabLabel: { color: "#6b7494", fontSize: 13 },
+  tabLabelActive: { color: "#14b8a6", fontWeight: "700" },
 });

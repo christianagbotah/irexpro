@@ -11,7 +11,9 @@
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
     "validate:release-config": "node ./scripts/validate-release-config.cjs",
-    "release:preflight": "node ./scripts/validate-release-config.cjs --require-project-id"
+    "release:preflight": "node ./scripts/validate-release-config.cjs --require-project-id",
+    "test": "jest",
+    "test:watch": "jest --watch"
   },
   "dependencies": {
     "@irexpro/api-client": "workspace:*",
@@ -20,11 +22,15 @@
     "expo-secure-store": "~15.0.8",
     "react": "19.1.0",
     "react-native": "0.81.5",
-    "react-native-safe-area-context": "~5.6.2"
+    "react-native-safe-area-context": "~5.6.2",
+    "socket.io-client": "^4.8.1"
   },
   "devDependencies": {
     "@types/node": "20.14.10",
     "@types/react": "~19.1.17",
-    "typescript": "~5.9.3"
+    "typescript": "~5.9.3",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.5",
+    "@types/jest": "^29.5.14"
   }
 }
