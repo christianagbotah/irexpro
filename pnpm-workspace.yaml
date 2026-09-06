@@ -2,8 +2,3 @@ packages:
   - 'apps/*'
   - 'packages/*'
   - 'services/*'
-
-# Expo SDK 51 predates Metro support for pnpm's isolated dependency layout.
-# Use the hoisted linker so native/Metro resolution sees Expo and React Native
-# runtime dependencies consistently across this monorepo.
-nodeLinker: hoisted
