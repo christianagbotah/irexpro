@@ -15,16 +15,23 @@ function stripMatchingQuotes(value) {
   return value;
 }
 
+function normalizeYamlScalar(raw) {
+  // Image references cannot legitimately contain a whitespace-delimited YAML
+  // comment. Keep embedded whitespace (notably `${{ ... }}` expressions) so
+  // the policy can reject expressions rather than silently ignoring the line.
+  return stripMatchingQuotes(raw.replace(/\s+#.*$/, '').trim());
+}
+
 function imageReferenceFromLine(line) {
-  const serviceImage = line.match(/^\s*image:\s*([^\s#]+)(?:\s+#.*)?$/);
-  if (serviceImage) return stripMatchingQuotes(serviceImage[1]);
+  const serviceImage = line.match(/^\s*image:\s*(.+?)\s*$/);
+  if (serviceImage) return normalizeYamlScalar(serviceImage[1]);
 
   // Shell-driven helper containers must use an explicitly named env variable
   // so the immutable image reference remains visible to this policy check.
   const containerImageEnv = line.match(
-    /^\s*[A-Z][A-Z0-9_]*_CONTAINER_IMAGE:\s*([^\s#]+)(?:\s+#.*)?$/,
+    /^\s*[A-Z][A-Z0-9_]*_CONTAINER_IMAGE:\s*(.+?)\s*$/,
   );
-  if (containerImageEnv) return stripMatchingQuotes(containerImageEnv[1]);
+  if (containerImageEnv) return normalizeYamlScalar(containerImageEnv[1]);
 
   return null;
 }
@@ -71,6 +78,16 @@ export function runSelfTests() {
     `pinned service image should pass: ${pinnedService.failures}`,
   );
 
+  const pinnedServiceWithComment = auditWorkflowContainerDigests(
+    'pinned-service-comment.yml',
+    `services:\n  postgres:\n    image: postgres:16-bookworm@sha256:${digest} # Docker Official Image\n`,
+  );
+  assert(
+    pinnedServiceWithComment.failures.length === 0 &&
+      pinnedServiceWithComment.imageCount === 1,
+    `pinned service image with comment should pass: ${pinnedServiceWithComment.failures}`,
+  );
+
   const mutableService = auditWorkflowContainerDigests(
     'mutable-service.yml',
     'services:\n  postgres:\n    image: postgres:16-bookworm\n',
@@ -114,6 +131,15 @@ export function runSelfTests() {
   assert(
     expression.failures.some((failure) => failure.includes('expression-based')),
     'expression-based service image must fail',
+  );
+
+  const expressionWithComment = auditWorkflowContainerDigests(
+    'expression-comment.yml',
+    'services:\n  postgres:\n    image: ${{ env.POSTGRES_IMAGE }} # dynamic image\n',
+  );
+  assert(
+    expressionWithComment.failures.some((failure) => failure.includes('expression-based')),
+    'expression-based service image with comment must fail',
   );
 
   console.log('Workflow container-digest policy self-tests passed.');
