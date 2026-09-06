@@ -35,7 +35,7 @@ describe('BrokerService authorization transitions — real PostgreSQL concurrenc
   let dataSource: DataSource;
   let service: BrokerService;
   let connectionRepo: Repository<BrokerConnection>;
-  let adapter: { disconnect: jest.Mock; connect: jest.Mock };
+  let adapter: { setMode: jest.Mock; disconnect: jest.Mock; connect: jest.Mock };
 
   const USER = '11111111-1111-1111-1111-111111111111';
   const LIVE_CONN = '22222222-2222-2222-2222-222222222222';
@@ -146,7 +146,11 @@ describe('BrokerService authorization transitions — real PostgreSQL concurrenc
 
   beforeEach(async () => {
     await dataSource.query('TRUNCATE TABLE "broker"."broker_connections"');
-    adapter = { disconnect: jest.fn().mockResolvedValue(undefined), connect: jest.fn() };
+    adapter = {
+      setMode: jest.fn(),
+      disconnect: jest.fn().mockResolvedValue(undefined),
+      connect: jest.fn(),
+    };
     const adapterRegistry = {
       getAdapter: jest.fn().mockReturnValue(adapter),
       isSupported: jest.fn().mockReturnValue(true),
@@ -157,7 +161,9 @@ describe('BrokerService authorization transitions — real PostgreSQL concurrenc
       // Phase H: these fixtures are metatrader5 (the VERIFIED provider).
       isProductionLiveEligible: jest.fn().mockReturnValue(true),
     } as unknown as BrokerProviderRegistryService;
-    const encryption = {} as CredentialEncryptionService;
+    const encryption = {
+      decrypt: jest.fn().mockReturnValue({ accountId: 'acc-1' }),
+    } as unknown as CredentialEncryptionService;
     const audit = { log: jest.fn().mockResolvedValue(undefined) } as unknown as AuditService;
     const eventBus = { publish: jest.fn() } as unknown as DomainEventBus;
     service = new BrokerService(
@@ -230,9 +236,15 @@ describe('BrokerService authorization transitions — real PostgreSQL concurrenc
 
   it('healthCheck suspend vs revoke race: stale suspension never overwrites REVOKED', async () => {
     // AUTHORIZED is a legal source for BOTH SUSPENDED (healthCheck) and REVOKED.
+    // The connection carries stored ciphertext so healthCheck passes the
+    // presence + lifecycle gates and reaches the (failing) provider call.
     await seed({
       authorizationStatus: BrokerAuthorizationStatus.AUTHORIZED,
       consecutiveFailureCount: 2, // next failure = 3 → suspend threshold
+      encryptedCredentials: 'cipher',
+      credentialIv: 'iv',
+      credentialTag: 'tag',
+      encryptionKeyId: 'key-1',
     });
     // The provider is down: healthCheck fails and attempts the SUSPENDED
     // transition; concurrently a revoke lands.
