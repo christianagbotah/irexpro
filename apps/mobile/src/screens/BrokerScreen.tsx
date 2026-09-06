@@ -3,10 +3,14 @@
  * Directive §AE/§AF/§AU — mobile phases M5/M6).
  *
  * The catalog ALWAYS comes from the server-authoritative registry
- * (GET /broker/registry) — never a client-side broker list. Entries without
- * a live adapter are rendered with honest status and are NOT connectable
- * (fail-closed §AB). Credentials are typed once, sent through the encrypted
- * broker-credential flow (test → create → connect), and never rendered back.
+ * (GET /broker/registry → { catalogVersion, brokers }) — never a
+ * client-side broker list. Entries without a live adapter are rendered
+ * with honest status and are NOT connectable (fail-closed §AB).
+ * Production-LIVE release-truth (Phase I): the environment selector
+ * offers LIVE only for VERIFIED entries (isLiveSelectable); BETA/
+ * UNVERIFIED providers are DEMO-only. Credentials are typed once, sent
+ * through the encrypted broker-credential flow (test → create → connect),
+ * and never rendered back.
  */
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -33,6 +37,7 @@ import {
   buildConnectionRequest,
   credentialFields,
   isConnectableEntry,
+  isLiveSelectable,
   keyCapabilityChips,
   routeLabel,
   statusPresentation,
@@ -56,7 +61,7 @@ export default function BrokerScreen() {
         api.getBrokerRegistry(),
         api.listBrokerConnections(),
       ]);
-      setRegistry(catalog);
+      setRegistry(catalog.brokers);
       setConnections(userConnections);
       setError(null);
     } catch (err) {
@@ -241,6 +246,11 @@ export default function BrokerScreen() {
               <Text style={styles.mutedSmall} numberOfLines={3}>
                 {presentation.description}
               </Text>
+              {entry.productionLiveVerification?.status !== "VERIFIED" ? (
+                <Text style={styles.liveUnavailableText}>
+                  LIVE unavailable — not production-verified
+                </Text>
+              ) : null}
               <View style={styles.rowWrap}>
                 {keyCapabilityChips(entry).map((chip) => (
                   <Text key={chip} style={styles.chip}>
@@ -293,8 +303,14 @@ function ConnectFlowModal({
   onConnected: () => Promise<void>;
 }) {
   const fields = credentialFields(entry.authenticationType);
-  const supportedEnvs = ENVIRONMENT_OPTIONS.filter((env) =>
-    entry.environments.includes(env),
+  // Environment truth (Phase I): options derive STRICTLY from the entry's
+  // declared environments, with LIVE additionally gated by isLiveSelectable
+  // (server VERIFIED production-LIVE evidence). BETA/UNVERIFIED providers
+  // only ever offer DEMO here; no hard-coded broker exceptions.
+  const supportedEnvs = ENVIRONMENT_OPTIONS.filter(
+    (env) =>
+      entry.environments.includes(env) &&
+      (env !== "LIVE" || isLiveSelectable(entry)),
   );
   const [environment, setEnvironment] = useState<"DEMO" | "LIVE">(
     supportedEnvs[0] ?? "DEMO",
@@ -560,6 +576,10 @@ const styles = StyleSheet.create({
   },
   envDemo: { backgroundColor: "#fef3c7", color: "#92400e" },
   envLive: { backgroundColor: "#ffe4e6", color: "#9f1239" },
+  liveUnavailableText: {
+    color: "#b45309",
+    fontSize: 12,
+  },
   envOption: {
     borderWidth: 1,
     borderColor: "#cbd5e1",

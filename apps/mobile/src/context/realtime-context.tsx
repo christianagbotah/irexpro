@@ -41,6 +41,7 @@ import {
   reconnectDelayMs,
   REALTIME_STALE_THRESHOLD_MS,
 } from "../lib/realtime-url";
+import { buildSocketOptions } from "../lib/realtime-socket-options";
 
 /**
  * The realtime event names the mobile app listens to — mirrored EXACTLY from
@@ -125,17 +126,15 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
         }));
         return null;
       }
-      const socket = io(url, {
-        transports: ["websocket"],
-        // The gateway authenticates from socket.handshake.auth.token — the
-        // same JWT class the HTTP client sends as a Bearer header.
-        auth: { token: getAccessTokenValue() },
-        reconnection: true,
-        reconnectionDelay: reconnectDelayMs(0),
-        reconnectionDelayMax: 30000,
-        // Fail-closed: only the authenticated API origin, no credentials in
-        // query strings (token goes in the auth handshake payload).
-      });
+      // Connection options come from the pure builder (Directive §J). The
+      // auth payload uses socket.io's FUNCTION form (Phase I3): the CURRENT
+      // access token is read on EVERY connection attempt, so a refreshed or
+      // rotated token propagates to reconnects instead of retrying the
+      // stale token captured at socket creation. The token rides the auth
+      // handshake payload (socket.handshake.auth.token — the same JWT class
+      // the HTTP client sends as a Bearer header), never the URL/query.
+      // Fail-closed: only the authenticated API origin (deriveRealtimeUrl).
+      const socket = io(url, buildSocketOptions(getAccessTokenValue));
 
       socket.on("connect", () => {
         attempt = 0;
@@ -184,6 +183,11 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     staleTimerRef.current = setInterval(tick, REALTIME_STALE_THRESHOLD_MS / 2);
 
     return () => {
+      // Teardown guarantee (Phase I3): App.tsx mounts RealtimeProvider ONLY
+      // inside the authenticated branch — when the user becomes null
+      // (logout, revoked session), the provider unmounts, this cleanup runs,
+      // and the socket is disconnected. No realtime channel outlives the
+      // authenticated session.
       disposed = true;
       appStateSub.remove();
       if (staleTimerRef.current) clearInterval(staleTimerRef.current);

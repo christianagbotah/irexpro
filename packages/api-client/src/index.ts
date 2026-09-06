@@ -4,7 +4,7 @@ import {
   AuthTokens,
   AuthUser,
   BrokerConnectionView,
-  BrokerRegistryEntry,
+  BrokerRegistryCatalog,
   BrokerTestResult,
   CreateBrokerConnectionRequest,
   ForgotPasswordRequest,
@@ -136,8 +136,13 @@ export interface ApiClient {
   updateRiskProfile(body: UpdateRiskProfileRequest): Promise<RiskProfile>;
   /** GET /broker/connections/supported → list of supported brokers. */
   listSupportedBrokers(): Promise<SupportedBroker[]>;
-  /** GET /broker/registry → server-authoritative broker catalog (Directive §AU). */
-  getBrokerRegistry(): Promise<BrokerRegistryEntry[]>;
+  /**
+   * GET /broker/registry → server-authoritative broker catalog (Directive
+   * §AU). The server returns the CATALOG WRAPPER
+   * `{ catalogVersion, brokers: BrokerRegistryEntry[] }` — consumers must
+   * read `.brokers`, never map the wrapper itself (Phase I1 shape fix).
+   */
+  getBrokerRegistry(): Promise<BrokerRegistryCatalog>;
   /** GET /broker/connections → user's broker connections (no credentials). */
   listBrokerConnections(): Promise<BrokerConnectionView[]>;
   /** POST /broker/connections → create a new broker connection (encrypts credentials). */
@@ -383,7 +388,10 @@ export function createApiClient(options: CreateApiClientOptions): ApiClient {
     listSupportedBrokers: () =>
       request<SupportedBroker[]>("/broker/connections/supported"),
 
-    getBrokerRegistry: () => request<BrokerRegistryEntry[]>("/broker/registry"),
+    // Phase I1: typed as the catalog wrapper the server actually returns
+    // ({ catalogVersion, brokers }) — the entry array lives under `.brokers`.
+    getBrokerRegistry: () =>
+      request<BrokerRegistryCatalog>("/broker/registry"),
 
     listBrokerConnections: () =>
       request<BrokerConnectionView[]>("/broker/connections"),

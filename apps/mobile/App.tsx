@@ -31,6 +31,12 @@ import LiveAccountScreen from "./src/screens/LiveAccountScreen";
  * Sprint 51 PR-8: the authenticated shell mounts RealtimeProvider (the
  * /realtime socket only lives while signed in) and adds the Brokers + Live
  * Account tabs alongside the existing tabs.
+ *
+ * Architect Phase I3 (structural teardown guarantee): RealtimeProvider is
+ * mounted ONLY in the authenticated branch below — when the user becomes
+ * null (logout, revoked session), React unmounts the provider and its
+ * effect cleanup disconnects the socket, so no realtime channel ever
+ * outlives the authenticated session.
  */
 
 type Tab = "dashboard" | "brokers" | "live" | "account" | "payments";

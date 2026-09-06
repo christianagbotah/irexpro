@@ -36,7 +36,10 @@ const STATUS_PRESENTATION: Record<
   BETA: {
     label: "Beta",
     color: "#f59e0b",
-    description: "Implemented and tested; live verification in progress.",
+    // Honest release-truth (Phase I/registry Phase H): BETA = implemented +
+    // contract-tested. It says NOTHING about production-LIVE approval —
+    // DEMO is connectable, LIVE stays server-fail-closed until VERIFIED.
+    description: "Beta — implemented and contract-tested; live verification in progress.",
     connectable: true,
   },
   NOT_STARTED: {
@@ -74,6 +77,25 @@ export function statusPresentation(
 export function isConnectableEntry(entry: BrokerRegistryEntry): boolean {
   const presentation = statusPresentation(entry.status);
   return presentation.connectable && entry.adapterAvailable === true;
+}
+
+/**
+ * Production-LIVE selection gate (architect Phase I / registry Phase H).
+ *
+ * The environment selector may offer LIVE ONLY when the server registry
+ * BOTH declares the LIVE environment AND carries VERIFIED production-LIVE
+ * evidence (`productionLiveVerification.status === 'VERIFIED'`). BETA and
+ * UNVERIFIED providers (and entries whose verification payload is absent —
+ * older cached wire data) fail closed: DEMO stays their only option.
+ *
+ * No client-side overrides, no hard-coded broker exceptions — the server
+ * registry is the single source of release-truth (Directive §AU).
+ */
+export function isLiveSelectable(entry: BrokerRegistryEntry): boolean {
+  return (
+    entry.environments.includes("LIVE") &&
+    entry.productionLiveVerification?.status === "VERIFIED"
+  );
 }
 
 /** Key capabilities surfaced as chips (keep the catalog list readable). */

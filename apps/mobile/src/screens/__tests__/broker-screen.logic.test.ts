@@ -6,6 +6,7 @@ import {
   buildConnectionRequest,
   credentialFields,
   isConnectableEntry,
+  isLiveSelectable,
   keyCapabilityChips,
   routeLabel,
   statusPresentation,
@@ -39,6 +40,12 @@ describe("statusPresentation (§AB honesty)", () => {
     expect(statusPresentation("BETA").connectable).toBe(true);
   });
 
+  it("BETA copy is honest release-truth (Phase I): contract-tested, live verification in progress", () => {
+    expect(statusPresentation("BETA").description).toBe(
+      "Beta — implemented and contract-tested; live verification in progress.",
+    );
+  });
+
   it("marks non-implemented statuses NOT connectable with honest copy", () => {
     expect(statusPresentation("NOT_STARTED").connectable).toBe(false);
     expect(statusPresentation("PARTNER_APPROVAL_REQUIRED").connectable).toBe(
@@ -59,6 +66,72 @@ describe("isConnectableEntry (fail-closed gating)", () => {
     expect(
       isConnectableEntry(
         entry({ status: "PARTNER_APPROVAL_REQUIRED", adapterAvailable: false }),
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("isLiveSelectable (Phase I — production-LIVE release-truth)", () => {
+  it("BETA/UNVERIFIED entries never offer LIVE (DEMO-only)", () => {
+    expect(
+      isLiveSelectable(
+        entry({
+          status: "BETA",
+          productionLiveVerification: {
+            status: "UNVERIFIED",
+            verifiedAt: null,
+            evidenceRef: null,
+          },
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("VERIFIED evidence + LIVE environment offers LIVE", () => {
+    expect(
+      isLiveSelectable(
+        entry({
+          productionLiveVerification: {
+            status: "VERIFIED",
+            verifiedAt: "2025-09-01T00:00:00.000Z",
+            evidenceRef: "docs/brokers/provider-matrix.md",
+          },
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("absent productionLiveVerification fails closed (older cached wire payloads)", () => {
+    // entry() has no productionLiveVerification field at all.
+    expect(isLiveSelectable(entry({}))).toBe(false);
+  });
+
+  it("VERIFIED evidence alone is insufficient without the LIVE environment", () => {
+    expect(
+      isLiveSelectable(
+        entry({
+          environments: ["DEMO"],
+          productionLiveVerification: {
+            status: "VERIFIED",
+            verifiedAt: null,
+            evidenceRef: "docs/brokers/provider-matrix.md",
+          },
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("UNVERIFIED evidence does not unlock LIVE either way", () => {
+    expect(
+      isLiveSelectable(
+        entry({
+          environments: ["DEMO"],
+          productionLiveVerification: {
+            status: "UNVERIFIED",
+            verifiedAt: null,
+            evidenceRef: null,
+          },
+        }),
       ),
     ).toBe(false);
   });
